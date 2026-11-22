@@ -654,22 +654,12 @@ if [ "$ADMIN" = yes ]; then
         ADMIN_KEYS=$(printf '%s' "$ADMIN_KEYS" | tr 'A-F' 'a-f')
     fi
 else ADMIN_KEYS=; ADMIN_VIA_PAIR=no; fi
+[ -n "$FLAVOR" ] || FLAVOR=full
+printf '完整版 full（约 175–270 KB，随架构变化）：支持管理、实时管道、配对和二维码。\nlite（约 120–195 KB）：节省空间，但无管理/实时管道；配对需临时下载 full（纯中继转发管理也必须 full）。\n'
+ask "构建类型 full/lite（完整版/精简版）[默认 $FLAVOR]：" "$FLAVOR"; FLAVOR=$ANSWER
+case "$FLAVOR" in full) ;; lite) [ "$ADMIN" = no ] || fail 'lite 不允许启用管理，请选择 full' ;; *) fail '构建类型须为 full 或 lite' ;; esac
 if [ "$ADMIN_VIA_PAIR" = yes ]; then
-    FLAVOR=full
-    printf '手机配对授权需要 full，已选择 full；收到手机公钥并在服务器明确授权前，管理保持关闭。\n'
-else
-if [ -z "$FLAVOR" ]; then
-    FLAVOR=full
-    case "$ARCH" in mips|mipsel) FLAVOR=lite ;; esac
-    space_path=$DESTDIR$(dirname "$BIN")
-    while [ ! -d "$space_path" ]; do space_path=$(dirname "$space_path"); done
-    free_kb=$(df -Pk "$space_path" | awk 'END {print $4}')
-    case "$free_kb" in ''|*[!0-9]*) ;; *) if [ "$free_kb" -lt 16384 ]; then FLAVOR=lite; fi ;; esac
-    if [ -n "$ADMIN_KEYS" ]; then FLAVOR=full; fi
-fi
-printf 'full 支持管理；lite 更小但无管理/实时管道（纯中继要转发管理也必须 full）。\n'
-ask "构建类型 full/lite [默认 $FLAVOR]：" "$FLAVOR"; FLAVOR=$ANSWER
-case "$FLAVOR" in full) ;; lite) [ -z "$ADMIN_KEYS" ] || fail 'lite 不允许启用管理，请选择 full' ;; *) fail '构建类型须为 full 或 lite' ;; esac
+    printf '手机配对授权需要 full；收到手机公钥并在服务器明确授权前，管理保持关闭。\n'
 fi
 for value in "$NAME" "$UPSTREAM" "$SECRET" "$TOKEN" "$GROUP"; do safe_value "$value"; done
 safe_value "$ADMIN_KEYS" 2080

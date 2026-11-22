@@ -54,8 +54,11 @@ Nginx 示例，不自动安装 Nginx/certbot，不修改防火墙；摘要说明
 `/etc/npulse/npulse.conf`，目录 0700、文件 0600。systemd 需 247+，使用
 LoadCredential 将配置提供给 DynamicUser，默认硬化且 Restart=always；管理启用后
 必须使用 full，服务改为 root 并解除文件/能力限制，**授权设备拥有整机控制权**。
-OpenWrt procd 使用 respawn，以 root 运行。MIPS/MIPSEL 或目标磁盘空闲不足 16MiB
-时默认 lite；lite 也不能转发 C2 管理管道，纯中继若需远程管理请选 full。
+OpenWrt procd 使用 respawn，以 root 运行。所有架构、磁盘容量和安装模式（包括 OpenWrt、
+MIPS/MIPSEL 和纯中继）均默认完整版 full；交互安装总会询问版本，回车采用默认值，
+非交互安装也默认 full。可用 `--full` / `--lite` 或 `NPULSE_FLAVOR=full|lite` 明确选择。
+full 约 175–270 KB，支持管理、实时管道、配对和二维码；lite 约 120–195 KB（随架构变化），
+省空间但不支持管理和实时管道，配对需临时下载 full。lite 禁止启用管理；纯中继转发管理也必须 full。
 ARM 浮点 ABI 无法自动检测时会询问；无交互时须指定 `--arch` 或 NPULSE_ARM_FLOAT。
 
 非交互示例（仅在本机可信环境中设置真实密钥；摘要会显示密钥，不要公开日志）：

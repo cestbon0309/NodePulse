@@ -140,7 +140,7 @@ struct PairingView: View {
                     Text("配对成功").font(.largeTitle.bold()).accessibilityIdentifier("pair-success")
                     Text(savedName).font(.title3).foregroundStyle(.secondary)
                     Text("探针已添加，密钥已安全存入钥匙串。\n服务器退出配对并启动正常服务后即可监控。").multilineTextAlignment(.center).foregroundStyle(.secondary)
-                    if adminUnavailable { Text("当前为 lite 构建，未授予管理权限。需要管理时请先升级完整构建后重新配对。").font(.callout).foregroundStyle(.orange) }
+                    if adminUnavailable { Text("未授予管理权限（服务器拒绝或为 lite 版），仍可正常监控。").font(.callout).foregroundStyle(.orange) }
                     Button("完成", action: done).buttonStyle(.borderedProminent).tint(.mint).controlSize(.large)
                 }
             }.padding(24).frame(maxWidth: 520).frame(maxWidth: .infinity)

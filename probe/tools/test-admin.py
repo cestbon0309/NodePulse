@@ -264,6 +264,16 @@ def main(root):
     result = subprocess.run([*cli, "ls", str(remote)], check=True, capture_output=True, text=True)
     assert json.loads(result.stdout)["ok"]
     subprocess.run([*cli, "put", str(source), str(remote / "moved.bin"), "--overwrite"], check=True, capture_output=True)
+    move_source, move_target = remote / "cli-move-source", remote / "cli-move-target"
+    move_source.write_bytes(b"source"); move_target.write_bytes(b"destination")
+    result = subprocess.run([*cli, "mv", str(move_source), str(move_target)], capture_output=True)
+    assert result.returncode != 0 and move_target.read_bytes() == b"destination"
+    subprocess.run([*cli, "mv", str(move_source), str(move_target), "-f"], check=True, capture_output=True)
+    assert not move_source.exists() and move_target.read_bytes() == b"source"
+    move_source.write_bytes(b"long option")
+    subprocess.run([*cli, "mv", str(move_source), str(move_target), "--force"], check=True, capture_output=True)
+    assert move_target.read_bytes() == b"long option"
+    print("PASS Python mv CLI: default preserves existing destination; -f and --force explicitly replace")
     with connect() as client:
         rejected(lambda: client.request("rm", path=str(remote), recursive=False))
         client.request("rm", path=str(remote), recursive=True)

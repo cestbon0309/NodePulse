@@ -8,6 +8,7 @@ struct NodeDetail: View {
     @State private var selection: Date?
     @State private var copied = false
     @State private var deleting: NodeItem?
+    @AppStorage("hideIPAddresses") private var hideIPAddresses = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var item: NodeItem? { store.nodes.first { $0.key == nodeKey } }
@@ -20,9 +21,15 @@ struct NodeDetail: View {
                         OSBadge(os: s.os).scaleEffect(1.2).padding(8)
                         Text(s.name).font(.largeTitle.bold()).multilineTextAlignment(.center)
                         Text(s.os).font(.subheadline).foregroundStyle(.secondary)
-                        if item.endToEnd { EndToEndBadge() }
+                        if item.usesEndToEndEncryption { EndToEndBadge() }
                         HStack { OnlineStatus(online: item.online); Text(item.connectionLabel).font(.caption).foregroundStyle(.secondary) }
-                        if let ip = s.ips.first { Button { copy(ip) } label: { Label(ip, systemImage: "doc.on.doc").font(.caption.monospaced()).padding(10).background(.mint.opacity(0.08), in: Capsule()) } }
+                        if let ip = s.ips.first {
+                            HStack {
+                                Button { copy(ip) } label: { Label(PulseFormat.ip(ip, hidden: hideIPAddresses), systemImage: "doc.on.doc").font(.caption.monospaced()).padding(10).background(.mint.opacity(0.08), in: Capsule()) }
+                                Button(hideIPAddresses ? "显示 IP" : "隐藏 IP", systemImage: hideIPAddresses ? "eye.slash" : "eye") { hideIPAddresses.toggle() }
+                                    .labelStyle(.iconOnly).padding(10)
+                            }
+                        }
                     }.frame(maxWidth: .infinity).padding(.vertical, 10)
                     HStack {
                         RingGauge(title: "CPU", value: s.cpuUsage, size: 86)
@@ -50,7 +57,7 @@ struct NodeDetail: View {
                     section("网络", symbol: "network") {
                         ForEach(s.ips, id: \.self) { ip in
                             Button { copy(ip) } label: {
-                                HStack { Text(ip).font(.subheadline.monospaced()).multilineTextAlignment(.leading); Spacer(); Image(systemName: "doc.on.doc") }.padding(.vertical, 7)
+                                HStack { Text(PulseFormat.ip(ip, hidden: hideIPAddresses)).font(.subheadline.monospaced()).multilineTextAlignment(.leading); Spacer(); Image(systemName: "doc.on.doc") }.padding(.vertical, 7)
                             }
                         }
                         InfoRow(title: "累计接收", value: PulseFormat.bytes(s.netRx))

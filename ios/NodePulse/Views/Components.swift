@@ -11,6 +11,10 @@ struct EndToEndBadge: View {
     }
 }
 enum PulseFormat {
+    static func ip(_ address: String, hidden: Bool) -> String {
+        guard hidden, !address.isEmpty else { return address }
+        return address.contains(":") ? "••••:••••:••••:••••" : "•••.•••.•.•"
+    }
     static func bytes(_ value: Double) -> String {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .binary

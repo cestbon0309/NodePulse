@@ -157,7 +157,7 @@ struct NodeCard: View {
                 Spacer(minLength: 4)
                 VStack(alignment: .trailing, spacing: 6) {
                     OnlineStatus(online: item.online)
-                    if item.endToEnd { EndToEndBadge() }
+                    if item.usesEndToEndEncryption { EndToEndBadge() }
                     if item.endToEnd { Text("中继").font(.system(size: 10, weight: .medium)).padding(.horizontal, 7).padding(.vertical, 3).background(.cyan.opacity(0.12), in: Capsule()).foregroundStyle(.cyan) }
                 }
             }

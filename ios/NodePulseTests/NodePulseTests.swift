@@ -2,6 +2,41 @@ import XCTest
 @testable import NodePulse
 
 final class NodePulseTests: XCTestCase {
+    @MainActor func testEncryptionBadgeMatchesEndpointTransport() {
+        let suite = "Encryption-\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = MonitorStore(defaults: defaults, secrets: MemorySecrets())
+        let transports: [(Endpoint.Kind, Bool)] = [
+            (.direct(host: "localhost", port: 9000), true),
+            (.https(urlString: "https://example.com"), false),
+            (.groupTCP(host: "localhost", port: 9001), true),
+            (.groupHTTPS(urlString: "https://example.com"), true)
+        ]
+        for (kind, encrypted) in transports {
+            let endpoint = Endpoint(name: "入口", kind: kind)
+            var snapshot = NodeSnapshot(); snapshot.id = "node"
+            store.apply(endpoint, result: .success([]), latency: 1)
+            XCTAssertFalse(store.nodes.contains { $0.endpointID == endpoint.id })
+            store.apply(endpoint, result: .success([snapshot]), latency: 1)
+            XCTAssertEqual(store.nodes.last?.usesEndToEndEncryption, encrypted)
+            XCTAssertEqual(store.nodes.last?.endToEnd, kind.isGroup)
+            if !kind.isGroup { XCTAssertEqual(store.nodes.last?.connectionLabel, "直连") }
+            store.apply(endpoint, result: .failure(ProbeError.timeout), latency: 1)
+            XCTAssertEqual(store.nodes.last?.usesEndToEndEncryption, encrypted)
+            XCTAssertEqual(store.nodes.last?.online, false)
+        }
+    }
+
+    func testIPAddressMasking() {
+        for address in ["192.168.1.1", "2606:4700:4700::1111", "fe80::1%en0", "invalid-address", ""] {
+            XCTAssertEqual(PulseFormat.ip(address, hidden: false), address)
+            if !address.isEmpty { XCTAssertFalse(PulseFormat.ip(address, hidden: true).contains(address)) }
+        }
+        XCTAssertEqual(PulseFormat.ip("192.168.1.1", hidden: true), "•••.•••.•.•")
+        XCTAssertEqual(PulseFormat.ip("2606:4700:4700::1111", hidden: true), "••••:••••:••••:••••")
+        XCTAssertEqual(PulseFormat.ip("", hidden: true), "")
+    }
+
     @MainActor func testHiddenNodePersistencePollingAndFreshHistory() throws {
         let suite = "Hidden-\(UUID())", defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }

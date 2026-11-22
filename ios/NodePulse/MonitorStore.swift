@@ -17,6 +17,7 @@ struct NodeItem: Identifiable {
     var history: [HistorySample] = []
     var probeInterval: Double = 5
     var endToEnd = false
+    var usesEndToEndEncryption = false
     var id: String { key }
     var connectionLabel: String {
         guard endToEnd else { return "直连" }
@@ -199,6 +200,10 @@ final class MonitorStore {
                                     snapshot: snapshot, online: !stale, history: old?.history ?? [])
                 item.probeInterval = cadence
                 item.endToEnd = endpoint.kind.isGroup
+                switch endpoint.kind {
+                case .https: item.usesEndToEndEncryption = false
+                case .direct, .groupTCP, .groupHTTPS: item.usesEndToEndEncryption = true
+                }
                 item.history.append(HistorySample(date: now, cpu: snapshot.cpuUsage, memPercent: snapshot.memPercent,
                                                   rxRate: snapshot.netRxRate, txRate: snapshot.netTxRate))
                 item.history = Array(item.history.suffix(120))
@@ -212,7 +217,7 @@ final class MonitorStore {
     }
     private func demo() {
         demoTick += 0.18
-        let endpoint = Endpoint(id: demoID, name: "演示", kind: .https(urlString: "https://demo.invalid"))
+        let endpoint = Endpoint(id: demoID, name: "演示", kind: .direct(host: "localhost", port: 9000))
         let specs = [("OpenWrt 23.05", "mips", "家庭路由器"), ("Ubuntu 24.04 LTS", "x86_64", "东京 VPS"),
                      ("Debian 12", "aarch64", "中继节点"), ("Alpine Linux", "armv7", "离线设备"),
                      ("Ubuntu 22.04 LTS", "aarch64", "工作站")]

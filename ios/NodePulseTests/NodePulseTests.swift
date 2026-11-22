@@ -83,6 +83,37 @@ final class NodePulseTests: XCTestCase {
         XCTAssertEqual(store.nodes.count, 5); XCTAssertNotEqual(store.nodes[0].snapshot.cpuUsage, first)
         XCTAssertTrue(store.nodes.contains { !$0.online }); XCTAssertEqual(store.nodes[0].history.count, 41)
     }
+    @MainActor func testRelayFreshnessUsesUpstreamClock() {
+        let suite = "Freshness-\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let endpoint = Endpoint(name: "upstream", kind: .direct(host: "localhost", port: 1))
+        var own = NodeSnapshot(); own.id = "self"; own.ts = 1000
+        for skewedTime in [1.0, 100000.0] {
+            let store = MonitorStore(defaults: defaults)
+            var relay = NodeSnapshot(); relay.id = "relay"; relay.relay = true
+            relay.ts = skewedTime; relay.lastSeen = 995
+            store.apply(endpoint, result: .success([own, relay]), latency: 1)
+            XCTAssertTrue(store.nodes[1].online)
+            relay.lastSeen = 900
+            store.apply(endpoint, result: .success([own, relay]), latency: 1)
+            XCTAssertFalse(store.nodes[1].online)
+            relay.lastSeen = nil; relay.ts = 995
+            let fallback = MonitorStore(defaults: defaults)
+            fallback.apply(endpoint, result: .success([own, relay]), latency: 1)
+            XCTAssertTrue(fallback.nodes[1].online)
+            relay.ts = 900
+            fallback.apply(endpoint, result: .success([own, relay]), latency: 1)
+            XCTAssertFalse(fallback.nodes[1].online)
+        }
+        let store = MonitorStore(defaults: defaults)
+        var relay = NodeSnapshot(); relay.id = "relay"; relay.relay = true
+        relay.ts = 1; relay.lastSeen = Date().timeIntervalSince1970
+        store.apply(endpoint, result: .success([relay]), latency: 1)
+        XCTAssertTrue(store.nodes[0].online)
+        relay.lastSeen = Date().timeIntervalSince1970 - 300
+        store.apply(endpoint, result: .success([relay]), latency: 1)
+        XCTAssertFalse(store.nodes[0].online)
+    }
     func testLiveProbe() async throws {
         guard ProcessInfo.processInfo.environment["NPULSE_E2E"] == "1" else {
             throw XCTSkip("Set NPULSE_E2E=1; run host probe on 19090/19091 with integration-secret")

@@ -113,16 +113,16 @@ final class MonitorStore {
         case .success(let snapshots):
             statuses[endpoint.id] = EndpointStatus(lastSuccess: now, latency: latency, error: nil)
             let upstreamTS = snapshots.first(where: { $0.relay != true })?.ts ?? now.timeIntervalSince1970
-            // The v0.1 probe has no interval field; estimate each relay's cadence from consecutive snapshot timestamps.
             for snapshot in snapshots {
                 let key = "\(endpoint.id)/\(snapshot.id)"
                 let index = nodes.firstIndex { $0.key == key }
                 let old = index.map { nodes[$0] }
-                let delta = (snapshot.ts ?? 0) - (old?.snapshot.ts ?? snapshot.ts ?? 0)
+                let timestamp = snapshot.relay == true ? (snapshot.lastSeen ?? snapshot.ts) : snapshot.ts
+                let previousTimestamp = old.map { $0.snapshot.relay == true ? ($0.snapshot.lastSeen ?? $0.snapshot.ts) : $0.snapshot.ts } ?? timestamp
+                let delta = (timestamp ?? 0) - (previousTimestamp ?? timestamp ?? 0)
                 let cadence = delta > 0 ? delta : (old?.probeInterval ?? 5)
                 let stale = snapshot.relay == true &&
-                    (upstreamTS - (snapshot.lastSeen ?? snapshot.ts ?? 0) > max(30, 4 * cadence) ||
-                     upstreamTS - (snapshot.ts ?? snapshot.lastSeen ?? 0) > max(30, 4 * cadence))
+                    upstreamTS - (snapshot.lastSeen ?? snapshot.ts ?? 0) > max(30, 4 * cadence)
                 var item = NodeItem(key: key, endpointID: endpoint.id, endpointName: endpoint.name,
                                     snapshot: snapshot, online: !stale, history: old?.history ?? [])
                 item.probeInterval = cadence

@@ -104,9 +104,10 @@ struct InfoRow: View {
     var title: String
     var value: String
     var body: some View {
-        HStack(alignment: .top, spacing: 20) {
-            Text(title).foregroundStyle(.secondary).frame(width: 76, alignment: .leading)
-            Text(value.isEmpty ? "—" : value).frame(maxWidth: .infinity, alignment: .trailing).textSelection(.enabled)
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            Text(title).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8).frame(width: 76, alignment: .leading)
+            Text(value.isEmpty ? "—" : value).lineLimit(1).minimumScaleFactor(0.8).truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .trailing).textSelection(.enabled)
         }.font(.subheadline).padding(.vertical, 6)
     }
 }

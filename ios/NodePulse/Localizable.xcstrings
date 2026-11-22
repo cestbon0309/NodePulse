@@ -3872,7 +3872,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Operating System"
+            "value": "OS"
           }
         }
       }
@@ -3906,7 +3906,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Architecture"
+            "value": "Arch"
           }
         }
       }
@@ -3923,7 +3923,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "CPU Model"
+            "value": "CPU"
           }
         }
       }
@@ -3991,7 +3991,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "TCP Connections"
+            "value": "TCP"
           }
         }
       }
@@ -4008,7 +4008,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Temperature"
+            "value": "Temp"
           }
         }
       }

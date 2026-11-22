@@ -194,10 +194,23 @@ struct SettingsView: View {
                     NavigationLink(L10n.text("管理密钥")) { AdminKeySettings() }
                 }
                 Section(L10n.text("关于")) {
+                    NavigationLink(L10n.text("许可证")) { LicenseView() }
                     LabeledContent(L10n.text("版本"), value: "0.1.0")
                     Link(destination: URL(string: "https://github.com/cestbon0309/NodePulse")!) { Label(L10n.text("项目源代码"), systemImage: "chevron.left.forwardslash.chevron.right") }
                 }
             }.navigationTitle(L10n.text("设置")).toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.text("完成")) { dismiss() } } }
         }
+    }
+}
+
+private struct LicenseView: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Link("GPL-2.0-only", destination: URL(string: "https://github.com/cestbon0309/NodePulse/blob/main/LICENSE")!)
+                Text(Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: "txt").flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? "")
+                    .font(.caption.monospaced()).textSelection(.enabled)
+            }.padding(20)
+        }.navigationTitle(L10n.text("许可证"))
     }
 }

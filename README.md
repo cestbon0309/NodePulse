@@ -299,6 +299,14 @@ Only its four source/header files are retained; each carries the upstream
 BSD-2-Clause/CC0 dual-license notice. SHA-512 uses the optional Ed25519 module;
 unused algorithms are removed by LTO and section garbage collection.
 
+## License
+
+NodePulse is licensed under **GPL-2.0-only**; see [LICENSE](LICENSE).
+Vendored and linked components retain their own licenses and notices:
+[third-party notices](ios/NodePulse/ThirdPartyNotices.txt).
+Monocypher (BSD-2-Clause/CC0), Nayuki QR Code generator (MIT), and SwiftTerm
+(MIT) are compatible with GPL-2.0-only. Their notices are preserved, not relicensed.
+
 ## Build
 
 ```

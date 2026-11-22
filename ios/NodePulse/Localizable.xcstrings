@@ -5319,6 +5319,22 @@
           }
         }
       }
+    },
+    "许可证": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Licenses"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "许可证"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

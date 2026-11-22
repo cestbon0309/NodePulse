@@ -433,7 +433,7 @@ int main(int argc, char **argv) {
   crypto_sha512(hash, (const uint8_t *)secret, strlen(secret));
   memcpy(key, hash, 32);
   crypto_wipe(hash, sizeof(hash));
-  metrics_init();
+  metrics_init(display);
   if (!display)
     display = hostname_buf;
   sample();

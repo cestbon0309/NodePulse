@@ -80,6 +80,16 @@ def http(p, path, key=None):
 
 
 try:
+    with tempfile.TemporaryDirectory() as directory:
+        root = pathlib.Path(directory)
+        for interface, address in (("lo", "00:00:00:00:00:00"), ("eth0", "02:00:00:00:00:01")):
+            (root / interface).mkdir()
+            (root / interface / "address").write_text(address + "\n")
+        probe = pathlib.Path(__file__).resolve().parent.parent
+        binary = root / "test-identity"
+        subprocess.run([os.environ.get("CC", "cc"), str(probe / "tools/test-identity.c"),
+                        str(probe / "vendor/monocypher-ed25519.c"), "-o", str(binary)], check=True)
+        subprocess.run([str(binary), str(root)], check=True)
     rid = "0123456789abcdef" * 2
     client.validate_response({"rid": rid}, rid)
     for captured in ({}, {"rid": "0" * 32}):

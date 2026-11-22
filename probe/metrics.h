@@ -2,6 +2,7 @@
 #define NP_METRICS_H
 #include "vendor/monocypher-ed25519.h"
 #include <arpa/inet.h>
+#include <dirent.h>
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <stdarg.h>
@@ -92,7 +93,49 @@ static void property(const char *path, const char *key, char *out,
     }
   fclose(f);
 }
-static void metrics_init(void) {
+static void first_mac(const char *root, char mac[64]) {
+  DIR *dir = opendir(root);
+  if (!dir)
+    return;
+  struct dirent *entry;
+  char first[256] = "";
+  while ((entry = readdir(dir))) {
+    if (entry->d_name[0] == '.' || !strcmp(entry->d_name, "lo") ||
+        (*first && strcmp(entry->d_name, first) >= 0))
+      continue;
+    char path[512], candidate[64];
+    snprintf(path, sizeof(path), "%s/%s/address", root, entry->d_name);
+    FILE *file = fopen(path, "r");
+    if (!file)
+      continue;
+    if (fgets(candidate, sizeof(candidate), file)) {
+      candidate[strcspn(candidate, "\r\n")] = 0;
+      if (*candidate && strspn(candidate, "0:") != strlen(candidate)) {
+        snprintf(mac, 64, "%s", candidate);
+        snprintf(first, sizeof(first), "%s", entry->d_name);
+      }
+    }
+    fclose(file);
+  }
+  closedir(dir);
+}
+static void identify(const char *machine, const char *host, const char *mac,
+                     const char *name) {
+  Buffer identity = buffer();
+  if (*machine)
+    add(&identity, "%s", machine);
+  else {
+    quote(&identity, host);
+    quote(&identity, mac);
+    quote(&identity, name ? name : host);
+  }
+  uint8_t h[64];
+  crypto_sha512(h, (uint8_t *)identity.s, identity.n);
+  free(identity.s);
+  for (int i = 0; i < 32; i++)
+    snprintf(node_id + i * 2, 3, "%02x", h[i]);
+}
+static void metrics_init(const char *name) {
   gethostname(hostname_buf, sizeof(hostname_buf) - 1);
   uname(&uts);
   snprintf(os_name, sizeof(os_name), "%s", uts.sysname);
@@ -102,18 +145,16 @@ static void metrics_init(void) {
   const char *keys[] = {"model name", "cpu model", "Processor", "Hardware"};
   for (unsigned i = 0; i < 4 && !cpu_model[0]; i++)
     property("/proc/cpuinfo", keys[i], cpu_model, sizeof(cpu_model));
-  char identity[256];
-  snprintf(identity, sizeof(identity), "%s", hostname_buf);
+  char identity[256] = "", mac[64] = "";
   FILE *f = fopen("/etc/machine-id", "r");
   if (f) {
     if (fgets(identity, sizeof(identity), f))
       identity[strcspn(identity, "\r\n")] = 0;
     fclose(f);
   }
-  uint8_t h[64];
-  crypto_sha512(h, (uint8_t *)identity, strlen(identity));
-  for (int i = 0; i < 32; i++)
-    snprintf(node_id + i * 2, 3, "%02x", h[i]);
+  if (!*identity)
+    first_mac("/sys/class/net", mac);
+  identify(identity, hostname_buf, mac, name);
 }
 static void sample(void) {
   double now = monotime(), dt = now - previous_time;

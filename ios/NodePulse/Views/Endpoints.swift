@@ -24,6 +24,22 @@ struct EndpointList: View {
                     }.padding(.vertical, 6)
                 }.swipeActions { Button("删除", role: .destructive) { do { try store.delete(endpoint) } catch { self.error = error.localizedDescription } } }
             }
+            if !store.hiddenNodes.isEmpty {
+                Section {
+                    ForEach(store.hiddenNodes) { node in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(node.name.isEmpty ? "未命名节点" : node.name)
+                                Text(store.endpoints.first(where: { $0.id == node.endpointID })?.name ?? "演示")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("恢复") { store.restoreNode(node); Task { await store.refresh() } }
+                                .buttonStyle(.borderless)
+                        }
+                    }
+                } header: { Text("已隐藏的节点") } footer: { Text("恢复后将在下次成功刷新时重新显示，历史采样从零开始。") }
+            }
         }.navigationTitle("接入点").toolbar {
             ToolbarItem(placement: .topBarTrailing) { Button { adding = true } label: { Image(systemName: "plus") }.accessibilityLabel("添加接入点") }
             ToolbarItem(placement: .topBarLeading) { Button("完成") { dismiss() } }

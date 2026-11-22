@@ -61,11 +61,12 @@ def qr_check(server, ascii_mode=False):
 
 
 class Server:
-    def __init__(self, binary, timeout=8, relay=None, token="pair-relay-token", qr_ascii=False, secret="paired-test-key"):
+    def __init__(self, binary, timeout=8, relay=None, token="pair-relay-token", qr_ascii=False, secret="paired-test-key", advertised=None):
         self.port, self.art = port(), b""
         self.output, output = os.pipe()
         self.pid, self.fd = pty.fork()
         if not self.pid:
+            if advertised is not None: os.environ["NPULSE_PAIR_HOST"] = advertised
             os.close(self.output); os.dup2(output, 1); os.close(output)
             args = ["-R", f"127.0.0.1:{relay}", "-T", token, "-G", "paired-group"] if relay else ["-l", f"127.0.0.1:{self.port}", "-k", secret]
             os.execv(binary, [binary, "-P", *args, "-n", "配对测试", "-W", str(timeout), *(["-Q", "ascii"] if qr_ascii else [])])
@@ -101,6 +102,16 @@ class Server:
 def main():
     vector = json.loads((ROOT / "tools/pair-vector.json").read_text())
     for binary in sys.argv[1:]:
+        for advertised in ("8.8.4.4", "2606:4700:4700::1111", "", "invalid-host"):
+            env = dict(os.environ, NPULSE_PAIR_HOST=advertised)
+            host = subprocess.check_output([binary, "--pair-host"], env=env, text=True).strip()
+            assert host == (advertised if advertised and advertised != "invalid-host" else "127.0.0.1")
+        for advertised in ("8.8.4.4", "2606:4700:4700::1111"):
+            advertised_server = Server(binary, timeout=1, advertised=advertised)
+            assert advertised_server.query["h"] == advertised
+            qr_check(advertised_server)
+            advertised_server.wait(1)
+        print(f"PASS {Path(binary).name}: independent public IPv4/IPv6 QR host with local-only listener; empty/invalid host falls back safely")
         binary = str(Path(binary).resolve())
         actual = json.loads(subprocess.check_output([binary, "--vector"]))
         subprocess.run([binary, "--pair-timers"], check=True)

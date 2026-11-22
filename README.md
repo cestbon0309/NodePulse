@@ -2,9 +2,14 @@
 
 ## 一键安装
 
-直连安装会检测公网 IPv4/IPv6、提供网卡选择和防火墙放行命令，并在执行前询问。
-没有公网地址时默认建议共享中转（模式 4），组密钥在本机生成。
-自动安装可使用 `--bind ADDR`，只有显式 `--open-firewall` 才会自动执行防火墙命令。
+直连安装先询问是否有公网 IP（云服务器的外部/弹性 IP 也算），网卡扫描仅作提示，不据此判断。
+选择有公网 IP 后，通过多个 HTTPS 服务查询（先 IPv4，IPv6 回退），校验后可确认或改填；查询失败则手动填写。
+没有公网 IP 时解释直连限制并默认建议共享中转（模式 4），也可继续直连；组密钥在本机生成。
+云外部 IP 不在本机网卡上时，监听 `0.0.0.0`（IPv6 为 `::`），公网 IP 单独用于配对二维码和 App 地址；
+地址确实在本机网卡上时才可绑定它。公网地址保存在 `/etc/npulse/public-ip`，后续 `pair` 会复用；升级保留、卸载清理配置时删除。
+自动安装可使用 `--public-ip ADDR` / `NPULSE_PUBLIC_IP=ADDR`，或 `--public-ip auto` 自动查询（失败即报错）；
+未指定时不访问公网查询服务，保留通配监听。`--bind ADDR` 仍可显式覆盖监听地址。
+只有显式 `--open-firewall` 才会自动执行本机防火墙命令；云安全组也必须另行放行对应 TCP 端口，安装器会打印 GCP 示例。
 nftables 会放行所有覆盖绑定地址族的入站基础链（IPv4 为 `inet` + `ip`，IPv6 为 `inet` + `ip6`，通配绑定为全部），避免其他链的丢弃策略继续阻断；没有匹配链时才新建。
 
 安装后可立即与手机配对，或运行 `sh install.sh pair`（自动停止/恢复服务）。
@@ -54,8 +59,11 @@ Nginx 示例，不自动安装 Nginx/certbot，不修改防火墙；摘要说明
 `/etc/npulse/npulse.conf`，目录 0700、文件 0600。systemd 需 247+，使用
 LoadCredential 将配置提供给 DynamicUser，默认硬化且 Restart=always；管理启用后
 必须使用 full，服务改为 root 并解除文件/能力限制，**授权设备拥有整机控制权**。
-OpenWrt procd 使用 respawn，以 root 运行。MIPS/MIPSEL 或目标磁盘空闲不足 16MiB
-时默认 lite；lite 也不能转发 C2 管理管道，纯中继若需远程管理请选 full。
+OpenWrt procd 使用 respawn，以 root 运行。所有架构、磁盘容量和安装模式（包括 OpenWrt、
+MIPS/MIPSEL 和纯中继）均默认完整版 full；交互安装总会询问版本，回车采用默认值，
+非交互安装也默认 full。可用 `--full` / `--lite` 或 `NPULSE_FLAVOR=full|lite` 明确选择。
+full 约 175–270 KB，支持管理、实时管道、配对和二维码；lite 约 120–195 KB（随架构变化），
+省空间但不支持管理和实时管道，配对需临时下载 full。lite 禁止启用管理；纯中继转发管理也必须 full。
 ARM 浮点 ABI 无法自动检测时会询问；无交互时须指定 `--arch` 或 NPULSE_ARM_FLOAT。
 
 非交互示例（仅在本机可信环境中设置真实密钥；摘要会显示密钥，不要公开日志）：

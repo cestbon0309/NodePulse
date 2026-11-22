@@ -25,6 +25,7 @@ with tempfile.TemporaryDirectory(prefix="npulse-pair-installer-") as directory:
 set -eu
 [ "$1" = -P ] && [ "$2" = -c ]
 cp "$3" "$BASE/captured.conf"
+printf '%s' "${NPULSE_PAIR_HOST:-}" > "$BASE/pair-host"
 printf '%s\\n' "$0" > "$BASE/executed"
 if [ "${INTERRUPT:-0}" = 1 ]; then kill -INT "$PPID"; exit 130; fi
 if [ "${RETRY:-0}" = 1 ] && [ ! -f "$BASE/retried" ]; then touch "$BASE/retried"; exit 3; fi
@@ -32,7 +33,7 @@ if [ -n "${PUBLIC:-}" ]; then printf 'admin_pk=%s\\n' "$PUBLIC"; fi
 exit "${RESULT:-0}"
 ''')
     binary.chmod(0o755)
-    def run(mode=1, public="", result=0, retry=False, flavor="full", interrupt=False, mirror="", insecure="1", deferred=False):
+    def run(mode=1, public="", result=0, retry=False, flavor="full", interrupt=False, mirror="", insecure="1", deferred=False, public_ip=""):
         work = base / "work"; work.mkdir(exist_ok=True)
         config = base / "npulse.conf"
         config.write_text("listen=0.0.0.0:9527\nsecret=fixture-secret\nrelay_upstream=old.example:9010\ntoken=old-token\ngroup_secret=fixture-group\n" + ("" if deferred else "admin_keys=" + "b" * 64 + "\n"))
@@ -61,7 +62,7 @@ pair_installed
 if [ "$DEFERRED" = 1 ]; then summary; fi
 '''
         env = dict(os.environ, BASE=str(base), MODE=str(mode), PUBLIC=public, RESULT=str(result), RETRY=str(int(retry)), FLAVOR=flavor,
-                   INTERRUPT=str(int(interrupt)), NPULSE_MIRROR=mirror, NPULSE_INSECURE=insecure, DEFERRED=str(int(deferred)))
+                   INTERRUPT=str(int(interrupt)), NPULSE_MIRROR=mirror, NPULSE_INSECURE=insecure, DEFERRED=str(int(deferred)), PUBLIC_IP=public_ip)
         output = subprocess.run([shell, "-c", script], env=env, text=True, capture_output=True, timeout=5)
         captured = base / "captured.conf"
         assert not work.exists(), "pairing temporary files leaked: " + output.stderr
@@ -71,6 +72,11 @@ if [ "$DEFERRED" = 1 ]; then summary; fi
     assert "listen=[2001:db8::1]:9527" in captured and "relay_upstream=" not in captured
     assert "admin_keys=" + "b" * 64 + "," + "a" * 64 in config
     assert trace[0] == "stop" and trace[-2:] == ["reload", "start"] and trace[1].startswith("root-unit:")
+    for address in ("8.8.4.4", "2606:4700:4700::1111"):
+        output, config, captured, trace = run(public_ip=address)
+        assert output.returncode == 0 and (base / "pair-host").read_text() == address
+        assert "listen=[2001:db8::1]:9527" in captured and "public_ip=" not in captured
+    print("PASS public pairing host passed independently of bind/config; direct IPv4/IPv6 advertisement does not change listener or service configuration")
     output, config, captured, trace = run(mode=4, retry=True)
     assert output.returncode == 0 and "中转密码错误或无法连接" in output.stdout
     assert "relay_upstream=new.example:9020" in config and "token=new-token" in config

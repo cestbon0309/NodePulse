@@ -76,14 +76,30 @@ jobs:
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: linux
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
       - uses: actions/download-artifact@v4
         with:
           name: npulse-linux
           path: dist
+      - name: Build unsigned arm64 device IPA
+        env:
+          TAG: ${{ github.ref_name }}
+        run: bash ios/tools/build-unsigned-ipa.sh "$TAG"
+      - name: Add IPA to verified release checksums
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          cp "ios/build/NodePulse-$TAG.ipa" dist/
+          cd dist
+          shasum -a 256 "NodePulse-$TAG.ipa" >> SHA256SUMS
+          shasum -a 256 -c SHA256SUMS
       - name: Attach verified binaries to release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -93,4 +109,4 @@ jobs:
           if ! gh release view "$TAG"; then
             gh release create "$TAG" --verify-tag --generate-notes
           fi
-          gh release upload "$TAG" dist/npulse-linux-* dist/SHA256SUMS dist/install.sh --clobber
+          gh release upload "$TAG" dist/npulse-linux-* dist/SHA256SUMS dist/install.sh "dist/NodePulse-$TAG.ipa" --clobber

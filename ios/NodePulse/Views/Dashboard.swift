@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var search = ""
     @State private var sheet: DashboardSheet?
     @State private var errorDismissed = false
+    @State private var deleting: NodeItem?
     @AppStorage("classicLayout") private var classicLayout = false
     @Namespace private var zoom
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -54,6 +55,7 @@ struct ContentView: View {
                                     .contextMenu {
                                         Button("复制 IP", systemImage: "doc.on.doc") { UIPasteboard.general.string = item.snapshot.ips.joined(separator: "\n") }
                                         NavigationLink("查看详情") { NodeDetail(store: store, nodeKey: item.key) }
+                                        Button("删除", systemImage: "trash", role: .destructive) { deleting = item }
                                     }
                             }
                         }
@@ -83,6 +85,7 @@ struct ContentView: View {
                     }
                 }
                 .onChange(of: failures) { _, _ in errorDismissed = false }
+                .nodeDeletion(store: store, node: $deleting)
                 .onChange(of: store.pairingURL) { _, value in if value != nil { sheet = .add } }
                 .animation(reduceMotion ? nil : .smooth(duration: 0.6), value: store.nodes.map { $0.snapshot.cpuUsage })
                 .animation(reduceMotion ? nil : .spring(duration: 0.45, bounce: 0.12), value: classicLayout)

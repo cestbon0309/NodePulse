@@ -2,6 +2,98 @@ import XCTest
 @testable import NodePulse
 
 final class NodePulseTests: XCTestCase {
+    @MainActor func testHiddenNodePersistencePollingAndFreshHistory() throws {
+        let suite = "Hidden-\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let secrets = MemorySecrets(), store = MonitorStore(defaults: defaults, secrets: secrets)
+        let endpoint = Endpoint(name: "入口", kind: .direct(host: "localhost", port: 1))
+        try store.save(endpoint, secret: "keep-secret")
+        var own = NodeSnapshot(); own.id = "own"; own.name = "主机"
+        var child = NodeSnapshot(); child.id = "child"; child.name = "子节点"; child.relay = true
+        store.apply(endpoint, result: .success([own, child]), latency: 1)
+        let node = store.nodes[1]
+        XCTAssertNil(store.removableEndpoint(for: node))
+        XCTAssertNil(store.removableEndpoint(for: store.nodes[0]))
+        XCTAssertThrowsError(try store.deleteNode(node, removeEndpoint: true))
+        XCTAssertTrue(store.hiddenNodes.isEmpty)
+        try store.deleteNode(node); try store.deleteNode(node)
+        XCTAssertEqual(store.hiddenNodes.count, 1)
+        XCTAssertEqual(store.nodes.map(\.snapshot.id), ["own"])
+        XCTAssertNil(store.removableEndpoint(for: store.nodes[0]))
+        let restoredStore = MonitorStore(defaults: defaults, secrets: secrets)
+        restoredStore.apply(endpoint, result: .success([own, child]), latency: 1)
+        restoredStore.apply(endpoint, result: .failure(ProbeError.timeout), latency: 1)
+        restoredStore.apply(endpoint, result: .success([]), latency: 1)
+        XCTAssertEqual(restoredStore.nodes.map(\.snapshot.id), ["own"])
+        XCTAssertEqual(try restoredStore.secret(for: endpoint), "keep-secret")
+        let hidden = try XCTUnwrap(restoredStore.hiddenNodes.first)
+        restoredStore.restoreNode(hidden); restoredStore.restoreNode(hidden)
+        restoredStore.apply(endpoint, result: .success([own, child]), latency: 1)
+        XCTAssertEqual(restoredStore.nodes.last?.history.count, 1)
+        XCTAssertTrue(MonitorStore(defaults: defaults, secrets: secrets).hiddenNodes.isEmpty)
+    }
+
+    @MainActor func testSoleNodeEndpointDeletionAndSecretFailure() throws {
+        for kind in [Endpoint.Kind.direct(host: "localhost", port: 1), .https(urlString: "https://example.com")] {
+            let suite = "Delete-\(UUID())", defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let secrets = MemorySecrets(), store = MonitorStore(defaults: defaults, secrets: secrets)
+            let endpoint = Endpoint(name: "入口", kind: kind)
+            try store.save(endpoint, secret: "remove-secret")
+            var snapshot = NodeSnapshot(); snapshot.id = "sole"
+            store.apply(endpoint, result: .success([snapshot]), latency: 1)
+            let node = try XCTUnwrap(store.nodes.first)
+            XCTAssertEqual(store.removableEndpoint(for: node), endpoint)
+            secrets.failDelete = true
+            XCTAssertThrowsError(try store.deleteNode(node, removeEndpoint: true))
+            XCTAssertEqual(store.nodes.first?.history.count, 1)
+            XCTAssertEqual(store.endpoints, [endpoint]); XCTAssertTrue(store.hiddenNodes.isEmpty)
+            secrets.failDelete = false
+            try store.deleteNode(node, removeEndpoint: true)
+            XCTAssertTrue(store.nodes.isEmpty); XCTAssertTrue(store.endpoints.isEmpty)
+            XCTAssertNil(store.statuses[endpoint.id]); XCTAssertNil(secrets.values[endpoint.id])
+            XCTAssertTrue(MonitorStore(defaults: defaults, secrets: secrets).endpoints.isEmpty)
+        }
+    }
+
+    @MainActor func testRelayHideIsolationAndEndpointCleanup() throws {
+        let suite = "RelayHide-\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let secrets = MemorySecrets(), store = MonitorStore(defaults: defaults, secrets: secrets)
+        let relay = Endpoint(name: "中继", kind: .groupTCP(host: "localhost", port: 1))
+        let direct = Endpoint(name: "直连", kind: .direct(host: "localhost", port: 2))
+        try store.save(relay, secret: "token", groupSecret: "group")
+        try store.save(direct, secret: "direct")
+        var snapshot = NodeSnapshot(); snapshot.id = "same-id"
+        store.apply(relay, result: .success([snapshot]), latency: 1)
+        store.apply(direct, result: .success([snapshot]), latency: 1)
+        XCTAssertNil(store.removableEndpoint(for: store.nodes[0]))
+        try store.deleteNode(store.nodes[0])
+        store.apply(relay, result: .success([snapshot]), latency: 1)
+        XCTAssertEqual(store.nodes.map(\.endpointID), [direct.id])
+        XCTAssertEqual(try store.groupSecret(for: relay), "group")
+        try store.delete(relay)
+        XCTAssertTrue(store.hiddenNodes.isEmpty)
+        XCTAssertNil(secrets.values[relay.id]); XCTAssertNil(secrets.groups[relay.id])
+        XCTAssertEqual(store.endpoints, [direct])
+    }
+
+    func testConnectionLabelNeverRoutesDirectNodesThroughThemselves() {
+        var snapshot = NodeSnapshot(); snapshot.name = "主机"
+        var node = NodeItem(key: "node", endpointID: UUID(), endpointName: "主机", snapshot: snapshot, online: true)
+        XCTAssertEqual(node.connectionLabel, "直连")
+        node.endpointName = "自定义别名"
+        XCTAssertEqual(node.connectionLabel, "直连")
+        node.snapshot.relay = true
+        XCTAssertEqual(node.connectionLabel, "经由 自定义别名")
+        node.snapshot.relay = false; node.endToEnd = true
+        XCTAssertEqual(node.connectionLabel, "经由 自定义别名")
+        node.endpointName = "主机"
+        XCTAssertEqual(node.connectionLabel, "中继")
+        node.endpointName = ""
+        XCTAssertEqual(node.connectionLabel, "中继")
+    }
+
     func testCompactRateFormatting() {
         XCTAssertEqual(PulseFormat.compactRate(0), "0B/s")
         XCTAssertEqual(PulseFormat.compactRate(1536), "1.5K/s")
@@ -145,6 +237,7 @@ final class NodePulseTests: XCTestCase {
 }
 
 private final class MemorySecrets: SecretStorage {
+    var failDelete = false
     var values: [UUID: String] = [:]
     var groups: [UUID: String] = [:]
     func set(_ secret: String, for id: UUID) { values[id] = secret }
@@ -152,7 +245,10 @@ private final class MemorySecrets: SecretStorage {
         guard let value = values[id] else { throw ProbeError.missingSecret }
         return value
     }
-    func delete(_ id: UUID) { values[id] = nil }
+    func delete(_ id: UUID) throws {
+        if failDelete { throw ProbeError.keychain(-1) }
+        values[id] = nil
+    }
     func setGroup(_ secret: String, for id: UUID) { groups[id] = secret }
     func getGroup(_ id: UUID) throws -> String {
         guard let value = groups[id] else { throw ProbeError.missingSecret }

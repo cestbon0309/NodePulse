@@ -82,12 +82,43 @@ def isolated_tools(exclude=()):
     return path
 
 
-def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_env=False):
+def interactive_pair(root, expected, answer="", ok=True):
+    command = "cat " + shlex.quote(str(ROOT / "install.sh")) + " | " + shlex.join([*SHELL, "-s", "--", "pair"])
+    argv = (["script", "-q", "/dev/null", "/bin/sh", "-c", command] if sys.platform == "darwin" else
+            ["script", "-q", "-e", "-c", command, "/dev/null"])
+    env = {k: v for k, v in os.environ.items() if not k.startswith("NPULSE_")}
+    env.update(DESTDIR=str(root), DRY_RUN="1")
+    proc = subprocess.Popen(argv, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, start_new_session=True)
+    transcript, deadline, sent = b"", time.monotonic() + 15, False
+    prompt = f"公网 IP（留空确认 {expected}，或输入其他公网 IP）：".encode()
+    try:
+        while time.monotonic() < deadline:
+            if select.select([proc.stdout], [], [], 0.2)[0]:
+                chunk = os.read(proc.stdout.fileno(), 65536)
+                if not chunk: break
+                transcript += chunk
+            elif proc.poll() is not None: break
+            if not sent and prompt in transcript:
+                proc.stdin.write((answer + "\n").encode()); proc.stdin.flush(); sent = True
+        assert sent, transcript.decode(errors="replace")
+        proc.wait(timeout=5)
+        assert (proc.returncode == 0) == ok, transcript.decode(errors="replace")
+        return transcript.decode(errors="replace")
+    finally:
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGTERM); proc.wait(timeout=5)
+        proc.stdin.close(); proc.stdout.close()
+
+
+def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_env=False,
+                mode=1, arch="x86_64", init="systemd", flavor=None, flavor_flag=None, flavor_answer="", public_answer="y"):
     tools = root / "tools"; tools.mkdir()
     firewall = tools / "ufw"
     firewall.write_text('#!/bin/sh\n[ "$1" = status ] || exit 99\nprintf "Status: active\\n"\n')
     firewall.chmod(0o755)
     args = ["--admin-keys", preset_keys] if preset_keys and not keys_via_env else []
+    if flavor_flag: args += [flavor_flag]
     command = "cat " + shlex.quote(str(ROOT / "install.sh")) + " | " + shlex.join([*SHELL, "-s", "--", *args])
     if sys.platform == "darwin":
         argv = ["script", "-q", "/dev/null", "/bin/sh", "-c", command]
@@ -95,11 +126,46 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
         argv = ["script", "-q", "-e", "-c", command, "/dev/null"]
     env = {k: v for k, v in os.environ.items() if not k.startswith("NPULSE_")}
     env.update(DESTDIR=str(root), DRY_RUN="1", NPULSE_INIT="systemd", NPULSE_ARCH="x86_64", NPULSE_MIRROR=BASE, NPULSE_INSECURE="1", NPULSE_BIND="0.0.0.0")
+    env.update(NPULSE_MODE=str(mode), NPULSE_ARCH=arch, NPULSE_INIT=init)
+    if mode == 1: env["NPULSE_PUBLIC_IP"] = "8.8.4.4"
+    if flavor: env["NPULSE_FLAVOR"] = flavor
     if keys_via_env: env["NPULSE_ADMIN_KEYS"] = preset_keys
     env["PATH"] = str(tools) + os.pathsep + env["PATH"]
-    prompts = ["模式 [默认", "TCP 监听端口", "节点名称", "输入不回显", "root 级控制权"]
+    prompts, responses = ["模式 [默认"], [""]
+    if mode in (2, 3, 4):
+        prompts += ["同时作为旧式中继"]
+        responses += [""]
+    if mode in (1, 5):
+        prompts += ["TCP 监听端口"]
+        responses += [""]
+    if mode == 1:
+        prompts += ["这台机器有公网 IP 吗"]
+        responses += [public_answer]
+        if public_answer == "n":
+            prompts += ["切换到共享中继模式 4"]
+            responses += [""]
+            mode = 4
+        else:
+            prompts += ["公网 IP（留空确认"]
+            responses += [""]
+    if mode in (2, 5):
+        prompts += ["HTTP 回环端口" if mode == 2 else "开启 HTTP /api/relay"]
+        responses += [""]
+    if mode in (3, 4):
+        prompts += ["上游地址"]
+        responses += ["relay.example:9010"]
+    if mode != 5:
+        prompts += ["节点名称"]
+        responses += [""]
     secret = "interactive-secret-MUST-NOT-ECHO"
-    responses = ["", "", "", secret, "yes" if admin_source is not None and not preset_keys else ""]
+    prompts += ["输入不回显"]
+    responses += [secret]
+    if mode == 4:
+        prompts += ["组密钥（仅可信组成员持有）"]
+        responses += ["interactive-group-secret"]
+    if mode != 5:
+        prompts += ["root 级控制权"]
+        responses += ["yes" if admin_source is not None and not preset_keys else ""]
     manual = admin_source == "2" or (admin_source == "" and bool(preset_keys))
     if admin_source is not None:
         prompts += ["管理公钥来源："]
@@ -107,11 +173,14 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
         if manual:
             prompts += ["粘贴 Ed25519 公钥"]
             responses += ["" if preset_keys else "A" * 64]
-    if admin_source is None or manual:
-        prompts += ["构建类型 full/lite"]
-        responses += [""]
-    prompts += ["是否现在执行", "现在与手机配对"]
-    responses += ["n", pair]
+    prompts += ["构建类型 full/lite"]
+    responses += [flavor_answer]
+    if mode == 1:
+        prompts += ["是否现在执行"]
+        responses += ["n"]
+    if mode in (1, 4):
+        prompts += ["现在与手机配对"]
+        responses += [pair]
     proc = subprocess.Popen(argv, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, start_new_session=True)
     transcript, step, deadline = b"", 0, time.monotonic() + 30
@@ -128,9 +197,13 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
                 break
         assert step == len(prompts), transcript.decode(errors="replace")
         assert proc.wait(timeout=3) == 0, transcript.decode(errors="replace")
-        assert b"ufw allow 9000/tcp" in transcript
-        assert config(root)["secret"] == secret
+        if mode == 1: assert b"ufw allow 9000/tcp" in transcript
+        assert config(root)["secret" if mode in (1, 2, 3) else "token"] == secret
         assert transcript.count(secret.encode()) == 1, "secret echoed outside final summary"
+        expected_flavor = flavor_answer or (flavor_flag or "").removeprefix("--") or flavor or "full"
+        assert f"flavor={expected_flavor}\n" in (root / "etc/npulse/install.state").read_text()
+        assert f"[默认 {(flavor_flag or '').removeprefix('--') or flavor or 'full'}]".encode() in transcript
+        assert "175–270 KB".encode() in transcript and "120–195 KB".encode() in transcript
         if admin_source is not None:
             unit = (root / "etc/systemd/system/npulse.service").read_text()
             if preset_keys: assert "[默认 2]".encode() in transcript
@@ -214,10 +287,32 @@ try:
     for arch in ARCHES:
         root = new_root()
         run(root, "--yes", NPULSE_ARCH=arch)
-        suffix = "-lite" if arch in ("mips", "mipsel") else ""
-        assert (root / "usr/local/bin/npulse").read_bytes() == (MIRROR / f"npulse-linux-{arch}{suffix}").read_bytes()
+        assert (root / "usr/local/bin/npulse").read_bytes() == (MIRROR / f"npulse-linux-{arch}").read_bytes()
         run(root, "uninstall", "--yes", "--purge")
-    print("PASS seven stable architecture names; MIPS defaults lite; full/lite release assets selected correctly")
+    print("PASS all seven architectures default full, including MIPS/MIPSEL")
+
+    for mode in range(1, 6):
+        for arch, init in (("x86_64", "systemd"), ("mips", "procd"), ("mipsel", "procd")):
+            root = new_root()
+            interactive(root, mode=mode, arch=arch, init=init)
+            run(root, "uninstall", "--yes", "--purge")
+            root = new_root()
+            run(root, "--yes", "--mode", str(mode), "--upstream", "relay.example:9010", NPULSE_ARCH=arch, NPULSE_INIT=init)
+            assert "flavor=full\n" in (root / "etc/npulse/install.state").read_text()
+            run(root, "uninstall", "--yes", "--purge")
+    for settings in ({"flavor_answer": "lite"}, {"flavor": "lite"}, {"flavor_flag": "--lite"},
+                     {"flavor": "lite", "flavor_flag": "--full"}, {"flavor": "full"}):
+        root = new_root()
+        interactive(root, **settings)
+        run(root, "uninstall", "--yes", "--purge")
+    for args, settings, expected in (([], {"NPULSE_FLAVOR": "lite"}, "lite"),
+                                     (["--full"], {"NPULSE_FLAVOR": "lite"}, "full")):
+        root = new_root()
+        run(root, "--yes", *args, **settings)
+        assert f"flavor={expected}\n" in (root / "etc/npulse/install.state").read_text()
+        run(root, "uninstall", "--yes", "--purge")
+    run(new_root(), "--yes", "--admin-via-pair", "--lite", ok=False)
+    print("PASS interactive Enter and unattended defaults full in all five modes on systemd and OpenWrt MIPS/MIPSEL; explicit menu/flag/env lite honored, --full overrides env, lite+pair-admin rejected")
 
     tools = isolated_tools()
     if shutil.which("curl"):
@@ -246,9 +341,51 @@ try:
     (tools / "df").chmod(0o755)
     root = new_root()
     run(root, "--yes", PATH=str(tools))
-    assert "flavor=lite\n" in (root / "etc/npulse/install.state").read_text()
+    assert "flavor=full\n" in (root / "etc/npulse/install.state").read_text()
     run(root, "uninstall", "--yes", "--purge")
-    print("PASS simulated low free space defaults lite on non-MIPS")
+    print("PASS simulated low free space still defaults full")
+
+    for address, bind in (("8.8.4.4", "0.0.0.0:9000"), ("2606:4700:4700::1111", "[::]:9000")):
+        root = new_root()
+        result = run(root, "--yes", "--public-ip", address)
+        assert config(root)["listen"] == bind
+        assert f"App 参考地址：{address}" in result.stdout
+        assert "gcloud compute firewall-rules create" in result.stdout
+        advertised = root / "etc/npulse/public-ip"
+        assert advertised.read_text().strip() == address and advertised.stat().st_mode & 0o777 == 0o600
+        run(root, "upgrade", "--yes")
+        assert advertised.read_text().strip() == address
+        run(root, "pair", "--yes")
+        run(root, "uninstall", "--yes", "--purge")
+        assert not advertised.exists()
+    root = new_root()
+    result = run(root, "--yes", "--bind", "127.0.0.1", NPULSE_PUBLIC_IP="8.8.4.4")
+    assert config(root)["listen"] == "127.0.0.1:9000" and "App 参考地址：8.8.4.4" in result.stdout
+    run(root, "uninstall", "--yes", "--purge")
+    run(new_root(), "--yes", "--public-ip", "10.0.0.1", ok=False)
+    print("PASS cloud external IPv4/IPv6: wildcard listener, public App address, cloud firewall note, private response rejected, --bind override, persisted pair host survives upgrade and is purged")
+    root = new_root()
+    run(root, "--yes", "--public-ip", "8.8.4.4")
+    original_config = (root / "etc/npulse/npulse.conf").read_bytes()
+    original_unit = (root / "etc/systemd/system/npulse.service").read_bytes()
+    advertised = root / "etc/npulse/public-ip"
+    changed = interactive_pair(root, "8.8.4.4", "9.9.9.9")
+    assert advertised.read_text() == "9.9.9.9\n" and advertised.stat().st_mode & 0o777 == 0o600
+    confirmed = interactive_pair(root, "9.9.9.9")
+    assert "App 参考地址：9.9.9.9" in changed and "App 参考地址：9.9.9.9" in confirmed
+    invalid = interactive_pair(root, "9.9.9.9", "10.0.0.1", ok=False)
+    assert "有效公网" in invalid and advertised.read_text() == "9.9.9.9\n"
+    assert (root / "etc/npulse/npulse.conf").read_bytes() == original_config
+    assert (root / "etc/systemd/system/npulse.service").read_bytes() == original_unit
+    assert "[DRY_RUN] systemd" not in changed + confirmed + invalid
+    run(root, "uninstall", "--yes", "--purge")
+    print("PASS pair public-IP change persists mode-0600 advertised config; next pair defaults to new IP; Enter retains it, invalid/private input leaves it unchanged, listener/service config untouched")
+    root = new_root()
+    interactive(root, public_answer="n")
+    assert "relay_upstream" in config(root) and "listen" not in config(root)
+    assert not (root / "etc/npulse/public-ip").exists()
+    run(root, "uninstall", "--yes", "--purge")
+    print("PASS interactive No public IP switches into complete shared-relay flow by default")
 
     (tools / "ip").write_text('#!/bin/sh\nprintf "inet 192.0.2.10/24 scope global fixture\\n"\n')
     (tools / "ip").chmod(0o755)
@@ -270,7 +407,9 @@ try:
     for mode in ("1", "4"):
         for options, settings in [(["--admin-via-pair"], {}), ([], {"NPULSE_ADMIN": "pair"})]:
             root = new_root()
-            result = run(root, "--yes", "--mode", mode, "--upstream", "relay.example:9010", "--lite", *options, **settings)
+            rejected = run(new_root(), "--yes", "--mode", mode, "--upstream", "relay.example:9010", "--lite", *options, ok=False, **settings)
+            assert "lite 不允许启用管理" in rejected.stderr
+            result = run(root, "--yes", "--mode", mode, "--upstream", "relay.example:9010", *options, **settings)
             assert "[DRY_RUN] 配对" in result.stdout and "sh install.sh pair" in result.stdout
             assert "admin_keys" not in config(root) and "DynamicUser=yes" in (root / "etc/systemd/system/npulse.service").read_text()
             assert "flavor=full" in (root / "etc/npulse/install.state").read_text()

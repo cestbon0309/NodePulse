@@ -128,6 +128,14 @@ try:
     print("PASS silent rejection: wrong key, altered tag, invalid sizes, stale timestamp, unknown op, malformed JSON, empty node, timeout, truncated frame and replay; escaped JSON keys/values accepted")
     status, body = http(web, "/api/nodes", secret)
     assert status == 200 and json.loads(body)["ok"]
+    with socket.create_connection(("127.0.0.1", web), timeout=2) as sock:
+        sock.sendall(("GET /api/nodes HTTP/1.0\r\nAuthorization: Bearer " + secret + "\r\n\r\n").encode())
+        response = b""
+        while chunk := sock.recv(65536):
+            response += chunk
+        headers, payload = response.split(b"\r\n\r\n", 1)
+        assert headers.startswith(b"HTTP/1.1 200") and json.loads(payload)["ok"]
+    print("PASS HTTP/1.0 authenticated request")
     for path, key in (("/api/nodes", None), ("/api/nodes", "wrong"), ("/", secret)):
         assert http(web, path, key) == (404, b"")
     query_port = port()

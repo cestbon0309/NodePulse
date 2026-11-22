@@ -262,7 +262,7 @@ static char *http_response(char *s) {
     char *space = strchr(s, ' ');
     if (space && !strncmp(s, "GET ", 4)) {
       char *end = strchr(space + 1, ' ');
-      if (end && !strcmp(end, " HTTP/1.1")) {
+      if (end && (!strcmp(end, " HTTP/1.1") || !strcmp(end, " HTTP/1.0"))) {
         *end = 0;
         char *q = strchr(space + 1, '?');
         if (q) {

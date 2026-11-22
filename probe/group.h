@@ -28,10 +28,10 @@ static void hex_encode(char *out, const uint8_t *in, size_t n) {
   out[n * 2] = 0;
 }
 static int hex_decode(uint8_t *out, const char *s, size_t n) {
-  if (!s || strlen(s) != n * 2 || strspn(s, "0123456789abcdef") != n * 2)
+  if (!s || strlen(s) != n * 2 || strspn(s, "0123456789abcdefABCDEF") != n * 2)
     return -1;
   for (size_t i = 0; i < n; i++) {
-    unsigned char a = (unsigned char)s[i * 2], b = (unsigned char)s[i * 2 + 1];
+    unsigned char a = (unsigned char)tolower((unsigned char)s[i * 2]), b = (unsigned char)tolower((unsigned char)s[i * 2 + 1]);
     out[i] = (uint8_t)((a <= '9' ? a - '0' : a - 'a' + 10) * 16 +
                       (b <= '9' ? b - '0' : b - 'a' + 10));
   }

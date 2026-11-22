@@ -192,14 +192,32 @@ firewall_plan() {
     elif [ "$INIT" = procd ] && command -v uci >/dev/null 2>&1; then FW=uci
     elif command -v nft >/dev/null 2>&1; then
         FW=nft
-        NFT_CHAIN=$(nft list ruleset 2>/dev/null | awk '$1=="table" {family=$2; table=$3} $1=="chain" {chain=$2} /type filter hook input/ {if(family ~ /^(inet|ip|ip6)$/ && table ~ /^[a-zA-Z0-9_-]+$/ && chain ~ /^[a-zA-Z0-9_-]+$/) {print family,table,chain; exit}}' || :)
+        NFT_CHAIN=$(nft list ruleset 2>/dev/null | awk -v bind="$BIND" '
+            BEGIN {
+                wildcard=(bind=="" || bind=="0.0.0.0" || bind=="::")
+                target=(index(bind, ":") ? "ip6" : "ip")
+            }
+            $1=="table" {family=$2; table=$3} $1=="chain" {chain=$2}
+            /^[[:space:]]*type[[:space:]]+[^[:space:]]+[[:space:]]+hook[[:space:]]+input[[:space:];]/ {
+                if(family ~ /^(inet|ip|ip6)$/ && (wildcard || family=="inet" || family==target) && table ~ /^[a-zA-Z0-9_-]+$/ && chain ~ /^[a-zA-Z0-9_-]+$/) {
+                    print family,table,chain
+                    found=1
+                }
+            }
+            END {if(!found) print "inet npulse input create"}' || :)
     elif command -v iptables >/dev/null 2>&1; then FW=iptables
     fi
     case "$FW" in
         ufw) printf 'ufw allow %s/tcp\n' "$PORT" ;;
         firewalld) printf 'firewall-cmd --permanent --add-port=%s/tcp && firewall-cmd --reload\n' "$PORT" ;;
-        nft) if [ -n "$NFT_CHAIN" ]; then printf 'nft insert rule %s tcp dport %s accept\n' "$NFT_CHAIN" "$PORT"
-             else printf 'nft add table inet npulse\nnft '\''add chain inet npulse input { type filter hook input priority 0; policy accept; }'\''\nnft add rule inet npulse input tcp dport %s accept\n' "$PORT"; fi ;;
+        nft) printf '%s\n' "$NFT_CHAIN" | while read -r family table chain create; do
+                 operation=insert
+                 if [ "$create" = create ]; then
+                     printf 'nft add table %s %s\nnft '\''add chain %s %s %s { type filter hook input priority 0; policy accept; }'\''\n' "$family" "$table" "$family" "$table" "$chain"
+                     operation=add
+                 fi
+                 printf 'nft %s rule %s %s %s tcp dport %s accept\n' "$operation" "$family" "$table" "$chain" "$PORT"
+             done ;;
         iptables) case "$BIND" in *:*) printf 'ip6tables -I INPUT -p tcp --dport %s -j ACCEPT\n' "$PORT" ;; *) printf 'iptables -I INPUT -p tcp --dport %s -j ACCEPT\n' "$PORT" ;; esac ;;
         uci) printf "rule=\$(uci add firewall rule)\nuci set \"firewall.\$rule.name=NodePulse\"\nuci set \"firewall.\$rule.src=wan\"\nuci set \"firewall.\$rule.proto=tcp\"\nuci set \"firewall.\$rule.dest_port=%s\"\nuci set \"firewall.\$rule.target=ACCEPT\"\nuci commit firewall\n/etc/init.d/firewall reload\n" "$PORT" ;;
         none) printf '未检测到防火墙管理工具；请手动允许 TCP %s。\n' "$PORT" ;;
@@ -214,10 +232,14 @@ open_firewall() {
     case "$FW" in
         ufw) ufw allow "$PORT/tcp" ;;
         firewalld) firewall-cmd --permanent --add-port="$PORT/tcp" && firewall-cmd --reload ;;
-        nft) if [ -n "$NFT_CHAIN" ]; then
-                 family=${NFT_CHAIN%% *}; rest=${NFT_CHAIN#* }; table=${rest%% *}; chain=${rest#* }
-                 nft insert rule "$family" "$table" "$chain" tcp dport "$PORT" accept
-             else nft add table inet npulse && nft 'add chain inet npulse input { type filter hook input priority 0; policy accept; }' && nft add rule inet npulse input tcp dport "$PORT" accept; fi ;;
+        nft) printf '%s\n' "$NFT_CHAIN" | while read -r family table chain create; do
+                 operation=insert
+                 if [ "$create" = create ]; then
+                     nft add table "$family" "$table" && nft "add chain $family $table $chain { type filter hook input priority 0; policy accept; }" || exit 1
+                     operation=add
+                 fi
+                 nft "$operation" rule "$family" "$table" "$chain" tcp dport "$PORT" accept || exit 1
+             done ;;
         iptables) case "$BIND" in *:*) ip6tables -I INPUT -p tcp --dport "$PORT" -j ACCEPT ;; *) iptables -I INPUT -p tcp --dport "$PORT" -j ACCEPT ;; esac ;;
         uci) rule=$(uci add firewall rule)
              uci set "firewall.$rule.name=NodePulse"; uci set "firewall.$rule.src=wan"; uci set "firewall.$rule.proto=tcp"

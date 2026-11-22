@@ -3,6 +3,11 @@
 #undef main
 #include <assert.h>
 int main(int argc, char **argv) {
+  uint8_t decoded[3];
+  assert(!hex_decode(decoded, "00aBcD", 3));
+  assert(decoded[0] == 0 && decoded[1] == 0xab && decoded[2] == 0xcd);
+  assert(hex_decode(decoded, NULL, 3) && hex_decode(decoded, "", 3));
+  assert(hex_decode(decoded, "00abc", 3) && hex_decode(decoded, "00abcz", 3));
   if (argc == 2 && !strcmp(argv[1], "--pair-timers")) {
     pipe_init(); int sockets[65][2]; double now = monotime();
     for (int i = 0; i < 65; i++) {

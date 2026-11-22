@@ -127,6 +127,22 @@ static int pair_receive(int fd, uint8_t frame[PAIR_FRAME + 21], Json *j, const u
   frame[4 + n] = 0;
   return parse(j, (char *)frame + 4);
 }
+static int pair_answer(int input, double deadline) {
+  char answer[64]; size_t used = 0;
+  int flags = fcntl(input, F_GETFL);
+  if (input < 0 || input >= FD_SETSIZE || flags < 0 || fcntl(input, F_SETFL, flags | O_NONBLOCK)) return 0;
+  while (running && monotime() < deadline && used + 1 < sizeof(answer)) {
+    fd_set reads; FD_ZERO(&reads); FD_SET(input, &reads); struct timeval wait = {0, 100000};
+    if (select(input + 1, &reads, NULL, NULL, &wait) <= 0) continue;
+    char c; ssize_t n = read(input, &c, 1);
+    if (n < 0 && (errno == EAGAIN || errno == EINTR)) continue;
+    if (n != 1) break;
+    if (c == '\n' || c == '\r') break;
+    answer[used++] = c;
+  }
+  if (fcntl(input, F_SETFL, flags)) return 0;
+  return used == 1 && (answer[0] == 'y' || answer[0] == 'Y') && monotime() < deadline && running;
+}
 static int pair_attempt(int fd, int input, FILE *tty, double deadline, const char *port, const uint8_t psk[16], int relay) {
   uint8_t frame[PAIR_FRAME + 21], commit[32], client[32], sk[32] = {0}, pub[32], shared[32] = {0}, k[64] = {0}, h[64], zero[32] = {0};
   uint64_t rx = 0, tx = 0;
@@ -167,31 +183,22 @@ static int pair_attempt(int fd, int input, FILE *tty, double deadline, const cha
   if (!eq(&j, field(&j, 0, "op"), "confirm")) goto done;
   char *admin = string(&j, field(&j, 0, "admin_pk")); uint8_t apk[32];
   if (admin && hex_decode(apk, admin, 32)) { free(admin); goto done; }
-  if (admin && ADMIN) { fprintf(tty, "\n警告：手机请求 root 级远程管理授权。仅在确认图案和数字一致后输入 y： "); fflush(tty); }
-  char answer[64]; size_t used = 0;
-  int flags = fcntl(input, F_GETFL);
-  if (input >= FD_SETSIZE || flags < 0 || fcntl(input, F_SETFL, flags | O_NONBLOCK)) { free(admin); goto done; }
-  while (running && monotime() < deadline && used + 1 < sizeof(answer)) {
-    fd_set reads; FD_ZERO(&reads); FD_SET(input, &reads); struct timeval wait = {0, 100000};
-    if (select(input + 1, &reads, NULL, NULL, &wait) <= 0) continue;
-    char c; ssize_t n = read(input, &c, 1);
-    if (n < 0 && (errno == EAGAIN || errno == EINTR)) continue;
-    if (n != 1) break;
-    if (c == '\n' || c == '\r') break;
-    answer[used++] = c;
-  }
-  if (fcntl(input, F_SETFL, flags)) used = 0;
-  answer[used] = 0;
-  if (used != 1 || (answer[0] != 'y' && answer[0] != 'Y') || monotime() >= deadline || !running) {
+  if (!pair_answer(input, deadline)) {
     pair_send(fd, "{\"ok\":false}", k + 32, &tx, deadline); free(admin); result = -2; goto done;
+  }
+  int authorized = 0;
+  if (admin && ADMIN) {
+    tcflush(input, TCIFLUSH);
+    fprintf(tty, "\n该手机请求管理权限（root 级控制），是否授权？[y/N] "); fflush(tty);
+    authorized = pair_answer(input, deadline);
   }
   b = buffer(); add(&b, relay ? "{\"ok\":true,\"mode\":\"relay\",\"group\":" : "{\"ok\":true,\"key\":"); quote(&b, relay ? group_secret : secret);
   add(&b, ",\"node\":"); quote(&b, node_id); add(&b, ",\"name\":"); quote(&b, display);
   if (!relay) add(&b, ",\"port\":%lu", strtoul(port, NULL, 10));
-  add(&b, ",\"admin\":%s}", ADMIN ? "true" : "false");
+  add(&b, ",\"admin\":%s}", authorized ? "true" : "false");
   bad = pair_send(fd, b.s, k + 32, &tx, deadline); crypto_wipe(b.s, b.n); free(b.s);
   if (!bad) {
-    if (admin && ADMIN) printf("admin_pk=%s\n", admin);
+    if (authorized) printf("admin_pk=%s\n", admin);
     fprintf(tty, "\n配对成功。\n"); result = 0;
   }
   free(admin);

@@ -50,17 +50,22 @@ at counter zero, increments only after a successful authenticated frame, never
 wraps, and retains the 4096-byte pairing body limit.
 
 The server prints art/code and prompts on `/dev/tty` (fallback stderr and stdin).
-Pending terminal input is flushed before each new SAS display. Client sends
+Pending terminal input is flushed before every SAS and admin prompt. Client sends
 `{"op":"confirm","name":"iPhone…","admin_pk":"HEX"}` (or null/omitted admin
 key), or `{"op":"reject"}`. Server approval requires a single `y` or `Y` plus
-Enter. A management request on full builds also displays a root-control warning.
+Enter. After receiving the client confirmation and approving SAS, a management
+request on full builds requires a separate fresh answer to
+「该手机请求管理权限（root 级控制），是否授权？[y/N]」. Buffered answers are
+discarded before this prompt; empty input or anything other than `y`/`Y` declines.
 Only after **both** approvals may the probe send
 `{"ok":true,"key":"SECRET","node":"ID","name":"NAME","port":9527,"admin":true}`.
-Otherwise it replies `{"ok":false}` and closes. `admin` is the build capability;
-lite always sends false and ignores the requested public key.
+Otherwise it replies `{"ok":false}` and closes. `admin` indicates actual local
+management authorization, not build capability. Declining management still pairs
+for monitoring with `admin:false` and prints no public key. Custom pairing-enabled
+lite builds always send false and ignore the requested public key.
 
 On success full builds print **only** `admin_pk=HEX` on stdout if a key was
-requested. This does not itself edit the probe's permanent allowlist. The
+requested and separately authorized. This does not itself edit the probe's permanent allowlist. The
 installer validates/appends that public key, updates service permissions to root
 only with this explicit consent, and starts/restarts the normal service. No
 permanent monitoring/group secret is printed by pairing mode. The installer retains manual-key fallback.

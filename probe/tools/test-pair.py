@@ -113,14 +113,14 @@ def main():
         s = Server(binary); client = c.PairClient("127.0.0.1", s.port)
         capture = s.until("是否一致")
         assert client.art in capture and client.code in capture
-        client.send({"op": "confirm", "name": "Python", "admin_pk": "ab" * 32}, True)
+        client.send({"op": "confirm", "name": "Python", "admin_pk": "AB" * 32}, True)
         supported = b"Admin (disabled by default)" in subprocess.check_output([binary, "-h"])
         s.answer("y")
         if supported:
             s.until("是否授权"); s.answer("y")
         result = client.receive(True); client.close(); s.wait(0)
         assert result["admin"] is supported
-        assert s.stdout == ("admin_pk=" + "ab" * 32 + "\n" if supported else "")
+        assert s.stdout == ("admin_pk=" + "AB" * 32 + "\n" if supported else "")
         assert result["ok"] and result["key"] == "paired-test-key" and result["name"] == "配对测试" and len(result["node"]) == 64
         assert result["port"] == s.port
         if supported:

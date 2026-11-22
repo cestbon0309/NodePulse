@@ -247,7 +247,7 @@ def main():
         try:
             print(client.art + "\n" + client.code, file=sys.stderr, flush=True)
             accepted = input("服务器上的图案和数字是否一致？[y/N] ").strip().lower() == "y"
-            result = client.confirm(accepted, admin_pk=args.admin_pk)
+            result = client.confirm(accepted, admin_pk=args.admin_pk.lower() if args.admin_pk else None)
             print(json.dumps(result, ensure_ascii=False, indent=2))
             if not result.get("ok"):
                 raise SystemExit(1)

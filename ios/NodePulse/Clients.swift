@@ -5,13 +5,19 @@ struct DirectClient {
     func fetch(_ endpoint: Endpoint, secret: String) async throws -> [NodeSnapshot] {
         guard case let .direct(host, port) = endpoint.kind, port > 0,
               let nwPort = NWEndpoint.Port(rawValue: port) else { throw ProbeError.refused }
-        let request = try JSONSerialization.data(withJSONObject: ["op": "get", "ts": Int(Date().timeIntervalSince1970)])
+        let rid = (0..<16).map { _ in String(format: "%02x", UInt8.random(in: .min ... .max)) }.joined()
+        let request = try JSONSerialization.data(withJSONObject: ["op": "get", "ts": Int(Date().timeIntervalSince1970), "rid": rid])
         let crypto = ProbeCrypto(secret: secret)
         let operation = DirectOperation(host: host, port: nwPort, frame: try crypto.seal(json: request))
         let response = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { operation.start($0) }
         } onCancel: { operation.cancel() }
-        return try ProbeResponse.decode(crypto.open(frame: response))
+        return try Self.decodeResponse(crypto.open(frame: response), requestID: rid)
+    }
+    static func decodeResponse(_ data: Data, requestID: String) throws -> [NodeSnapshot] {
+        guard let response = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              response["rid"] as? String == requestID else { throw ProbeError.transport("响应校验失败") }
+        return try ProbeResponse.decode(data)
     }
 }
 

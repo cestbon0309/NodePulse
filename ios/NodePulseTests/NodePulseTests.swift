@@ -2,6 +2,18 @@ import XCTest
 @testable import NodePulse
 
 final class NodePulseTests: XCTestCase {
+    func testResponseBinding() throws {
+        let rid = "0123456789abcdef0123456789abcdef"
+        let crypto = ProbeCrypto(secret: "replay-test")
+        let captured = try crypto.seal(json: Data("{\"ok\":true,\"rid\":\"\(rid)\",\"nodes\":[]}".utf8))
+        let plaintext = try crypto.open(frame: captured)
+        XCTAssertEqual(try DirectClient.decodeResponse(plaintext, requestID: rid), [])
+        XCTAssertThrowsError(try DirectClient.decodeResponse(plaintext, requestID: String(repeating: "0", count: 32))) {
+            XCTAssertEqual($0.localizedDescription, "响应校验失败")
+        }
+        XCTAssertThrowsError(try DirectClient.decodeResponse(Data(#"{"ok":true,"nodes":[]}"#.utf8), requestID: rid))
+        XCTAssertThrowsError(try DirectClient.decodeResponse(Data(), requestID: rid))
+    }
     func testCryptoRoundTrip() throws {
         let crypto = ProbeCrypto(secret: "秘密")
         let json = Data(#"{"op":"get","ts":1700000000}"#.utf8)

@@ -31,6 +31,9 @@ def exact(sock, size):
 
 
 def exchange(host, port, secret, obj):
+    rid = os.urandom(16).hex() if obj.get("op") == "get" else None
+    if rid is not None:
+        obj = dict(obj, rid=rid)
     with socket.create_connection((host, port), timeout=6) as sock:
         sock.sendall(encode(secret, obj))
         length = exact(sock, 4)
@@ -39,7 +42,14 @@ def exchange(host, port, secret, obj):
             raise ValueError("invalid response length")
         nonce = exact(sock, 12)
         cipher = ChaCha20Poly1305(hashlib.sha512(secret.encode()).digest()[:32])
-        return json.loads(cipher.decrypt(nonce, exact(sock, size + 16), length))
+        response = json.loads(cipher.decrypt(nonce, exact(sock, size + 16), length))
+        validate_response(response, rid)
+        return response
+
+
+def validate_response(response, rid):
+    if rid is not None and response.get("rid") != rid:
+        raise ValueError("响应校验失败")
 
 
 def main():

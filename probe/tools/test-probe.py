@@ -80,6 +80,14 @@ def http(p, path, key=None):
 
 
 try:
+    rid = "0123456789abcdef" * 2
+    client.validate_response({"rid": rid}, rid)
+    for captured in ({}, {"rid": "0" * 32}):
+        try:
+            client.validate_response(captured, rid)
+            raise AssertionError("replayed/missing response ID accepted")
+        except ValueError as error:
+            assert str(error) == "响应校验失败"
     direct, web = port(), port()
     start("-k", secret, "-l", f"127.0.0.1:{direct}", "-H", str(web), "-n", 'self"\\\n雪')
     obj = wait_for(lambda: get(direct))
@@ -92,6 +100,9 @@ try:
         from linux_metrics import check
         check(node)
     print("PASS direct get: complete snapshot schema, JSON escaping and CryptoKit-compatible IETF AEAD")
+    assert len(obj["rid"]) == 32
+    assert get(direct)["rid"] != obj["rid"]
+    print("PASS response binding: fresh request IDs echoed; missing/mismatched IDs rejected")
     request = {"op": "get", "ts": int(time.time())}
     silent(direct, client.encode("wrong", request))
     broken = bytearray(client.encode(secret, request)); broken[-1] ^= 1

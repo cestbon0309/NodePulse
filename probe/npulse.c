@@ -123,9 +123,15 @@ static uint8_t *frame(const char *s, size_t *size) {
   *size = n + 32;
   return p;
 }
-static char *nodes_json(void) {
+static char *nodes_json(const char *rid) {
   Buffer b = buffer();
-  add(&b, "{\"ok\":true,\"nodes\":[");
+  add(&b, "{\"ok\":true,");
+  if (rid) {
+    add(&b, "\"rid\":");
+    quote(&b, rid);
+    add(&b, ",");
+  }
+  add(&b, "\"nodes\":[");
   int comma = 0;
   if (listen_addr) {
     char *s = snapshot(display);
@@ -188,8 +194,17 @@ static char *request(uint8_t *p, size_t total) {
   memcpy(nonces[nonce_pos], p + 4, 12);
   nonce_seen[nonce_pos] = now;
   nonce_pos = (nonce_pos + 1) % 256;
-  if (eq(&j, op, "get"))
-    response = nodes_json();
+  if (eq(&j, op, "get")) {
+    int token = field(&j, 0, "rid");
+    char *rid = token >= 0 ? string(&j, token) : NULL;
+    if (token >= 0 && (!rid || strlen(rid) != 32 ||
+        strspn(rid, "0123456789abcdefABCDEF") != 32)) {
+      free(rid);
+      goto done;
+    }
+    response = nodes_json(rid);
+    free(rid);
+  }
   else if (eq(&j, op, "push")) {
     int obj = field(&j, 0, "node"), id = field(&j, obj, "id");
     if (id < 0 || j.t[id].type != '"' || j.t[id].end - j.t[id].start < 3 ||
@@ -276,7 +291,7 @@ static char *http_response(char *s) {
   }
   Buffer b = buffer();
   if (route && auth) {
-    char *json = nodes_json();
+    char *json = nodes_json(NULL);
     add(&b,
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
         "%zu\r\nConnection: close\r\n\r\n%s",

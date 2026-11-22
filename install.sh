@@ -212,7 +212,11 @@ download() {
     if command -v curl >/dev/null 2>&1; then
         curl -fLsS --connect-timeout 15 --max-time 180 "$1" -o "$2" 2>/dev/null || fail '下载失败，请检查版本、网络或镜像'
     elif command -v wget >/dev/null 2>&1; then
-        wget -q -T 180 -O "$2" "$1" 2>/dev/null || fail '下载失败，请检查版本、网络或镜像'
+        if wget --help 2>&1 | grep -e '-T' -e '--timeout' >/dev/null; then
+            wget -q -T 180 -O "$2" "$1" 2>/dev/null || fail '下载失败，请检查版本、网络或镜像'
+        else
+            wget -q -O "$2" "$1" 2>/dev/null || fail '下载失败，请检查版本、网络或镜像'
+        fi
     else fail '需要 curl 或 wget'; fi
 }
 fetch_binary() {

@@ -241,6 +241,13 @@ try:
         assert config(root)["listen"] == "0.0.0.0:9000"
         run(root, "uninstall", "--yes", "--purge")
         print("PASS wget-only PATH downloads and verifies real assets (curl absent)")
+        (tools / "wget").unlink()
+        (tools / "wget").write_text('#!/bin/sh\nif [ "$1" = --help ]; then echo "wget -q -O FILE URL"; exit 0; fi\nfor arg do [ "$arg" != -T ] || exit 99; done\nexec ' + shlex.quote(shutil.which("wget")) + ' "$@"\n')
+        (tools / "wget").chmod(0o755)
+        root = new_root()
+        run(root, "--yes", PATH=str(tools))
+        run(root, "uninstall", "--yes", "--purge")
+        print("PASS minimal wget without -T support")
     if shutil.which("shasum"):
         tools = isolated_tools(exclude=("sha256sum",))
         # Preserve a real downloader even when wget is unavailable on a test host.

@@ -39,7 +39,7 @@ jobs:
           NPULSE_ASSERT_LINUX: '1'
         run: python probe/tools/test-probe.py probe/dist/npulse-linux-x86_64
       - name: Install QEMU user emulation
-        run: sudo apt-get update && sudo apt-get install -y qemu-user-static shellcheck busybox
+        run: sudo apt-get update && sudo apt-get install -y qemu-user shellcheck busybox
       - name: POSIX and BusyBox installer lifecycle
         run: |
           shellcheck -s sh install.sh
@@ -50,7 +50,7 @@ jobs:
           for pair in aarch64:aarch64 armv7:arm armv7-soft:arm mips:mips mipsel:mipsel; do
             arch=${pair%%:*}
             emulator=${pair#*:}
-            python probe/tools/linux_metrics.py "qemu-${emulator}-static" "probe/dist/npulse-linux-${arch}"
+            python probe/tools/linux_metrics.py "qemu-${emulator}" "probe/dist/npulse-linux-${arch}"
           done
       - uses: actions/upload-artifact@v4
         with:

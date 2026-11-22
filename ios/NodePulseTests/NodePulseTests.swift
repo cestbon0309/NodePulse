@@ -10,7 +10,7 @@ final class NodePulseTests: XCTestCase {
             (.direct(host: "localhost", port: 9000), true),
             (.https(urlString: "https://example.com"), false),
             (.groupTCP(host: "localhost", port: 9001), true),
-            (.groupHTTPS(urlString: "https://example.com"), true)
+            (.groupHTTPS(urlString: "https://example.com"), false)
         ]
         for (kind, encrypted) in transports {
             let endpoint = Endpoint(name: "入口", kind: kind)

@@ -201,8 +201,8 @@ final class MonitorStore {
                 item.probeInterval = cadence
                 item.endToEnd = endpoint.kind.isGroup
                 switch endpoint.kind {
-                case .https: item.usesEndToEndEncryption = false
-                case .direct, .groupTCP, .groupHTTPS: item.usesEndToEndEncryption = true
+                case .https, .groupHTTPS: item.usesEndToEndEncryption = false
+                case .direct, .groupTCP: item.usesEndToEndEncryption = true
                 }
                 item.history.append(HistorySample(date: now, cpu: snapshot.cpuUsage, memPercent: snapshot.memPercent,
                                                   rxRate: snapshot.netRxRate, txRate: snapshot.netTxRate))

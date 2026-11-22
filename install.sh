@@ -60,7 +60,7 @@ PUBLIC_IP=${NPULSE_PUBLIC_IP:-}
 OPEN_FIREWALL=${NPULSE_OPEN_FIREWALL:-no}
 HTTP_PORT=${NPULSE_HTTP_PORT:-}
 UPSTREAM=${NPULSE_UPSTREAM:-}
-NAME=${NPULSE_NAME:-$(uname -n)}
+NAME=${NPULSE_NAME:-}
 ADMIN_KEYS=${NPULSE_ADMIN_KEYS:-}
 ADMIN=${NPULSE_ADMIN:-no}
 ADMIN_VIA_PAIR=no
@@ -105,6 +105,10 @@ case "$ADMIN" in yes|no) ;; pair) ADMIN=yes; ADMIN_VIA_PAIR=yes ;; *) fail 'NPUL
 if [ "$ADMIN_VIA_PAIR" = yes ] && [ -n "$ADMIN_KEYS" ]; then fail '手机配对授权不能同时指定 --admin-keys / NPULSE_ADMIN_KEYS'; fi
 for setting in "$PURGE" "$ALSO_RELAY" "$OPEN_FIREWALL"; do case "$setting" in yes|no) ;; *) fail '开关须为 yes 或 no' ;; esac; done
 case "$YES:$DRY_RUN" in 0:0|0:1|1:0|1:1) ;; *) fail 'NPULSE_YES 和 DRY_RUN 须为 0 或 1' ;; esac
+for utility in awk cat chmod cp dirname grep id mkdir mv rm tr uname wc; do
+    command -v "$utility" >/dev/null 2>&1 || fail "缺少必需命令 $utility；请安装对应工具或启用 BusyBox applet"
+done
+NAME=${NAME:-$(uname -n)}
 if [ "$DRY_RUN" = 1 ]; then
     case "$DESTDIR" in /*) ;; *) fail 'DRY_RUN 必须指定绝对 DESTDIR' ;; esac
     [ "$DESTDIR" != / ] || fail 'DESTDIR 不能为 /'
@@ -137,12 +141,19 @@ ask() {
     [ "$YES" = 0 ] || return 0
     [ -r /dev/tty ] && [ -w /dev/tty ] || fail '没有交互终端，请使用 --yes 与环境变量'
     if [ "${3:-}" = secret ]; then
-        stty -echo </dev/tty || fail '无法关闭终端回显'
-        ECHO_OFF=1
+        if command -v stty >/dev/null 2>&1 && stty -echo </dev/tty 2>/dev/null; then
+            ECHO_OFF=1
+        else
+            printf '警告：无法关闭终端回显，输入将会显示在屏幕上；请勿让旁人查看或录屏。\n' >/dev/tty
+        fi
     fi
     printf '%s ' "$1" >/dev/tty
     IFS= read -r response </dev/tty || fail '未读取到输入'
-    if [ "$ECHO_OFF" = 1 ]; then stty echo </dev/tty; ECHO_OFF=0; printf '\n' >/dev/tty; fi
+    if [ "$ECHO_OFF" = 1 ]; then
+        if stty echo </dev/tty 2>/dev/null; then ECHO_OFF=0
+        else printf '警告：无法恢复终端回显，请运行 stty echo。\n' >/dev/tty; fi
+        printf '\n' >/dev/tty
+    fi
     if [ -n "$response" ]; then ANSWER=$response; fi
 }
 safe_value() {
@@ -203,13 +214,16 @@ discover_public_ip() {
             family=-4; if [ "$url" = https://api6.ipify.org ]; then family=-6; fi
             found=$(curl "$family" -fsS --connect-timeout 2 --max-time 4 --max-filesize 128 "$url" 2>/dev/null) || found=
         elif command -v wget >/dev/null 2>&1; then
+            command -v dd >/dev/null 2>&1 || return 1
             wget_help=$(wget --help 2>&1 || :)
             printf '%s' "$wget_help" | grep -e '-T' -e '--timeout' >/dev/null || return 1
+            set --
+            case "$wget_help" in *--tries*|*'-t '*) set -- -t 1 ;; esac
             family=
             if printf '%s' "$wget_help" | grep -e '-4' >/dev/null; then
                 family=-4; if [ "$url" = https://api6.ipify.org ]; then family=-6; fi
             fi
-            found=$(wget ${family:+"$family"} -q -T 4 -t 1 -O - "$url" 2>/dev/null | head -c 129) || found=
+            found=$(wget ${family:+"$family"} -q -T 4 "$@" -O - "$url" 2>/dev/null | dd bs=1 count=129 2>/dev/null) || found=
         else return 1; fi
         if [ "$url" != https://api6.ipify.org ]; then case "$found" in *:*) continue ;; esac; fi
         if valid_public_ip "$found"; then printf '%s' "$found"; return 0; fi
@@ -334,7 +348,15 @@ elf_byte() {
     fi
 }
 credentials() {
-    ask "$1（留空保留已有值或自动生成；输入不回显）：" "$2" secret
+    ANSWER=$2
+    if [ -z "$2" ] || [ "${3:-}" = edit ]; then
+        ask "$1：密钥来源 1) 保留已有值或自动生成 2) 手动输入 [默认 1]：" 1
+        case "$ANSWER" in
+            1) ANSWER=$2 ;;
+            2) ask "$1：手动输入（留空保留已有值或自动生成）：" "$2" secret ;;
+            *) fail '密钥来源须为 1 或 2' ;;
+        esac
+    fi
     if [ -z "$ANSWER" ]; then ANSWER=$(random); fi
     [ "${#ANSWER}" -eq 32 ] || [ -n "$2" ] || printf '%s\n' '提示：使用自定义密钥。' >&2
     safe_value "$ANSWER"
@@ -423,7 +445,10 @@ fetch_binary() {
     esac
     asset=npulse-linux-$ARCH
     if [ "${1:-$FLAVOR}" = lite ]; then asset=$asset-lite; fi
-    [ -n "$WORK" ] || WORK=$(mktemp -d "${TMPDIR:-/tmp}/npulse-install.XXXXXX") || fail '无法创建临时目录'
+    if [ -z "$WORK" ]; then
+        command -v mktemp >/dev/null 2>&1 || fail '需要 mktemp（BusyBox applet）以安全创建临时目录'
+        WORK=$(mktemp -d "${TMPDIR:-/tmp}/npulse-install.XXXXXX") || fail '无法创建临时目录，请检查 TMPDIR 和剩余空间'
+    fi
     download "$base/SHA256SUMS" "$WORK/SHA256SUMS"
     download "$base/$asset" "$WORK/binary"
     expected=$(awk -v name="$asset" '$2 == name || $2 == "*" name {print $1}' "$WORK/SHA256SUMS")
@@ -581,7 +606,10 @@ NGINX
 }
 
 pair_installed() {
-    [ -n "$WORK" ] || WORK=$(mktemp -d "${TMPDIR:-/tmp}/npulse-pair.XXXXXX")
+    if [ -z "$WORK" ]; then
+        command -v mktemp >/dev/null 2>&1 || fail '需要 mktemp（BusyBox applet）以安全创建临时目录'
+        WORK=$(mktemp -d "${TMPDIR:-/tmp}/npulse-pair.XXXXXX") || fail '无法创建临时目录，请检查 TMPDIR 和剩余空间'
+    fi
     if [ "$DRY_RUN" = 1 ]; then printf '[DRY_RUN] 配对：不执行下载的二进制。\n'; return; fi
     PAIR_STOPPED=1
     service stop
@@ -610,7 +638,7 @@ pair_installed() {
         case "$ANSWER" in y|Y|yes) ;; *) break ;; esac
         ask '中转地址 host:port（IPv6 用 [地址]:端口）：' "$UPSTREAM"; UPSTREAM=$ANSWER; safe_value "$UPSTREAM"
         case "$UPSTREAM" in *:*) port "${UPSTREAM##*:}" ;; *) fail '缺少中转 host:port' ;; esac
-        credentials '中转密码（访问令牌）' "$TOKEN"; TOKEN=$ANSWER
+        credentials '中转密码（访问令牌）' "$TOKEN" edit; TOKEN=$ANSWER
     done
     if [ "$paired" = yes ] && [ "$MODE" = 4 ] && { [ "$UPSTREAM" != "$pair_upstream" ] || [ "$TOKEN" != "$pair_token" ]; }; then
         awk '!/^(relay_upstream|token|group_secret)=/' "$CONFIG" > "$CONFIG.new"

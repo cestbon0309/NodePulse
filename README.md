@@ -54,6 +54,19 @@ GitHub API，也不需要 token。下载前请信任所执行的脚本；二进�
 纯共享中继可以额外开启回环 HTTP `/api/relay`。HTTP 模式打印域名/证书待替换的
 Nginx 示例，不自动安装 Nginx/certbot，不修改防火墙；摘要说明应开放的端口。
 上报到已有服务时，务必填写匹配的令牌/密钥；留空默认生成新的 32 字符随机值。
+密钥来源菜单回车选择保留已有值或安全生成，不需要关闭回显；选择 2 才手动输入。
+`NPULSE_SECRET` / `NPULSE_TOKEN` / `NPULSE_GROUP_SECRET` 已提供时直接使用，不再询问。
+手动输入优先通过 `stty` 隐藏；OpenWrt 缺少 `stty` 或关闭回显失败时会先警告
+「输入将会显示在屏幕上」，然后继续读取，请避开旁观和录屏。摘要仍会显示密钥。
+
+安装器需要 POSIX `awk`（不使用 GNU 扩展）及基础 BusyBox applet：
+`cat chmod cp dirname grep id mkdir mv rm tr uname wc`，缺少时会指出命令名。
+临时下载/配对必须有 `mktemp -d`，缺少或无法创建目录时安全退出，不使用可预测临时路径。
+安全随机数需要 `/dev/urandom` 与 `od` 或 `hexdump`；SHA256 校验依次使用
+`sha256sum`、`shasum -a 256`、`openssl dgst -sha256`，都没有时拒绝安装。
+下载使用 curl 或 wget，不依赖独立 `timeout` 命令；wget 不支持超时选项时仍可下载。
+wget 自动查询公网 IP 需要 `-T` 和 `dd`（限制响应长度，不依赖 `head -c`），
+不满足时改为手动输入公网 IP；网卡工具 `ip` / `ifconfig` 也只是可选提示。
 
 安装到 `/usr/local/bin/npulse`（OpenWrt 为 `/usr/bin/npulse`），配置位于
 `/etc/npulse/npulse.conf`，目录 0700、文件 0600。systemd 需 247+，使用

@@ -112,11 +112,16 @@ def interactive_pair(root, expected, answer="", ok=True):
 
 
 def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_env=False,
-                mode=1, arch="x86_64", init="systemd", flavor=None, flavor_flag=None, flavor_answer="", public_answer="y"):
+                mode=1, arch="x86_64", init="systemd", flavor=None, flavor_flag=None, flavor_answer="", public_answer="y",
+                tool_path=None, stty_mode="normal", secret_source="2", preset_secrets=None):
     tools = root / "tools"; tools.mkdir()
     firewall = tools / "ufw"
     firewall.write_text('#!/bin/sh\n[ "$1" = status ] || exit 99\nprintf "Status: active\\n"\n')
     firewall.chmod(0o755)
+    if stty_mode in ("fail", "trace"):
+        action = "exit 1" if stty_mode == "fail" else 'exec ' + shlex.quote(shutil.which("stty")) + ' "$@"'
+        (tools / "stty").write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> ' + shlex.quote(str(tools / "stty-log")) + '\n' + action + '\n')
+        (tools / "stty").chmod(0o755)
     args = ["--admin-keys", preset_keys] if preset_keys and not keys_via_env else []
     if flavor_flag: args += [flavor_flag]
     command = "cat " + shlex.quote(str(ROOT / "install.sh")) + " | " + shlex.join([*SHELL, "-s", "--", *args])
@@ -124,13 +129,15 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
         argv = ["script", "-q", "/dev/null", "/bin/sh", "-c", command]
     else:
         argv = ["script", "-q", "-e", "-c", command, "/dev/null"]
+    argv[0] = shutil.which("script")
     env = {k: v for k, v in os.environ.items() if not k.startswith("NPULSE_")}
     env.update(DESTDIR=str(root), DRY_RUN="1", NPULSE_INIT="systemd", NPULSE_ARCH="x86_64", NPULSE_MIRROR=BASE, NPULSE_INSECURE="1", NPULSE_BIND="0.0.0.0")
     env.update(NPULSE_MODE=str(mode), NPULSE_ARCH=arch, NPULSE_INIT=init)
     if mode == 1: env["NPULSE_PUBLIC_IP"] = "8.8.4.4"
     if flavor: env["NPULSE_FLAVOR"] = flavor
     if keys_via_env: env["NPULSE_ADMIN_KEYS"] = preset_keys
-    env["PATH"] = str(tools) + os.pathsep + env["PATH"]
+    env.update(preset_secrets or {})
+    env["PATH"] = str(tools) + os.pathsep + str(tool_path or env["PATH"])
     prompts, responses = ["模式 [默认"], [""]
     if mode in (2, 3, 4):
         prompts += ["同时作为旧式中继"]
@@ -158,11 +165,17 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
         prompts += ["节点名称"]
         responses += [""]
     secret = "interactive-secret-MUST-NOT-ECHO"
-    prompts += ["输入不回显"]
-    responses += [secret]
+    credentials = [("secret" if mode in (1, 2, 3) else "token",
+                    "NPULSE_SECRET" if mode in (1, 2, 3) else "NPULSE_TOKEN", secret)]
     if mode == 4:
-        prompts += ["组密钥（仅可信组成员持有）"]
-        responses += ["interactive-group-secret"]
+        credentials += [("group_secret", "NPULSE_GROUP_SECRET", "interactive-group-secret")]
+    for _, variable, value in credentials:
+        if variable not in (preset_secrets or {}):
+            prompts += ["密钥来源"]
+            responses += ["" if secret_source == "1" else secret_source]
+            if secret_source == "2":
+                prompts += ["手动输入（"]
+                responses += [value]
     if mode != 5:
         prompts += ["root 级控制权"]
         responses += ["yes" if admin_source is not None and not preset_keys else ""]
@@ -183,7 +196,7 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
         responses += [pair]
     proc = subprocess.Popen(argv, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, start_new_session=True)
-    transcript, step, deadline = b"", 0, time.monotonic() + 30
+    transcript, step, cursor, deadline = b"", 0, 0, time.monotonic() + 30
     try:
         while time.monotonic() < deadline:
             if select.select([proc.stdout], [], [], 0.2)[0]:
@@ -191,15 +204,25 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
                 if not chunk:
                     break
                 transcript += chunk
-                if step < len(prompts) and prompts[step].encode() in transcript:
+                if step < len(prompts) and prompts[step].encode() in transcript[cursor:]:
                     proc.stdin.write((responses[step] + "\n").encode()); proc.stdin.flush(); step += 1
+                    cursor = len(transcript)
             elif proc.poll() is not None:
                 break
         assert step == len(prompts), transcript.decode(errors="replace")
         assert proc.wait(timeout=3) == 0, transcript.decode(errors="replace")
         if mode == 1: assert b"ufw allow 9000/tcp" in transcript
-        assert config(root)["secret" if mode in (1, 2, 3) else "token"] == secret
-        assert transcript.count(secret.encode()) == 1, "secret echoed outside final summary"
+        saved = config(root)
+        for key, variable, value in credentials:
+            if variable in (preset_secrets or {}):
+                assert saved[key] == preset_secrets[variable]
+                assert transcript.count(saved[key].encode()) == 1
+            elif secret_source == "1":
+                assert len(saved[key]) == 32 and all(char in "0123456789abcdef" for char in saved[key])
+            else:
+                assert saved[key] == value
+                if stty_mode in ("normal", "trace"): assert transcript.count(value.encode()) == 1, "secret echoed outside final summary"
+                else: assert transcript.count(value.encode()) >= 2, "visible fallback was not exercised"
         expected_flavor = flavor_answer or (flavor_flag or "").removeprefix("--") or flavor or "full"
         assert f"flavor={expected_flavor}\n" in (root / "etc/npulse/install.state").read_text()
         assert f"[默认 {(flavor_flag or '').removeprefix('--') or flavor or 'full'}]".encode() in transcript
@@ -214,6 +237,7 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
                 assert "admin_keys" not in config(root) and "DynamicUser=yes" in unit and "User=root" not in unit
                 assert b"flavor=full" in (root / "etc/npulse/install.state").read_bytes()
                 assert "管理将保持关闭".encode() in transcript and b"sh install.sh pair" in transcript
+        return transcript.decode(errors="replace")
     finally:
         if proc.poll() is None:
             os.killpg(proc.pid, signal.SIGTERM); proc.wait(timeout=5)
@@ -260,6 +284,49 @@ try:
         run(root, "uninstall", "--yes")
         assert not binary.exists() and not unit_path.exists() and (root / "etc/npulse/npulse.conf").exists()
     print("PASS five modes + supported -l combinations: verified binaries, 0600 config, hardened DynamicUser units, nginx snippets, upgrade preserves config, status, uninstall keeps config")
+
+    tools = isolated_tools(exclude=("stty",))
+    if shutil.which("curl"): (tools / "curl").symlink_to(shutil.which("curl"))
+    root = new_root()
+    output = interactive(root, init="procd", arch="mipsel", tool_path=tools, stty_mode="missing")
+    assert "输入将会显示在屏幕上" in output
+    run(root, "uninstall", "--yes", "--purge")
+    root = new_root()
+    output = interactive(root, stty_mode="fail")
+    assert "输入将会显示在屏幕上" in output
+    assert (root / "tools/stty-log").read_text() == "-echo\n"
+    run(root, "uninstall", "--yes", "--purge")
+    if shutil.which("stty"):
+        root = new_root()
+        output = interactive(root, stty_mode="trace")
+        assert "输入将会显示在屏幕上" not in output
+        assert (root / "tools/stty-log").read_text() == "-echo\necho\n"
+        run(root, "uninstall", "--yes", "--purge")
+    for mode, preset in ((1, {}), (4, {}), (1, {"NPULSE_SECRET": "preset-secret"}),
+                         (4, {"NPULSE_TOKEN": "preset-token", "NPULSE_GROUP_SECRET": "preset-group"})):
+        root = new_root()
+        output = interactive(root, mode=mode, secret_source="1", preset_secrets=preset, stty_mode="fail")
+        assert not (root / "tools/stty-log").exists() and "输入将会显示在屏幕上" not in output
+        if preset: assert "密钥来源" not in output
+        run(root, "uninstall", "--yes", "--purge")
+    print("PASS OpenWrt MIPSEL PATH without stty and failed stty -echo: warning + visible custom input; no spurious echo restoration; successful hiding restores once; Enter-generated and env secret/token/group never invoke stty")
+
+    excluded = ("stty",) + (("od",) if shutil.which("hexdump") else ()) + (("sha256sum",) if shutil.which("shasum") else ())
+    tools = isolated_tools(exclude=excluded)
+    if shutil.which("curl"): (tools / "curl").symlink_to(shutil.which("curl"))
+    root = new_root()
+    run(root, "--yes", PATH=str(tools), NPULSE_INIT="procd", NPULSE_ARCH="mips")
+    assert len(config(root)["secret"]) == 32 and (root / "etc/init.d/npulse").exists()
+    run(root, "uninstall", "--yes", "--purge", PATH=str(tools))
+    for excluded, message in ((("awk",), "缺少必需命令 awk"), (("tr",), "缺少必需命令 tr"),
+                              (("mktemp",), "需要 mktemp"), (("od", "hexdump"), "需要 od 或 hexdump"),
+                              (("sha256sum", "shasum"), "需要 sha256sum、shasum 或 openssl")):
+        tools = isolated_tools(exclude=excluded)
+        if shutil.which("curl"): (tools / "curl").symlink_to(shutil.which("curl"))
+        root = new_root()
+        result = run(root, "--yes", PATH=str(tools), ok=False)
+        assert message in result.stderr and not (root / "usr/local/bin/npulse").exists()
+    print("PASS minimal BusyBox-like PATH (no stty/head/timeout, available hex/hash fallbacks); missing awk/tr/mktemp/random/hash tools fail clearly without installing a binary")
 
     public = "ab" * 32
     root = new_root()

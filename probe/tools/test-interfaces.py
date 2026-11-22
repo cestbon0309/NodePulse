@@ -20,7 +20,7 @@ def function(name):
 
 with tempfile.TemporaryDirectory(prefix="npulse-interfaces-") as directory:
     tools = Path(directory)
-    for name in ("awk", "grep", "head"):
+    for name in ("awk", "grep", "dd"):
         (tools / name).symlink_to(shutil.which(name))
     def tool(name, body):
         path = tools / name
@@ -29,7 +29,8 @@ with tempfile.TemporaryDirectory(prefix="npulse-interfaces-") as directory:
     tool("ifconfig", 'printf "%s\\n" "$IFCONFIG"')
     fetch_log = tools / "fetch-log"
     fetch_body = '''
-if [ "$1" = --help ]; then echo 'wget -T timeout -O file'; exit 0; fi
+if [ "$1" = --help ]; then echo "${WGET_HELP:-wget -T timeout -O file}"; exit 0; fi
+case "$*" in *'-t '*) [ "${WGET_TRIES:-0}" = 1 ] || exit 99 ;; esac
 for url do :; done
 printf '%s\\n' "$*" >> "$FETCH_LOG"
 case "$FETCH_MODE:$url" in
@@ -90,6 +91,14 @@ esac
         assert run(one, "y\n9.9.9.9", selected).stdout.endswith("0.0.0.0:9527")
         assert run(expression='YES=1; PUBLIC_IP=auto; select_bind; printf "%s" "$PUBLIC_IP"').stdout == "8.8.4.4"
         run(choice="y\n192.168.1.1", expression=selected, ok=False)
+    run(expression='YES=1; PUBLIC_IP=auto; select_bind', WGET_HELP="wget -T timeout --tries=NUMBER -O file", WGET_TRIES="1")
+    assert "-t 1" in fetch_log.read_text()
+    (tools / "dd").unlink()
+    result = run(choice="y\n9.9.9.9", expression=selected)
+    assert result.stdout.endswith("0.0.0.0:9527") and "查询失败" in result.stdout
+    run(expression='YES=1; PUBLIC_IP=auto; select_bind', ok=False)
+    (tools / "dd").symlink_to(shutil.which("dd"))
+    print("PASS wget discovery without head/timeout: BusyBox help omits unsupported retry flag; GNU help gets one try; missing dd falls back to manual or fails clearly unattended")
     for address in excluded + ["999.1.1.1", "8.8.8", "08.8.8.8", "1.1.1.1 extra", "<html>", "3::1", "2606:::1", "2606:1:2:3:4:5:6:7:8", "2606:gg::1", "2001:db8::1"]:
         run(expression='valid_public_ip "$CHECK_IP"', CHECK_IP=address, ok=False)
     for address in ("8.8.8.8", "2606:4700:4700::1111", "2606:4700:4700:0:0:0:0:1111"):

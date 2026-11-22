@@ -24,12 +24,27 @@ jobs:
       - run: python -m pip install cryptography
       - name: Cross-build static musl binaries
         run: probe/build.sh
+      - name: Assemble stable release assets and SHA256 checksums
+        run: |
+          cp install.sh probe/dist/install.sh
+          cd probe/dist
+          for arch in x86_64 i386 aarch64 armv7 armv7-soft mips mipsel; do
+            test -s "npulse-linux-$arch"
+            test -s "npulse-linux-$arch-lite"
+          done
+          sha256sum npulse-linux-* install.sh > SHA256SUMS
+          sha256sum -c SHA256SUMS
       - name: Native Linux integration and real proc metrics
         env:
           NPULSE_ASSERT_LINUX: '1'
         run: python probe/tools/test-probe.py probe/dist/npulse-linux-x86_64
       - name: Install QEMU user emulation
-        run: sudo apt-get update && sudo apt-get install -y qemu-user-static
+        run: sudo apt-get update && sudo apt-get install -y qemu-user-static shellcheck busybox
+      - name: POSIX and BusyBox installer lifecycle
+        run: |
+          shellcheck -s sh install.sh
+          python probe/tools/test-installer.py /bin/dash
+          python probe/tools/test-installer.py busybox sh
       - name: QEMU encrypted get and real proc metrics
         run: |
           for pair in aarch64:aarch64 armv7:arm armv7-soft:arm mips:mips mipsel:mipsel; do
@@ -40,7 +55,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: npulse-linux
-          path: probe/dist/npulse-linux-*
+          path: |
+            probe/dist/npulse-linux-*
+            probe/dist/SHA256SUMS
+            probe/dist/install.sh
           if-no-files-found: error
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -62,4 +80,4 @@ jobs:
           if ! gh release view "$TAG"; then
             gh release create "$TAG" --verify-tag --generate-notes
           fi
-          gh release upload "$TAG" dist/npulse-linux-* --clobber
+          gh release upload "$TAG" dist/npulse-linux-* dist/SHA256SUMS dist/install.sh --clobber

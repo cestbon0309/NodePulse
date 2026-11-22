@@ -1,5 +1,66 @@
 # NodePulse
 
+## 一键安装
+
+在 **root shell** 中执行（普通用户先 `sudo -i`；OpenWrt 默认即 root）：
+
+```sh
+curl -fsSL https://github.com/cestbon0309/NodePulse/releases/latest/download/install.sh | sh
+# 没有 curl：
+wget -qO- https://github.com/cestbon0309/NodePulse/releases/latest/download/install.sh | sh
+# Release 下载不可用时可使用源码入口（仍从 Release 下载并校验二进制）：
+curl -fsSL https://raw.githubusercontent.com/cestbon0309/NodePulse/main/install.sh | sh
+```
+
+交互输入从 `/dev/tty` 读取，管道不会吞掉菜单输入。无终端时必须用 `--yes`。
+首个包含此安装器的 `v*` Release 发布后，上述 latest 安装器地址才可用；不通过
+GitHub API，也不需要 token。下载前请信任所执行的脚本；二进制安装前校验
+同一 Release 的 `SHA256SUMS`（包括 14 个 full/lite 二进制与 install.sh）。
+校验清单保证传输完整性，不代替发布者签名；自定义镜像能替换文件及清单，必须可信。
+
+菜单支持直连、HTTP+Nginx、旧式上报、端到端共享中继上报、纯共享中继。
+模式 2/3/4 可选择「同时作为旧式中继」以增加 `-l`；模式 1 本身即可接收旧式上报。
+纯共享中继可以额外开启回环 HTTP `/api/relay`。HTTP 模式打印域名/证书待替换的
+Nginx 示例，不自动安装 Nginx/certbot，不修改防火墙；摘要说明应开放的端口。
+上报到已有服务时，务必填写匹配的令牌/密钥；留空默认生成新的 32 字符随机值。
+
+安装到 `/usr/local/bin/npulse`（OpenWrt 为 `/usr/bin/npulse`），配置位于
+`/etc/npulse/npulse.conf`，目录 0700、文件 0600。systemd 需 247+，使用
+LoadCredential 将配置提供给 DynamicUser，默认硬化且 Restart=always；管理启用后
+必须使用 full，服务改为 root 并解除文件/能力限制，**授权设备拥有整机控制权**。
+OpenWrt procd 使用 respawn，以 root 运行。MIPS/MIPSEL 或目标磁盘空闲不足 16MiB
+时默认 lite；lite 也不能转发 C2 管理管道，纯中继若需远程管理请选 full。
+ARM 浮点 ABI 无法自动检测时会询问；无交互时须指定 `--arch` 或 NPULSE_ARM_FLOAT。
+
+非交互示例（仅在本机可信环境中设置真实密钥；摘要会显示密钥，不要公开日志）：
+
+```sh
+curl -fsSL https://github.com/cestbon0309/NodePulse/releases/latest/download/install.sh -o install.sh
+NPULSE_SECRET='替换为安全密钥' sh install.sh --yes --mode 1 --port 9000 --lite
+# 共享中继上报；管理密钥来自 App「设置 → 管理密钥」：
+NPULSE_TOKEN='与中继一致的令牌' NPULSE_GROUP_SECRET='本组共享密钥' \
+  sh install.sh --yes --mode 4 --upstream relay.example.com:9000 --full \
+  --admin-keys '替换为64位Ed25519公钥'
+# 新机器部署纯中继（没有组密钥）；可通过 Nginx 转发回环 HTTP：
+NPULSE_TOKEN='安全令牌' sh install.sh --yes --mode 5 --full --http-port 9001
+
+sh install.sh status
+sh install.sh upgrade --yes       # 保持配置、权限、full/lite 和架构，替换并重启
+NPULSE_VERSION=v1.0.0 sh install.sh upgrade --yes
+sh install.sh uninstall           # 删除配置前询问；--yes 默认仍保留配置
+sh install.sh uninstall --yes --purge
+sh install.sh --help              # 全部环境变量与选项
+```
+
+`NPULSE_VERSION=vX.Y.Z` 指定版本；`NPULSE_MIRROR=https://可信主机/目录` 覆盖整个资产
+下载目录，该目录直接包含稳定文件名及 SHA256SUMS，而不是 GitHub API 地址。
+卸载后保留的配置不被重新安装覆盖，请先备份，再明确删除后安装。
+测试可用已存在的绝对 `DESTDIR` 目录加 `DRY_RUN=1 NPULSE_INIT=systemd|procd`，
+不会运行 Linux 二进制或调用真实服务管理器，但仍实际下载、校验和生成文件。
+
+Tag `v*` 工作流会构建全部七架构的 full/lite，并附加稳定名称
+`npulse-linux-<arch>` / `npulse-linux-<arch>-lite`、`SHA256SUMS` 和 `install.sh`。
+
 ## 远程管理（C1 直连 / C2 共享中继实时管道）
 
 默认构建包含管理功能，但**默认关闭**。只有显式配置 `-A 公钥[,公钥...]`

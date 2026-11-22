@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""Offline installer lifecycle checks; uses actual built assets, never executes them."""
+import functools
+import hashlib
+import http.server
+import os
+from pathlib import Path
+import select
+import shlex
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+
+ROOT = Path(__file__).resolve().parents[2]
+LOGS = ROOT / "probe/dist/installer-tests"
+LOGS.mkdir(exist_ok=True)
+OUTPUT = Path(tempfile.mkdtemp(prefix="run-", dir=LOGS))
+MIRROR = OUTPUT / "mirror"
+MIRROR.mkdir(exist_ok=True)
+ARCHES = "x86_64 i386 aarch64 armv7 armv7-soft mips mipsel".split()
+for arch in ARCHES:
+    for suffix in ("", "-lite"):
+        name = f"npulse-linux-{arch}{suffix}"
+        shutil.copyfile(ROOT / "probe/dist" / name, MIRROR / name)
+shutil.copyfile(ROOT / "install.sh", MIRROR / "install.sh")
+sums = "".join(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n" for p in sorted(MIRROR.iterdir()) if p.name != "SHA256SUMS")
+(MIRROR / "SHA256SUMS").write_text(sums)
+
+
+class QuietHandler(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, *_):
+        pass
+
+
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(QuietHandler, directory=str(MIRROR)))
+thread = threading.Thread(target=server.serve_forever, daemon=True)
+thread.start()
+BASE = f"http://127.0.0.1:{server.server_port}"
+SHELL = sys.argv[1:] or ["/bin/dash"]
+SHELL[0] = shutil.which(SHELL[0]) or sys.exit("Test shell not found")
+COUNTER = 0
+
+
+def new_root():
+    global COUNTER
+    COUNTER += 1
+    path = OUTPUT / f"root-{os.getpid()}-{COUNTER}"
+    path.mkdir()
+    return path
+
+
+def run(root, *args, ok=True, **settings):
+    env = {k: v for k, v in os.environ.items() if not k.startswith("NPULSE_")}
+    env.update(DESTDIR=str(root), DRY_RUN="1", NPULSE_INIT="systemd", NPULSE_ARCH="x86_64", NPULSE_MIRROR=BASE)
+    env.update(settings)
+    result = subprocess.run([*SHELL, str(ROOT / "install.sh"), *args], env=env, text=True, capture_output=True, timeout=30)
+    assert (result.returncode == 0) == ok, (args, result.stdout, result.stderr)
+    with (OUTPUT / "commands.log").open("a") as log:
+        # Only test values are used; do not copy stdout summaries containing generated keys.
+        log.write(f"{SHELL!r} {args!r}: exit={result.returncode}\n")
+    return result
+
+
+def config(root):
+    path = root / "etc/npulse/npulse.conf"
+    assert path.stat().st_mode & 0o777 == 0o600
+    return dict(line.split("=", 1) for line in path.read_text().splitlines())
+
+
+def isolated_tools(exclude=()):
+    path = new_root() / "tools"
+    path.mkdir()
+    for name in "awk cat chmod cp df dirname grep hexdump id mkdir mktemp mv od rm rmdir sha256sum shasum stty tr uname wc wget".split():
+        tool = shutil.which(name)
+        if tool and name not in exclude:
+            (path / name).symlink_to(tool)
+    return path
+
+
+def interactive(root):
+    command = "cat " + shlex.quote(str(ROOT / "install.sh")) + " | " + shlex.join(SHELL)
+    if sys.platform == "darwin":
+        argv = ["script", "-q", "/dev/null", "/bin/sh", "-c", command]
+    else:
+        argv = ["script", "-q", "-e", "-c", command, "/dev/null"]
+    env = {k: v for k, v in os.environ.items() if not k.startswith("NPULSE_")}
+    env.update(DESTDIR=str(root), DRY_RUN="1", NPULSE_INIT="systemd", NPULSE_ARCH="x86_64", NPULSE_MIRROR=BASE)
+    prompts = ["模式 [默认", "TCP 监听端口", "节点名称", "输入不回显", "root 级控制权", "构建类型 full/lite"]
+    secret = "interactive-secret-MUST-NOT-ECHO"
+    responses = ["", "", "", secret, "", ""]
+    proc = subprocess.Popen(argv, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, start_new_session=True)
+    transcript, step, deadline = b"", 0, time.monotonic() + 30
+    try:
+        while time.monotonic() < deadline:
+            if select.select([proc.stdout], [], [], 0.2)[0]:
+                chunk = os.read(proc.stdout.fileno(), 65536)
+                if not chunk:
+                    break
+                transcript += chunk
+                if step < len(prompts) and prompts[step].encode() in transcript:
+                    proc.stdin.write((responses[step] + "\n").encode()); proc.stdin.flush(); step += 1
+            elif proc.poll() is not None:
+                break
+        assert proc.wait(timeout=3) == 0, transcript.decode(errors="replace")
+        assert step == len(prompts), transcript.decode(errors="replace")
+        assert config(root)["secret"] == secret
+        assert transcript.count(secret.encode()) == 1, "secret echoed outside final summary"
+    finally:
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGTERM); proc.wait(timeout=5)
+        proc.stdin.close(); proc.stdout.close()
+
+
+try:
+    for mode in range(1, 6):
+        root = new_root()
+        args = ["install", "--yes", "--mode", str(mode), "--upstream", "relay.example.com:9000"]
+        if mode in (2, 3, 4):
+            args += ["--also-relay"]
+        if mode in (2, 5):
+            args += ["--http-port", "9001"]
+        output = run(root, *args)
+        values = config(root)
+        unit_path = root / "etc/systemd/system/npulse.service"
+        unit = unit_path.read_text()
+        assert "DynamicUser=yes" in unit and "LoadCredential=npulse.conf:/etc/npulse/npulse.conf" in unit
+        assert "Restart=always" in unit and "NoNewPrivileges=yes" in unit
+        assert "npulse.conf" in unit and values.get("secret", "not-a-secret") not in unit
+        if mode < 5:
+            assert values["listen"] == "0.0.0.0:9000"
+        if mode in (2, 5):
+            assert values["http"] == "127.0.0.1:9001" and "proxy_http_version 1.1" in output.stdout
+        if mode == 3:
+            assert values["upstream"] == "relay.example.com:9000"
+        if mode == 4:
+            assert values["relay_upstream"] == "relay.example.com:9000" and len(values["group_secret"]) == 32
+        if mode == 5:
+            assert set(values) == {"interval", "token", "relay_listen", "http"}
+        for key in ("secret", "token", "group_secret"):
+            if key in values:
+                assert len(values[key]) == 32 and values[key] not in output.stderr
+        before = (root / "etc/npulse/npulse.conf").read_bytes()
+        binary = root / "usr/local/bin/npulse"
+        assert binary.parent.stat().st_mode & 0o777 == 0o755
+        binary.write_bytes(b"old binary")
+        run(root, "upgrade", "--yes")
+        assert binary.read_bytes() == (MIRROR / "npulse-linux-x86_64").read_bytes()
+        assert (root / "etc/npulse/npulse.conf").read_bytes() == before and unit_path.read_text() == unit
+        run(root, "status", "--yes")
+        run(root, "uninstall", "--yes")
+        assert not binary.exists() and not unit_path.exists() and (root / "etc/npulse/npulse.conf").exists()
+    print("PASS five modes + supported -l combinations: verified binaries, 0600 config, hardened DynamicUser units, nginx snippets, upgrade preserves config, status, uninstall keeps config")
+
+    public = "ab" * 32
+    root = new_root()
+    run(root, "--yes", "--mode", "4", "--upstream", "[::1]:9000", "--full", "--admin-keys", public)
+    unit = (root / "etc/systemd/system/npulse.service").read_text()
+    assert "User=root" in unit and "DynamicUser=" not in unit and "ProtectHome=" not in unit
+    assert config(root)["admin_keys"] == public and "listen" not in config(root)
+    run(root, "uninstall", "--yes", "--purge")
+    assert not (root / "etc/npulse").exists()
+    root = new_root()
+    run(root, "--yes", "--mode", "1", "--lite", "--admin-keys", public, ok=False)
+    assert not (root / "usr").exists()
+    print("PASS outbound-only relay admin runs root/full; lite+admin rejected before installation; explicit purge removes config")
+
+    root = new_root()
+    run(root, "--yes", "--mode", "5", "--lite", NPULSE_INIT="procd", NPULSE_ARCH="mipsel")
+    assert (root / "usr/bin/npulse").read_bytes() == (MIRROR / "npulse-linux-mipsel-lite").read_bytes()
+    unit = (root / "etc/init.d/npulse").read_text()
+    assert "procd_set_param respawn 3600 5 0" in unit and "-c /etc/npulse/npulse.conf" in unit
+    run(root, "upgrade", "--yes")  # Uses recorded procd/arch/flavor, not new environment defaults.
+    run(root, "uninstall", "--yes", "--purge")
+    assert not (root / "usr/bin/npulse").exists()
+    print("PASS procd install/upgrade/uninstall: /usr/bin binary, respawn, recorded mipsel/lite selection")
+
+    for arch in ARCHES:
+        root = new_root()
+        run(root, "--yes", NPULSE_ARCH=arch)
+        suffix = "-lite" if arch in ("mips", "mipsel") else ""
+        assert (root / "usr/local/bin/npulse").read_bytes() == (MIRROR / f"npulse-linux-{arch}{suffix}").read_bytes()
+        run(root, "uninstall", "--yes", "--purge")
+    print("PASS seven stable architecture names; MIPS defaults lite; full/lite release assets selected correctly")
+
+    tools = isolated_tools()
+    if shutil.which("curl"):
+        (tools / "curl").symlink_to(shutil.which("curl"))
+    (tools / "uname").unlink()
+    (tools / "uname").write_text('#!/bin/sh\ncase "$1" in -m) printf "%s\\n" "$FIXTURE_MACHINE" ;; -n) echo fixture ;; *) exec ' + shlex.quote(shutil.which("uname")) + ' "$@" ;; esac\n')
+    (tools / "uname").chmod(0o755)
+    (tools / "od").unlink()
+    (tools / "od").write_text('#!/bin/sh\ncase "$*" in *"-j 5"*) echo "$FIXTURE_ENDIAN" ;; *"-j 37"*) echo "$FIXTURE_FLAGS" ;; *) exec ' + shlex.quote(shutil.which("od")) + ' "$@" ;; esac\n')
+    (tools / "od").chmod(0o755)
+    for machine, endian, flags, expected in [
+        ("x86_64", "1", "0", "x86_64"), ("i686", "1", "0", "i386"),
+        ("aarch64", "1", "0", "aarch64"), ("armv7l", "1", "4", "armv7"),
+        ("armv7l", "1", "2", "armv7-soft"), ("mips", "2", "0", "mips"), ("mips", "1", "0", "mipsel"),
+    ]:
+        root = new_root()
+        run(root, "--yes", NPULSE_ARCH="", PATH=str(tools), FIXTURE_MACHINE=machine, FIXTURE_ENDIAN=endian, FIXTURE_FLAGS=flags)
+        assert f"arch={expected}\n" in (root / "etc/npulse/install.state").read_text()
+        run(root, "uninstall", "--yes", "--purge")
+    result = run(new_root(), "--yes", ok=False, NPULSE_ARCH="", PATH=str(tools), FIXTURE_MACHINE="armv7l", FIXTURE_FLAGS="0")
+    assert "无法确认 ARM" in result.stderr
+    print("PASS simulated uname/ELF detection: x86, i386, aarch64, ARM hard/soft, MIPS both byte orders; unknown ARM ABI refuses unattended guess")
+
+    (tools / "df").unlink()
+    (tools / "df").write_text('#!/bin/sh\nprintf "Filesystem 1024-blocks Used Available Capacity Mounted\\nfixture 4096 3072 1024 75%% /\\n"\n')
+    (tools / "df").chmod(0o755)
+    root = new_root()
+    run(root, "--yes", PATH=str(tools))
+    assert "flavor=lite\n" in (root / "etc/npulse/install.state").read_text()
+    run(root, "uninstall", "--yes", "--purge")
+    print("PASS simulated low free space defaults lite on non-MIPS")
+
+    (tools / "ip").write_text('#!/bin/sh\nprintf "inet 192.0.2.10/24 scope global fixture\\n"\n')
+    (tools / "ip").chmod(0o755)
+    root = new_root()
+    output = run(root, "--yes", "--port", "443", PATH=str(tools))
+    assert "192.0.2.10" in output.stdout
+    assert "AmbientCapabilities=CAP_NET_BIND_SERVICE" in (root / "etc/systemd/system/npulse.service").read_text()
+    run(root, "uninstall", "--yes", "--purge")
+    print("PASS local address summary and least-privilege bind capability for privileged ports")
+
+    root = new_root()
+    interactive(root)
+    run(root, "uninstall", "--yes", "--purge")
+    print("PASS piped installer reads /dev/tty; interactive credentials have no terminal echo and appear only in final summary")
+
+    if shutil.which("wget"):
+        tools = isolated_tools()
+        root = new_root()
+        run(root, "--yes", PATH=str(tools))
+        assert config(root)["listen"] == "0.0.0.0:9000"
+        run(root, "uninstall", "--yes", "--purge")
+        print("PASS wget-only PATH downloads and verifies real assets (curl absent)")
+    if shutil.which("shasum"):
+        tools = isolated_tools(exclude=("sha256sum",))
+        # Preserve a real downloader even when wget is unavailable on a test host.
+        if shutil.which("curl"):
+            (tools / "curl").symlink_to(shutil.which("curl"))
+        root = new_root()
+        run(root, "--yes", PATH=str(tools))
+        run(root, "uninstall", "--yes", "--purge")
+        print("PASS shasum SHA256 fallback with sha256sum absent")
+    if shutil.which("hexdump"):
+        tools = isolated_tools(exclude=("od",))
+        if shutil.which("curl"):
+            (tools / "curl").symlink_to(shutil.which("curl"))
+        root = new_root()
+        run(root, "--yes", PATH=str(tools))
+        assert len(config(root)["secret"]) == 32
+        run(root, "uninstall", "--yes", "--purge")
+        print("PASS hexdump random generation fallback for OpenWrt without od")
+    if os.geteuid() != 0:
+        run(new_root(), "--yes", ok=False, DRY_RUN="0", DESTDIR="")
+        print("PASS real installation rejects non-root before filesystem changes")
+
+    for args, settings in [
+        (["--mode", "9"], {}), (["--port", "0"], {}), (["--port", "65536"], {}),
+        (["--mode", "4"], {}), (["--mode", "5", "--admin-keys", public], {}),
+        (["--admin-keys", "bad"], {}), (["--name", "bad\nsecret=oops"], {}),
+        ([], {"NPULSE_VERSION": "../../oops"}), ([], {"NPULSE_ARCH": "unknown"}),
+        ([], {"DESTDIR": "/"}), ([], {"DESTDIR": str(OUTPUT / ".." )}),
+    ]:
+        run(new_root(), "--yes", *args, ok=False, **settings)
+    root = new_root()
+    run(root, "upgrade", "--yes", ok=False)
+    existing = new_root()
+    run(existing, "--yes")
+    installed = (existing / "usr/local/bin/npulse").read_bytes()
+    saved_config = (existing / "etc/npulse/npulse.conf").read_bytes()
+    (MIRROR / "SHA256SUMS").write_text(sums.replace(hashlib.sha256((MIRROR / "npulse-linux-x86_64").read_bytes()).hexdigest(), "0" * 64))
+    result = run(root, "--yes", ok=False, NPULSE_SECRET="DO-NOT-LOG-THIS")
+    assert "DO-NOT-LOG-THIS" not in result.stdout + result.stderr and not (root / "usr").exists()
+    run(existing, "upgrade", "--yes", ok=False)
+    assert (existing / "usr/local/bin/npulse").read_bytes() == installed
+    assert (existing / "etc/npulse/npulse.conf").read_bytes() == saved_config
+    run(existing, "uninstall", "--yes", "--purge")
+    (MIRROR / "SHA256SUMS").write_text("")
+    run(root, "--yes", ok=False)
+    print("PASS invalid/missing inputs, unknown architecture, unsafe DESTDIR, missing installation, tampered/empty checksums: fail closed, no secret logs or installed binary")
+    print("ALL INSTALLER CHECKS PASSED (" + " ".join(SHELL) + ")")
+    print("Installer artifacts: " + str(OUTPUT))
+finally:
+    server.shutdown()
+    server.server_close()

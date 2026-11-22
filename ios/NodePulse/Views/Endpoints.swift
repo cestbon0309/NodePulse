@@ -34,6 +34,11 @@ struct EndpointList: View {
 }
 
 struct EndpointForm: View {
+    static func swappedPort(_ port: String, from: Int, to: Int) -> String {
+        let defaults = [0: "9000", 2: "9010"]
+        guard port == defaults[from], let next = defaults[to] else { return port }
+        return next
+    }
     var store: MonitorStore
     var existing: Endpoint?
     @Environment(\.dismiss) private var dismiss
@@ -72,7 +77,10 @@ struct EndpointForm: View {
             Form {
                 Section("基本信息") {
                     TextField("名称，例如：家庭路由器", text: $name)
-                    Picker("类型", selection: $type) {
+                    Picker("类型", selection: Binding(get: { type }, set: { value in
+                        port = Self.swappedPort(port, from: type, to: value)
+                        type = value
+                    })) {
                         Text("直连 TCP").tag(0); Text("HTTPS").tag(1)
                         Text("中继服务器（TCP）").tag(2); Text("中继服务器（HTTPS）").tag(3)
                     }
@@ -145,8 +153,6 @@ struct EndpointForm: View {
                 }
                 .onChange(of: type) { _, value in
                     result = nil
-                    if value == 2 && port == "9000" { port = "9010" }
-                    if value == 0 && port == "9010" { port = "9000" }
                 }
                 .alert("无法保存", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button("好") { error = nil } } message: { Text(error ?? "") }
         }

@@ -21,7 +21,7 @@ struct DirectClient {
     }
 }
 
-private final class DirectOperation: @unchecked Sendable {
+final class DirectOperation: @unchecked Sendable {
     private let queue = DispatchQueue(label: "nodepulse.direct.\(UUID())")
     private let connection: NWConnection
     private let frame: Data
@@ -89,6 +89,9 @@ private final class DirectOperation: @unchecked Sendable {
 
 struct HTTPSClient {
     static func nodesURL(_ input: String) throws -> URL {
+        try apiURL(input, path: "/api/nodes")
+    }
+    static func apiURL(_ input: String, path suffix: String) throws -> URL {
         guard var parts = URLComponents(string: input), let host = parts.host,
               parts.user == nil, parts.password == nil,
               parts.scheme?.lowercased() == "https" ||
@@ -96,7 +99,7 @@ struct HTTPSClient {
         else { throw ProbeError.invalidURL }
         var path = parts.path
         while path.hasSuffix("/") { path.removeLast() }
-        if !path.hasSuffix("/api/nodes") { path += "/api/nodes" }
+        if !path.hasSuffix(suffix) { path += suffix }
         parts.path = path; parts.query = nil; parts.fragment = nil
         guard let url = parts.url else { throw ProbeError.invalidURL }
         return url
@@ -106,6 +109,9 @@ struct HTTPSClient {
         var request = URLRequest(url: try Self.nodesURL(input))
         request.timeoutInterval = 8
         request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        return try ProbeResponse.decode(await Self.data(for: request))
+    }
+    static func data(for request: URLRequest) async throws -> Data {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForResource = 8
         let session = URLSession(configuration: config, delegate: NoRedirect(), delegateQueue: nil)
@@ -115,7 +121,7 @@ struct HTTPSClient {
             guard let response = response as? HTTPURLResponse else { throw ProbeError.parse }
             if response.statusCode == 404 { throw ProbeError.transport("密钥错误或路径不对") }
             guard response.statusCode == 200 else { throw ProbeError.transport("HTTP 错误：\(response.statusCode)") }
-            return try ProbeResponse.decode(data)
+            return data
         } catch let error as URLError {
             if error.code == .timedOut { throw ProbeError.timeout }
             if error.code == .cannotConnectToHost { throw ProbeError.refused }
@@ -130,9 +136,39 @@ private final class NoRedirect: NSObject, URLSessionTaskDelegate {
                     completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
 }
 
-func fetchProbe(_ endpoint: Endpoint, secret: String) async throws -> [NodeSnapshot] {
+struct GroupClient {
+    static func relayURL(_ input: String) throws -> URL { try HTTPSClient.apiURL(input, path: "/api/relay") }
+    func fetch(_ endpoint: Endpoint, token: String, groupSecret: String) async throws -> ProbeFetch {
+        let group = try GroupCrypto(secret: groupSecret)
+        let request = try group.getRequest()
+        let transport = ProbeCrypto(secret: token)
+        let frame = try transport.seal(json: request.json)
+        let response: Data
+        switch endpoint.kind {
+        case let .groupTCP(host, port):
+            guard port > 0, let nwPort = NWEndpoint.Port(rawValue: port) else { throw ProbeError.refused }
+            let operation = DirectOperation(host: host, port: nwPort, frame: frame)
+            response = try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { operation.start($0) }
+            } onCancel: { operation.cancel() }
+        case let .groupHTTPS(input):
+            var request = URLRequest(url: try Self.relayURL(input))
+            request.httpMethod = "POST"; request.httpBody = frame; request.timeoutInterval = 8
+            request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+            request.setValue(String(frame.count), forHTTPHeaderField: "Content-Length")
+            response = try await HTTPSClient.data(for: request)
+        default: throw ProbeError.parse
+        }
+        return try group.decodeResponse(transport.open(frame: response), requestID: request.rid)
+    }
+}
+
+func fetchProbe(_ endpoint: Endpoint, secret: String, groupSecret: String? = nil) async throws -> ProbeFetch {
     switch endpoint.kind {
-    case .direct: return try await DirectClient().fetch(endpoint, secret: secret)
-    case .https: return try await HTTPSClient().fetch(endpoint, secret: secret)
+    case .direct: return ProbeFetch(snapshots: try await DirectClient().fetch(endpoint, secret: secret))
+    case .https: return ProbeFetch(snapshots: try await HTTPSClient().fetch(endpoint, secret: secret))
+    case .groupTCP, .groupHTTPS:
+        guard let groupSecret, !groupSecret.isEmpty else { throw ProbeError.missingSecret }
+        return try await GroupClient().fetch(endpoint, token: secret, groupSecret: groupSecret)
     }
 }

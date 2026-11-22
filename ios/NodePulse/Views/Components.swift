@@ -1,6 +1,15 @@
 import SwiftUI
 import Charts
 
+struct EndToEndBadge: View {
+    var body: some View {
+        Label("端到端", systemImage: "lock.shield")
+            .font(.system(size: 10, weight: .medium)).fixedSize()
+            .padding(.horizontal, 7).padding(.vertical, 4)
+            .foregroundStyle(Color("AccentColor"))
+            .background(Color("AccentColor").opacity(0.1), in: Capsule())
+    }
+}
 enum PulseFormat {
     static func bytes(_ value: Double) -> String {
         let formatter = ByteCountFormatter()

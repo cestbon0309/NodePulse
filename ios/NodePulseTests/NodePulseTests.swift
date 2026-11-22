@@ -146,10 +146,17 @@ final class NodePulseTests: XCTestCase {
 
 private final class MemorySecrets: SecretStorage {
     var values: [UUID: String] = [:]
+    var groups: [UUID: String] = [:]
     func set(_ secret: String, for id: UUID) { values[id] = secret }
     func get(_ id: UUID) throws -> String {
         guard let value = values[id] else { throw ProbeError.missingSecret }
         return value
     }
     func delete(_ id: UUID) { values[id] = nil }
+    func setGroup(_ secret: String, for id: UUID) { groups[id] = secret }
+    func getGroup(_ id: UUID) throws -> String {
+        guard let value = groups[id] else { throw ProbeError.missingSecret }
+        return value
+    }
+    func deleteGroup(_ id: UUID) { groups[id] = nil }
 }

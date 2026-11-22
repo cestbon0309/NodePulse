@@ -66,6 +66,11 @@ struct Endpoint: Codable, Identifiable, Hashable {
     enum Kind: Codable, Hashable {
         case direct(host: String, port: UInt16)
         case https(urlString: String)
+        case groupTCP(host: String, port: UInt16)
+        case groupHTTPS(urlString: String)
+        var isGroup: Bool {
+            switch self { case .groupTCP, .groupHTTPS: return true; default: return false }
+        }
     }
 }
 

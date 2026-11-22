@@ -18,6 +18,7 @@ struct NodeDetail: View {
                         OSBadge(os: s.os).scaleEffect(1.2).padding(8)
                         Text(s.name).font(.largeTitle.bold()).multilineTextAlignment(.center)
                         Text(s.os).font(.subheadline).foregroundStyle(.secondary)
+                        if item.endToEnd { EndToEndBadge() }
                         HStack { OnlineStatus(online: item.online); Text("经由 \(item.endpointName)").font(.caption).foregroundStyle(.secondary) }
                         if let ip = s.ips.first { Button { copy(ip) } label: { Label(ip, systemImage: "doc.on.doc").font(.caption.monospaced()).padding(10).background(.mint.opacity(0.08), in: Capsule()) } }
                     }.frame(maxWidth: .infinity).padding(.vertical, 10)

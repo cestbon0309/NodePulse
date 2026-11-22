@@ -22,7 +22,10 @@ targets:
   NodePulseTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [NodePulseTests]
+    sources:
+      - NodePulseTests
+      - path: ../probe/tools/e2e-vector.json
+        buildPhase: resources
     dependencies:
       - target: NodePulse
     settings:

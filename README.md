@@ -215,7 +215,12 @@ python3 probe/tools/npulse-cli.py relay.example.com 9010 -T TOKEN -G GROUP_SECRE
 ```
 
 默认 `gget` 解密并检查快照 id 的槽位派生，输出节点、`age` 和槽位；`--raw`
-只输出不透明槽位。iOS 分组接入将在下一阶段实现，本阶段未修改 iOS。
+只输出不透明槽位。iOS 可选择「中继服务器（TCP）」或「中继服务器（HTTPS）」；
+分别填写中继令牌和组密钥，二者作为独立钥匙串项目保存。HTTPS 使用 `/api/relay`。
+组密钥生成按钮生成 32 字符随机密钥，并复制到仅本机、两分钟后过期的剪贴板。
+节点的「端到端」徽章表示来自分组中继；接入点列表会报告忽略的无效密文数量。
+新鲜度主要依据 `age > max(30秒, 4×观察到的采样间隔)`；同时将快照时间与手机时间
+相差超过十分钟的节点标为离线，防范中继伪造 age 后重放很旧的数据。
 
 ### 协议与边界
 
@@ -250,7 +255,7 @@ HTTP 格式/路由错误返回空 404，外层加密或签名错误仍静默关�
 
 固定跨语言向量：`probe/tools/e2e-vector.json`（测试用组密钥、TOKEN、种子、派生密钥、
 gid、slot、固定 nonce/blob 和 push/get 消息签名）。向量由独立 Node crypto 生成，
-Python cryptography 与 C Monocypher 测试逐字节核对，供下一阶段 CryptoKit 测试复用。
+Python cryptography 与 C Monocypher 测试逐字节核对，供 CryptoKit 测试直接作为资源复用。
 运行 `python3 probe/tools/test-probe.py probe/npulse-host` 会连同分组集成测试一起执行。
 
 ## Run

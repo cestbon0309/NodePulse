@@ -18,6 +18,12 @@ struct NodePulseApp: App {
             for endpoint in store.endpoints { try? store.delete(endpoint) }
             try? store.save(Endpoint(name: "本机探针", kind: .direct(host: "127.0.0.1", port: 19090)), secret: "integration-secret")
         }
+        if args.contains("-live-relay") {
+            store.demoMode = false
+            for endpoint in store.endpoints { try? store.delete(endpoint) }
+            try? store.save(Endpoint(name: "本机端到端中继", kind: .groupTCP(host: "127.0.0.1", port: 19092)),
+                            secret: "integration-relay-token", groupSecret: "integration-group-secret")
+        }
         _store = State(initialValue: store)
         #endif
     }

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 350">
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#51a99e"/></marker></defs>
+<rect width="1200" height="350" rx="24" fill="#111920"/>
+<g fill="#1c2a32" stroke="#3b535e" stroke-width="2"><rect x="45" y="54" width="240" height="85" rx="16"/><rect x="910" y="54" width="240" height="85" rx="16"/><rect x="45" y="226" width="240" height="85" rx="16"/><rect x="485" y="226" width="270" height="85" rx="16"/><rect x="910" y="226" width="240" height="85" rx="16"/></g>
+<g stroke="#51a99e" stroke-width="3" marker-start="url(#a)" marker-end="url(#a)" fill="none"><path d="M295 96H900"/><path d="M295 270H475"/><path d="M765 270H900"/></g>
+<g font-family="-apple-system,Arial,sans-serif" text-anchor="middle" fill="#edf3f4" font-size="22"><text x="165" y="104">iOS App</text><text x="1030" y="90">Public probe</text><text x="1030" y="119" font-size="17" fill="#b3c6cd">公网探针 · -l</text><text x="165" y="277">iOS App</text><text x="620" y="260">Opaque shared relay</text><text x="620" y="290" font-size="17" fill="#b3c6cd">不透明共享中继 · -S</text><text x="1030" y="259">NAT probe</text><text x="1030" y="289" font-size="17" fill="#b3c6cd">主动连出 · -R</text></g>
+<g font-family="-apple-system,Arial,sans-serif" text-anchor="middle" fill="#8bd0c5" font-size="18"><text x="600" y="72">Direct E2E monitoring + admin / 直连监控与管理</text><text x="620" y="202">Group-secret holders only / 仅组密钥持有者可解密</text></g>
+</svg>

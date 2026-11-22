@@ -26,13 +26,14 @@ struct NodeSnapshot: Codable, Identifiable, Hashable {
     var tcpConns = 0
     var temp: Double?
     var ips: [String] = []
+    var egressIp: String?
     var ts: Double?
     var version = ""
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id, name, hostname, os, kernel, arch, cpuModel, cpuCores, cpuUsage, load
         case memTotal, memUsed, swapTotal, swapUsed, diskTotal, diskUsed
-        case netRx, netTx, netRxRate, netTxRate, uptime, procs, tcpConns, temp, ips, ts, version
+        case netRx, netTx, netRxRate, netTxRate, uptime, procs, tcpConns, temp, ips, egressIp, ts, version
     }
     init() {}
     init(from decoder: Decoder) throws {
@@ -50,6 +51,7 @@ struct NodeSnapshot: Codable, Identifiable, Hashable {
         netRxRate = read(.netRxRate, 0); netTxRate = read(.netTxRate, 0)
         uptime = read(.uptime, 0); procs = read(.procs, 0); tcpConns = read(.tcpConns, 0)
         temp = try? c.decode(Double.self, forKey: .temp); ips = read(.ips, [])
+        egressIp = try? c.decode(String.self, forKey: .egressIp)
         ts = try? c.decode(Double.self, forKey: .ts); version = read(.version, "")
     }
     var memPercent: Double { memTotal > 0 ? 100 * memUsed / memTotal : 0 }
@@ -88,13 +90,13 @@ enum ProbeError: LocalizedError {
     case timeout, refused, rejected, parse, invalidURL, missingSecret, keychain(Int32), transport(String)
     var errorDescription: String? {
         switch self {
-        case .timeout: return "超时"
-        case .refused: return "连接被拒绝"
-        case .rejected: return "密钥错误或被拒绝（对端静默断开）"
-        case .parse: return "解析失败"
-        case .invalidURL: return "请输入 HTTPS 地址（开发环境允许 localhost/127.0.0.1 HTTP）"
-        case .missingSecret: return "未找到密钥"
-        case .keychain(let code): return "钥匙串错误：\(code)"
+        case .timeout: return L10n.text("超时")
+        case .refused: return L10n.text("连接被拒绝")
+        case .rejected: return L10n.text("密钥错误或被拒绝（对端静默断开）")
+        case .parse: return L10n.text("解析失败")
+        case .invalidURL: return L10n.text("请输入 HTTPS 地址（开发环境允许 localhost/127.0.0.1 HTTP）")
+        case .missingSecret: return L10n.text("未找到密钥")
+        case .keychain(let code): return L10n.text("钥匙串错误：%@", String(describing: code))
         case .transport(let message): return message
         }
     }

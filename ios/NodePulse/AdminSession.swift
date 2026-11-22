@@ -6,7 +6,7 @@ final class AdminConnection: @unchecked Sendable {
     private let connection: NWConnection
     private let queue = DispatchQueue(label: "nodepulse.admin.transport.\(UUID())")
     init(host: String, port: UInt16) throws {
-        guard let port = NWEndpoint.Port(rawValue: port), port.rawValue > 0 else { throw AdminError.message("接入点端口无效") }
+        guard let port = NWEndpoint.Port(rawValue: port), port.rawValue > 0 else { throw AdminError.message(L10n.text("接入点端口无效")) }
         connection = NWConnection(host: NWEndpoint.Host(host), port: port, using: .tcp)
     }
     func open() async throws {
@@ -23,12 +23,12 @@ final class AdminConnection: @unchecked Sendable {
                     self.connection.stateUpdateHandler = { state in
                         switch state {
                         case .ready: complete(nil)
-                        case .failed: complete(AdminError.message("节点离线或连接失败"))
+                        case .failed: complete(AdminError.message(L10n.text("节点离线或连接失败")))
                         case .cancelled: complete(CancellationError())
                         default: break
                         }
                     }
-                    self.queue.asyncAfter(deadline: .now() + 10) { complete(AdminError.message("连接超时，节点可能离线")) }
+                    self.queue.asyncAfter(deadline: .now() + 10) { complete(AdminError.message(L10n.text("连接超时，节点可能离线"))) }
                     self.connection.start(queue: self.queue)
                 }
             }
@@ -56,7 +56,7 @@ final class AdminConnection: @unchecked Sendable {
                         guard !finished else { return }; finished = true
                         continuation.resume(with: result)
                     }
-                    timer = DispatchWorkItem { self.connection.cancel(); complete(.failure(AdminError.message("管理连接超时"))) }
+                    timer = DispatchWorkItem { self.connection.cancel(); complete(.failure(AdminError.message(L10n.text("管理连接超时")))) }
                     self.queue.asyncAfter(deadline: .now() + 45, execute: timer)
                     func receive(_ collected: Data) {
                         self.connection.receive(minimumIncompleteLength: 1, maximumLength: count - collected.count) { data, _, closed, error in
@@ -113,7 +113,7 @@ actor AdminSession {
         switch endpoint.kind {
         case .direct(let h, let p): host = h; port = p; relay = false
         case .groupTCP(let h, let p): host = h; port = p; relay = true
-        default: throw AdminError.message("HTTPS 接入点不支持管理，请使用直连或 TCP 中继")
+        default: throw AdminError.message(L10n.text("HTTPS 接入点不支持管理，请使用直连或 TCP 中继"))
         }
         let channel = try AdminConnection(host: host, port: port)
         do {
@@ -127,7 +127,7 @@ actor AdminSession {
                 let outer = ProbeCrypto(secret: secret)
                 try await channel.send(outer.seal(json: json))
                 let response = try object(outer.open(frame: await channel.readFrame(overhead: 28)))
-                guard response["ok"] as? Bool == true else { throw AdminError.message(response["err"] as? String == "offline" ? "节点离线，探针尚未连接中继" : "中继连接被拒绝") }
+                guard response["ok"] as? Bool == true else { throw AdminError.message(response["err"] as? String == "offline" ? L10n.text("节点离线，探针尚未连接中继") : L10n.text("中继连接被拒绝")) }
             }
             let ephemeral = Curve25519.KeyAgreement.PrivateKey()
             let epk = GroupCrypto.hex(ephemeral.publicKey.rawRepresentation)
@@ -146,7 +146,7 @@ actor AdminSession {
         } catch {
             channel.cancel()
             if error is CancellationError { throw error }
-            if let admin = error as? AdminError, admin.localizedDescription.contains("离线") { throw admin }
+            if let admin = error as? AdminError, admin.localizedDescription.localizedCaseInsensitiveContains(L10n.text("离线")) { throw admin }
             throw AdminError.handshake
         }
     }
@@ -182,7 +182,7 @@ actor AdminSession {
             try await withCheckedThrowingContinuation { continuation in
                 pending[id] = continuation
                 timeouts[id] = Task { [weak self] in
-                    do { try await Task.sleep(for: .seconds(30)); await self?.close(AdminError.message("管理请求超时")) } catch {}
+                    do { try await Task.sleep(for: .seconds(30)); await self?.close(AdminError.message(L10n.text("管理请求超时"))) } catch {}
                 }
                 let send = enqueue(frame)
                 Task {
@@ -206,7 +206,7 @@ actor AdminSession {
     }
     func input(pty: Int, data: Data) async throws {
         guard !closed else { throw AdminError.disconnected }
-        guard data.count <= 65536 else { throw AdminError.message("终端输入过大") }
+        guard data.count <= 65536 else { throw AdminError.message(L10n.text("终端输入过大")) }
         let json = try Self.messageData(["t": "pty_in", "pty": pty, "data": data.base64EncodedString()])
         do { try await enqueue(tx.seal(json)).value }
         catch { close(error); throw error }
@@ -223,12 +223,12 @@ actor AdminSession {
             if type == "pty_out", let text = json["data"] as? String, let data = Data(base64Encoded: text) { event = .output(pty: pty, data: data) }
             else if type == "pty_exit", let code = json["code"] as? Int { event = .exit(pty: pty, code: code) }
             else { throw AdminError.disconnected }
-            if case .dropped = eventSink.yield(event) { throw AdminError.message("终端输出过快，请重新连接") }
+            if case .dropped = eventSink.yield(event) { throw AdminError.message(L10n.text("终端输出过快，请重新连接")) }
         } else {
             guard let id = json["id"] as? Int, let ok = json["ok"] as? Bool else { throw AdminError.disconnected }
             timeouts.removeValue(forKey: id)?.cancel()
             if ok { pending.removeValue(forKey: id)?.resume(returning: json) }
-            else { pending.removeValue(forKey: id)?.resume(throwing: AdminError.message("远程操作失败：\(json["err"] as? String ?? "未知错误")")) }
+            else { pending.removeValue(forKey: id)?.resume(throwing: AdminError.message(L10n.text("远程操作失败：%@", String(describing: json["err"] as? String ?? L10n.text("未知错误"))))) }
         }
     }
     func close(_ error: Error = AdminError.disconnected) {

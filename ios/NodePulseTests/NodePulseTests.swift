@@ -20,7 +20,7 @@ final class NodePulseTests: XCTestCase {
             store.apply(endpoint, result: .success([snapshot]), latency: 1)
             XCTAssertEqual(store.nodes.last?.usesEndToEndEncryption, encrypted)
             XCTAssertEqual(store.nodes.last?.endToEnd, kind.isGroup)
-            if !kind.isGroup { XCTAssertEqual(store.nodes.last?.connectionLabel, "直连") }
+            if !kind.isGroup { XCTAssertEqual(store.nodes.last?.connectionLabel, L10n.text("直连")) }
             store.apply(endpoint, result: .failure(ProbeError.timeout), latency: 1)
             XCTAssertEqual(store.nodes.last?.usesEndToEndEncryption, encrypted)
             XCTAssertEqual(store.nodes.last?.online, false)
@@ -30,10 +30,10 @@ final class NodePulseTests: XCTestCase {
     func testIPAddressMasking() {
         for address in ["192.168.1.1", "2606:4700:4700::1111", "fe80::1%en0", "invalid-address", ""] {
             XCTAssertEqual(PulseFormat.ip(address, hidden: false), address)
-            if !address.isEmpty { XCTAssertFalse(PulseFormat.ip(address, hidden: true).contains(address)) }
+            if !address.isEmpty { XCTAssertEqual(PulseFormat.ip(address, hidden: true), "•.•.•.•") }
         }
-        XCTAssertEqual(PulseFormat.ip("192.168.1.1", hidden: true), "•••.•••.•.•")
-        XCTAssertEqual(PulseFormat.ip("2606:4700:4700::1111", hidden: true), "••••:••••:••••:••••")
+        XCTAssertEqual(PulseFormat.ip("192.168.1.1", hidden: true), "•.•.•.•")
+        XCTAssertEqual(PulseFormat.ip("2606:4700:4700::1111", hidden: true), "•.•.•.•")
         XCTAssertEqual(PulseFormat.ip("", hidden: true), "")
     }
 
@@ -116,15 +116,15 @@ final class NodePulseTests: XCTestCase {
     func testConnectionLabelNeverRoutesDirectNodesThroughThemselves() {
         var snapshot = NodeSnapshot(); snapshot.name = "主机"
         var node = NodeItem(key: "node", endpointID: UUID(), endpointName: "主机", snapshot: snapshot, online: true)
-        XCTAssertEqual(node.connectionLabel, "直连")
+        XCTAssertEqual(node.connectionLabel, L10n.text("直连"))
         node.endpointName = "自定义别名"
-        XCTAssertEqual(node.connectionLabel, "直连")
+        XCTAssertEqual(node.connectionLabel, L10n.text("直连"))
         node.endToEnd = true
-        XCTAssertEqual(node.connectionLabel, "经由 自定义别名")
+        XCTAssertEqual(node.connectionLabel, L10n.text("经由 %@", "自定义别名"))
         node.endpointName = "主机"
-        XCTAssertEqual(node.connectionLabel, "中继")
+        XCTAssertEqual(node.connectionLabel, L10n.text("中继"))
         node.endpointName = ""
-        XCTAssertEqual(node.connectionLabel, "中继")
+        XCTAssertEqual(node.connectionLabel, L10n.text("中继"))
     }
 
     func testCompactRateFormatting() {
@@ -141,7 +141,7 @@ final class NodePulseTests: XCTestCase {
         let plaintext = try crypto.open(frame: captured)
         XCTAssertEqual(try DirectClient.decodeResponse(plaintext, requestID: rid), [])
         XCTAssertThrowsError(try DirectClient.decodeResponse(plaintext, requestID: String(repeating: "0", count: 32))) {
-            XCTAssertEqual($0.localizedDescription, "响应校验失败")
+            XCTAssertEqual($0.localizedDescription, L10n.text("响应校验失败"))
         }
         XCTAssertThrowsError(try DirectClient.decodeResponse(Data(#"{"ok":true,"nodes":[]}"#.utf8), requestID: rid))
         XCTAssertThrowsError(try DirectClient.decodeResponse(Data(), requestID: rid))
@@ -202,7 +202,7 @@ final class NodePulseTests: XCTestCase {
         XCTAssertTrue(store.nodes.allSatisfy { $0.online })
         store.apply(endpoint, result: .failure(ProbeError.timeout), latency: 6000)
         XCTAssertEqual(store.nodes.count, 2); XCTAssertTrue(store.nodes.allSatisfy { !$0.online })
-        XCTAssertEqual(store.statuses[endpoint.id]?.error, "超时")
+        XCTAssertEqual(store.statuses[endpoint.id]?.error, L10n.text("超时"))
         XCTAssertNotNil(store.statuses[endpoint.id]?.lastSuccess)
         store.demoMode = true
     }
@@ -243,9 +243,9 @@ final class NodePulseTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(nodes.count, 1); XCTAssertGreaterThanOrEqual(webNodes.count, 1)
         print("E2E PASS DirectClient nodes=\(nodes.count), HTTPSClient localhost nodes=\(webNodes.count)")
         do { _ = try await DirectClient().fetch(direct, secret: "wrong"); XCTFail("wrong key accepted") }
-        catch { XCTAssertEqual(error.localizedDescription, "密钥错误或被拒绝（对端静默断开）") }
+        catch { XCTAssertEqual(error.localizedDescription, L10n.text("密钥错误或被拒绝（对端静默断开）")) }
         do { _ = try await HTTPSClient().fetch(http, secret: "wrong"); XCTFail("wrong HTTP key accepted") }
-        catch { XCTAssertEqual(error.localizedDescription, "密钥错误或路径不对") }
+        catch { XCTAssertEqual(error.localizedDescription, L10n.text("密钥错误或路径不对")) }
     }
     func testKeychainWhenSigned() throws {
         let secrets = SecretStore(), id = UUID()

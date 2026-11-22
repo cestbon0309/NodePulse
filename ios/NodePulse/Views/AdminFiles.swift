@@ -49,7 +49,7 @@ struct AdminFile: Identifiable {
             await load(path)
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-admin-upload-sample") {
-                let url = FileManager.default.temporaryDirectory.appendingPathComponent("NodePulse-传输示例.bin")
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent(L10n.text("NodePulse-传输示例.bin"))
                 try Data(repeating: 0x5a, count: 2 * 1024 * 1024).write(to: url)
                 upload(url)
             }
@@ -57,7 +57,7 @@ struct AdminFile: Identifiable {
         } catch { self.error = error.localizedDescription }
     }
     func load(_ path: String) async {
-        guard path.hasPrefix("/"), !path.contains("\0") else { error = "请输入绝对路径，例如 /etc"; return }
+        guard path.hasPrefix("/"), !path.contains("\0") else { error = L10n.text("请输入绝对路径，例如 /etc"); return }
         loading = true; defer { loading = false }
         do {
             let response = try await active().request("ls", ["path": path])
@@ -72,7 +72,7 @@ struct AdminFile: Identifiable {
     }
     func upload(_ url: URL) {
         guard progress == nil else { return }
-        progress = 0; transferTitle = "正在上传 \(url.lastPathComponent)"; error = nil
+        progress = 0; transferTitle = L10n.text("正在上传 %@", String(describing: url.lastPathComponent)); error = nil
         let remote = Self.child(path, url.lastPathComponent)
         transfer = Task {
             defer { progress = nil; committing = false; transfer = nil }
@@ -80,10 +80,10 @@ struct AdminFile: Identifiable {
             var handle: Int?
             var activeSession: AdminSession?
             do {
-                guard Self.validName(url.lastPathComponent) else { throw AdminError.message("文件名无效") }
+                guard Self.validName(url.lastPathComponent) else { throw AdminError.message(L10n.text("文件名无效")) }
                 let file = try FileHandle(forReadingFrom: url); defer { try? file.close() }
                 let size = try file.seekToEnd(); try file.seek(toOffset: 0)
-                guard size <= UInt64(Int64.max) else { throw AdminError.message("文件过大") }
+                guard size <= UInt64(Int64.max) else { throw AdminError.message(L10n.text("文件过大")) }
                 let active = try await active(); activeSession = active
                 let response = try await active.request("put_begin", ["path": remote, "size": size, "overwrite": false])
                 guard let id = response["handle"] as? Int else { throw AdminError.disconnected }; handle = id
@@ -91,14 +91,14 @@ struct AdminFile: Identifiable {
                 while offset < size {
                     try Task.checkCancellation()
                     let data = try file.read(upToCount: Int(min(65536, size - offset))) ?? Data()
-                    guard !data.isEmpty else { throw AdminError.message("本地文件在上传期间发生变化") }
+                    guard !data.isEmpty else { throw AdminError.message(L10n.text("本地文件在上传期间发生变化")) }
                     _ = try await active.request("put", ["handle": id, "offset": offset, "data": data.base64EncodedString()])
                     offset += UInt64(data.count); progress = size == 0 ? 1 : Double(offset) / Double(size)
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("-admin-slow-transfer") { try await Task.sleep(for: .milliseconds(180)) }
                     #endif
                 }
-                try Task.checkCancellation(); committing = true; transferTitle = "正在保存文件…"
+                try Task.checkCancellation(); committing = true; transferTitle = L10n.text("正在保存文件…")
                 _ = try await active.request("put_end", ["handle": id]); handle = nil
                 await load(path)
             } catch {
@@ -112,7 +112,7 @@ struct AdminFile: Identifiable {
     }
     func download(_ entry: AdminFile) {
         guard progress == nil else { return }
-        progress = 0; transferTitle = "正在下载 \(entry.name)"; error = nil
+        progress = 0; transferTitle = L10n.text("正在下载 %@", String(describing: entry.name)); error = nil
         let remote = Self.child(path, entry.name)
         transfer = Task {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -120,7 +120,7 @@ struct AdminFile: Identifiable {
             do {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 let url = directory.appendingPathComponent(entry.name)
-                guard FileManager.default.createFile(atPath: url.path, contents: nil) else { throw AdminError.message("无法创建下载文件") }
+                guard FileManager.default.createFile(atPath: url.path, contents: nil) else { throw AdminError.message(L10n.text("无法创建下载文件")) }
                 let file = try FileHandle(forWritingTo: url); defer { try? file.close() }
                 let active = try await active(); var offset: Int64 = 0; var identity: String?
                 while true {
@@ -128,7 +128,7 @@ struct AdminFile: Identifiable {
                     var fields: [String: Any] = ["path": remote, "offset": offset, "len": 65536]
                     if let identity { fields["identity"] = identity }
                     let response = try await active.request("get", fields)
-                    guard let current = response["identity"] as? String, identity == nil || identity == current else { throw AdminError.message("文件已变化，请重新下载") }
+                    guard let current = response["identity"] as? String, identity == nil || identity == current else { throw AdminError.message(L10n.text("文件已变化，请重新下载")) }
                     identity = current
                     guard let text = response["data"] as? String, let data = Data(base64Encoded: text), data.count <= 65536,
                           let eof = response["eof"] as? Bool else { throw AdminError.disconnected }
@@ -167,47 +167,47 @@ struct AdminFile: Identifiable {
                     if let error = model.error {
                         Section { Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange) }
                     }
-                    if model.entries.isEmpty && !model.loading { ContentUnavailableView("空文件夹", systemImage: "folder", description: Text("可以上传文件或新建文件夹")) }
+                    if model.entries.isEmpty && !model.loading { ContentUnavailableView(L10n.text("空文件夹"), systemImage: "folder", description: Text(L10n.text("可以上传文件或新建文件夹"))) }
                     ForEach(model.entries) { entry in
                         Button { activate(entry) } label: {
                             HStack(spacing: 14) {
                                 Image(systemName: entry.symbol).font(.title2).foregroundStyle(entry.directory ? .teal : .secondary).frame(width: 30)
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(entry.name).foregroundStyle(.primary).lineLimit(2).font(.subheadline.weight(.medium))
-                                    Text(entry.type == "l" ? "→ \(entry.target ?? "符号链接")" : "\(PulseFormat.bytes(Double(entry.size))) · \(entry.modified.formatted(date: .numeric, time: .shortened))")
+                                    Text(entry.type == "l" ? "→ \(entry.target ?? L10n.text("符号链接"))" : "\(PulseFormat.bytes(Double(entry.size))) · \(entry.modified.formatted(date: .numeric, time: .shortened))")
                                         .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                                 }
                                 Spacer(minLength: 0)
                                 Image(systemName: entry.directory ? "chevron.right" : "arrow.down.circle").font(.caption).foregroundStyle(.tertiary)
                             }.padding(.vertical, 5)
                         }.buttonStyle(.plain)
-                            .swipeActions { Button("删除", role: .destructive) { deletion = entry } }
+                            .swipeActions { Button(L10n.text("删除"), role: .destructive) { deletion = entry } }
                             .contextMenu {
-                                if entry.type == "f" { Button("下载", systemImage: "arrow.down.circle") { model.download(entry) } }
-                                Button("重命名", systemImage: "pencil") { renaming = entry; text = entry.name; prompt = .rename }
-                                Button("删除", systemImage: "trash", role: .destructive) { deletion = entry }
+                                if entry.type == "f" { Button(L10n.text("下载"), systemImage: "arrow.down.circle") { model.download(entry) } }
+                                Button(L10n.text("重命名"), systemImage: "pencil") { renaming = entry; text = entry.name; prompt = .rename }
+                                Button(L10n.text("删除"), systemImage: "trash", role: .destructive) { deletion = entry }
                             }
                     }
-                    if model.truncated { Text("目录内容较多，仅显示部分条目。请前往更具体的路径。").font(.caption).foregroundStyle(.orange) }
+                    if model.truncated { Text(L10n.text("目录内容较多，仅显示部分条目。请前往更具体的路径。")).font(.caption).foregroundStyle(.orange) }
                 }.listStyle(.insetGrouped).disabled(model.progress != nil)
                     .refreshable { if model.progress == nil { await model.load(model.path) } }
             }.background(Color(uiColor: .systemGroupedBackground))
-                .navigationTitle("文件 · \(model.target.node.snapshot.name)").navigationBarTitleDisplayMode(.inline)
+                .navigationTitle(L10n.text("文件 · %@", String(describing: model.target.node.snapshot.name))).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("完成") { model.stop(); dismiss() } }
+                    ToolbarItem(placement: .cancellationAction) { Button(L10n.text("完成")) { model.stop(); dismiss() } }
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
-                            Button("上传文件", systemImage: "square.and.arrow.up") { importing = true }
-                            Button("新建文件夹", systemImage: "folder.badge.plus") { text = ""; prompt = .folder }
-                            Button("前往路径", systemImage: "arrow.turn.down.right") { text = model.path; prompt = .go }
-                            Button("重新连接", systemImage: "arrow.clockwise") { Task { await model.reconnect() } }
+                            Button(L10n.text("上传文件"), systemImage: "square.and.arrow.up") { importing = true }
+                            Button(L10n.text("新建文件夹"), systemImage: "folder.badge.plus") { text = ""; prompt = .folder }
+                            Button(L10n.text("前往路径"), systemImage: "arrow.turn.down.right") { text = model.path; prompt = .go }
+                            Button(L10n.text("重新连接"), systemImage: "arrow.clockwise") { Task { await model.reconnect() } }
                         } label: { Image(systemName: "ellipsis.circle") }.disabled(model.progress != nil)
                     }
                 }
                 .safeAreaInset(edge: .bottom) {
                     if let progress = model.progress {
                         VStack(spacing: 12) {
-                            HStack { VStack(alignment: .leading, spacing: 4) { Text(model.transferTitle).font(.subheadline.weight(.medium)); Text("\(Int(progress * 100))% · 端到端加密传输").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("取消", role: .destructive) { model.cancelTransfer() }.disabled(model.committing) }
+                            HStack { VStack(alignment: .leading, spacing: 4) { Text(model.transferTitle).font(.subheadline.weight(.medium)); Text(L10n.text("%@%% · 端到端加密传输", String(describing: Int(progress * 100)))).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button(L10n.text("取消"), role: .destructive) { model.cancelTransfer() }.disabled(model.committing) }
                             ProgressView(value: progress).tint(.teal)
                         }.padding(20).background(.regularMaterial)
                     }
@@ -217,22 +217,22 @@ struct AdminFile: Identifiable {
                     do { model.upload(try result.get()) } catch { model.error = error.localizedDescription }
                 }
                 .alert(promptTitle, isPresented: Binding(get: { prompt != nil }, set: { if !$0 { prompt = nil } })) {
-                    TextField(prompt == .go ? "/路径" : "名称", text: $text).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Button("取消", role: .cancel) { prompt = nil }
-                    Button("确定") { submit() }
+                    TextField(prompt == .go ? L10n.text("/路径") : L10n.text("名称"), text: $text).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Button(L10n.text("取消"), role: .cancel) { prompt = nil }
+                    Button(L10n.text("确定")) { submit() }
                 }
-                .confirmationDialog(deletion?.directory == true ? "递归删除此文件夹？" : "删除此文件？", isPresented: Binding(get: { deletion != nil }, set: { if !$0 { deletion = nil } }), titleVisibility: .visible) {
-                    Button("删除，且无法撤销", role: .destructive) {
+                .confirmationDialog(deletion?.directory == true ? L10n.text("递归删除此文件夹？") : L10n.text("删除此文件？"), isPresented: Binding(get: { deletion != nil }, set: { if !$0 { deletion = nil } }), titleVisibility: .visible) {
+                    Button(L10n.text("删除，且无法撤销"), role: .destructive) {
                         guard let entry = deletion else { return }; deletion = nil
                         Task { await model.mutate("rm", ["path": AdminFilesModel.child(model.path, entry.name), "recursive": entry.directory]) }
                     }
-                    Button("取消", role: .cancel) { deletion = nil }
-                } message: { Text(deletion?.directory == true ? "文件夹中的全部内容都会被删除，且不会移入废纸篓。" : "文件不会移入废纸篓。") }
+                    Button(L10n.text("取消"), role: .cancel) { deletion = nil }
+                } message: { Text(deletion?.directory == true ? L10n.text("文件夹中的全部内容都会被删除，且不会移入废纸篓。") : L10n.text("文件不会移入废纸篓。")) }
                 .sheet(isPresented: Binding(get: { model.shared != nil }, set: { if !$0 { model.clearShared() } })) { if let url = model.shared { AdminShareSheet(url: url) } }
         }.task { await model.start() }.onDisappear { model.stop() }
             .onChange(of: phase) { _, phase in if phase == .background { model.stop() } }
     }
-    private var promptTitle: String { switch prompt { case .go: return "前往路径"; case .folder: return "新建文件夹"; case .rename: return "重命名"; case nil: return "" } }
+    private var promptTitle: String { switch prompt { case .go: return L10n.text("前往路径"); case .folder: return L10n.text("新建文件夹"); case .rename: return L10n.text("重命名"); case nil: return "" } }
     private var breadcrumb: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -248,13 +248,13 @@ struct AdminFile: Identifiable {
     private func activate(_ entry: AdminFile) {
         if entry.directory { Task { await model.load(AdminFilesModel.child(model.path, entry.name)) } }
         else if entry.type == "f" { model.download(entry) }
-        else { model.error = "符号链接：\(entry.target ?? entry.name)；请通过前往路径访问目标。" }
+        else { model.error = L10n.text("符号链接：%@；请通过前往路径访问目标。", String(describing: entry.target ?? entry.name)) }
     }
     private func submit() {
         let action = prompt, name = text; prompt = nil
         guard action != .go else { Task { await model.load(name) }; return }
-        guard AdminFilesModel.validName(name) else { model.error = "名称不能为空，也不能包含 / 或使用 .、.."; return }
-        guard !model.entries.contains(where: { $0.name == name }) else { model.error = "已存在同名项目，请选择其他名称"; return }
+        guard AdminFilesModel.validName(name) else { model.error = L10n.text("名称不能为空，也不能包含 / 或使用 .、.."); return }
+        guard !model.entries.contains(where: { $0.name == name }) else { model.error = L10n.text("已存在同名项目，请选择其他名称"); return }
         if action == .folder { Task { await model.mutate("mkdir", ["path": AdminFilesModel.child(model.path, name)]) } }
         else if let entry = renaming { Task { await model.mutate("mv", ["from": AdminFilesModel.child(model.path, entry.name), "to": AdminFilesModel.child(model.path, name)]) } }
     }

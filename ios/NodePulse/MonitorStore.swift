@@ -20,8 +20,8 @@ struct NodeItem: Identifiable {
     var usesEndToEndEncryption = false
     var id: String { key }
     var connectionLabel: String {
-        guard endToEnd else { return "直连" }
-        return endpointName.isEmpty || endpointName == snapshot.name ? "中继" : "经由 \(endpointName)"
+        guard endToEnd else { return L10n.text("直连") }
+        return endpointName.isEmpty || endpointName == snapshot.name ? L10n.text("中继") : L10n.text("经由 %@", String(describing: endpointName))
     }
 }
 struct HiddenNode: Codable, Identifiable {
@@ -38,6 +38,7 @@ struct EndpointStatus {
 
 @Observable @MainActor
 final class MonitorStore {
+    let locations = GeolocationStore()
     var pairingURL: URL?
     private(set) var endpoints: [Endpoint]
     private(set) var nodes: [NodeItem] = []
@@ -102,7 +103,7 @@ final class MonitorStore {
     }
     func deleteNode(_ node: NodeItem, removeEndpoint: Bool = false) throws {
         if removeEndpoint {
-            guard let endpoint = removableEndpoint(for: node) else { throw ProbeError.transport("此节点不能单独删除接入点，请仅删除节点") }
+            guard let endpoint = removableEndpoint(for: node) else { throw ProbeError.transport(L10n.text("此节点不能单独删除接入点，请仅删除节点")) }
             try delete(endpoint)
             return
         }
@@ -217,10 +218,10 @@ final class MonitorStore {
     }
     private func demo() {
         demoTick += 0.18
-        let endpoint = Endpoint(id: demoID, name: "演示", kind: .direct(host: "localhost", port: 9000))
-        let specs = [("OpenWrt 23.05", "mips", "家庭路由器"), ("Ubuntu 24.04 LTS", "x86_64", "东京 VPS"),
-                     ("Debian 12", "aarch64", "中继节点"), ("Alpine Linux", "armv7", "离线设备"),
-                     ("Ubuntu 22.04 LTS", "aarch64", "工作站")]
+        let endpoint = Endpoint(id: demoID, name: L10n.text("演示"), kind: .direct(host: "localhost", port: 9000))
+        let specs = [("OpenWrt 23.05", "mips", L10n.text("家庭路由器")), ("Ubuntu 24.04 LTS", "x86_64", L10n.text("东京 VPS")),
+                     ("Debian 12", "aarch64", L10n.text("中继节点")), ("Alpine Linux", "armv7", L10n.text("离线设备")),
+                     ("Ubuntu 22.04 LTS", "aarch64", L10n.text("工作站"))]
         let snapshots = specs.enumerated().map { index, spec -> NodeSnapshot in
             var s = NodeSnapshot(); s.id = "demo-\(index)"; s.name = spec.2; s.hostname = "node-\(index)"
             s.os = spec.0; s.arch = spec.1; s.kernel = "6.6.32"; s.cpuModel = index == 0 ? "MediaTek MT7621" : "Virtual CPU"
@@ -230,11 +231,11 @@ final class MonitorStore {
             s.netRxRate = 100000 + 80000 * sin(demoTick + Double(index)); s.netTxRate = s.netRxRate * 0.3
             s.load = [s.cpuUsage / 50, 0.7, 0.5]; s.diskTotal = 32 * 1073741824; s.diskUsed = s.diskTotal * 0.4
             s.ts = Date().timeIntervalSince1970 - (index == 3 ? 300 : 0)
-            s.version = "0.1.0"; s.ips = ["192.168.1.\(index + 1)"]
+            s.version = "0.1.0"; s.ips = ["192.168.1.\(index + 1)"]; s.egressIp = "1.1.1.1"
             s.uptime = 86400 * Double(index + 1); s.temp = 42 + 3 * sin(demoTick); return s
         }
         apply(endpoint, result: .success(snapshots.enumerated().filter { $0.offset != 2 && $0.offset != 3 }.map(\.element)), latency: 12)
-        let relay = Endpoint(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!, name: "演示中继", kind: .groupTCP(host: "localhost", port: 9001))
+        let relay = Endpoint(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!, name: L10n.text("演示中继"), kind: .groupTCP(host: "localhost", port: 9001))
         apply(relay, result: .success([snapshots[2], snapshots[3]]), latency: 12, ages: [snapshots[2].id: 0, snapshots[3].id: 300])
         for index in nodes.indices where nodes[index].history.count == 1 {
             let s = nodes[index].snapshot

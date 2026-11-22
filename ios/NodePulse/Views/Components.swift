@@ -3,7 +3,7 @@ import Charts
 
 struct EndToEndBadge: View {
     var body: some View {
-        Label("端到端", systemImage: "lock.shield")
+        Label(L10n.text("端到端"), systemImage: "lock.shield")
             .font(.system(size: 10, weight: .medium)).fixedSize()
             .padding(.horizontal, 7).padding(.vertical, 4)
             .foregroundStyle(Color("AccentColor"))
@@ -13,7 +13,7 @@ struct EndToEndBadge: View {
 enum PulseFormat {
     static func ip(_ address: String, hidden: Bool) -> String {
         guard hidden, !address.isEmpty else { return address }
-        return address.contains(":") ? "••••:••••:••••:••••" : "•••.•••.•.•"
+        return "•.•.•.•"
     }
     static func bytes(_ value: Double) -> String {
         let formatter = ByteCountFormatter()
@@ -21,7 +21,7 @@ enum PulseFormat {
         formatter.allowsNonnumericFormatting = false
         return formatter.string(fromByteCount: Int64(max(0, min(value, Double(Int64.max - 1024)))))
     }
-    static func rate(_ value: Double) -> String { bytes(value) + "/秒" }
+    static func rate(_ value: Double) -> String { bytes(value) + L10n.text("/秒") }
     static func compactRate(_ value: Double) -> String {
         var amount = value.isFinite ? max(0, value) : 0
         let units = ["B", "K", "M", "G", "T"]
@@ -31,9 +31,9 @@ enum PulseFormat {
     }
     static func uptime(_ seconds: Double) -> String {
         let hours = Int(max(0, seconds) / 3600)
-        return hours >= 24 ? "\(hours / 24)天 \(hours % 24)小时" : "\(hours)小时 \(Int(max(0, seconds) / 60) % 60)分钟"
+        return hours >= 24 ? L10n.text("%@天 %@小时", String(describing: hours / 24), String(describing: hours % 24)) : L10n.text("%@小时 %@分钟", String(describing: hours), String(describing: Int(max(0, seconds) / 60) % 60))
     }
-    static func ago(_ timestamp: Double?) -> String { "\(max(0, Int((Date().timeIntervalSince1970 - (timestamp ?? Date().timeIntervalSince1970)) / 60))) 分钟前" }
+    static func ago(_ timestamp: Double?) -> String { L10n.text("%@ 分钟前", String(describing: max(0, Int((Date().timeIntervalSince1970 - (timestamp ?? Date().timeIntervalSince1970)) / 60)))) }
     static func color(_ value: Double) -> Color { value < 60 ? .mint : value < 85 ? .orange : .red }
 }
 
@@ -75,13 +75,13 @@ struct Sparkline: View {
     var history: [HistorySample]
     var body: some View {
         Chart(Array(history.enumerated()), id: \.offset) { _, sample in
-            AreaMark(x: .value("时间", sample.date), y: .value("CPU", sample.cpu))
+            AreaMark(x: .value(L10n.text("时间"), sample.date), y: .value("CPU", sample.cpu))
                 .foregroundStyle(LinearGradient(colors: [.mint.opacity(0.22), .mint.opacity(0.01)], startPoint: .top, endPoint: .bottom))
                 .interpolationMethod(.catmullRom)
-            LineMark(x: .value("时间", sample.date), y: .value("CPU", sample.cpu))
+            LineMark(x: .value(L10n.text("时间"), sample.date), y: .value("CPU", sample.cpu))
                 .foregroundStyle(.mint).lineStyle(StrokeStyle(lineWidth: 2)).interpolationMethod(.catmullRom)
         }.chartYScale(domain: 0...100).chartXAxis(.hidden).chartYAxis(.hidden)
-            .frame(height: 38).accessibilityLabel("CPU 使用率趋势")
+            .frame(height: 38).accessibilityLabel(L10n.text("CPU 使用率趋势"))
     }
 }
 
@@ -111,7 +111,7 @@ struct InfoRow: View {
 
 struct Toast: View {
     var body: some View {
-        Label("已复制", systemImage: "checkmark.circle.fill").font(.subheadline.weight(.medium))
+        Label(L10n.text("已复制"), systemImage: "checkmark.circle.fill").font(.subheadline.weight(.medium))
             .padding(.horizontal, 24).padding(.vertical, 13).background(.regularMaterial, in: Capsule()).shadow(radius: 12, y: 4)
     }
 }
@@ -141,7 +141,7 @@ struct OnlineStatus: View {
         HStack(spacing: 6) {
             Circle().fill(online ? .mint : .gray).frame(width: 7, height: 7)
                 .overlay { if online { Circle().stroke(.mint.opacity(0.35)).scaleEffect(pulse ? 1.9 : 1).opacity(pulse ? 0 : 1) } }
-            Text(online ? "在线" : "离线").font(.caption)
+            Text(online ? L10n.text("在线") : L10n.text("离线")).font(.caption)
         }.foregroundStyle(online ? .mint : .secondary)
             .onAppear { if online && !reduceMotion { withAnimation(.easeOut(duration: 1.8).repeatForever(autoreverses: false)) { pulse = true } } }
     }

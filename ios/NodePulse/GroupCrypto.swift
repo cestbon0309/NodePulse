@@ -38,12 +38,12 @@ struct GroupCrypto {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let node = try decoder.decode(NodeSnapshot.self, from: data)
-        guard !node.id.isEmpty, self.slot(for: node.id) == slot else { throw ProbeError.transport("节点槽位校验失败") }
+        guard !node.id.isEmpty, self.slot(for: node.id) == slot else { throw ProbeError.transport(L10n.text("节点槽位校验失败")) }
         return node
     }
     func decodeResponse(_ data: Data, requestID: String) throws -> ProbeFetch {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              object["rid"] as? String == requestID else { throw ProbeError.transport("响应校验失败") }
+              object["rid"] as? String == requestID else { throw ProbeError.transport(L10n.text("响应校验失败")) }
         guard object["ok"] as? Bool == true, let blobs = object["blobs"] as? [Any], blobs.count <= 32 else { throw ProbeError.parse }
         var result = ProbeFetch()
         var slots = Set<String>()

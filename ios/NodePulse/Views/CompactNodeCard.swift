@@ -2,6 +2,8 @@ import SwiftUI
 
 struct CompactNodeCard: View {
     var item: NodeItem
+    var locations: GeolocationStore
+    var demo = false
     private var snapshot: NodeSnapshot { item.snapshot }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -10,15 +12,16 @@ struct CompactNodeCard: View {
                     Text(snapshot.name).font(.subheadline.weight(.semibold)).lineLimit(1)
                     Spacer(minLength: 0)
                     Circle().fill(item.online ? .mint : .gray).frame(width: 6, height: 6)
-                        .accessibilityLabel(item.online ? "在线" : "离线")
+                        .accessibilityLabel(item.online ? L10n.text("在线") : L10n.text("离线"))
                 }
                 Text(snapshot.os).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 if item.usesEndToEndEncryption { EndToEndBadge() }
             }
+            NodeLocation(ip: snapshot.egressIp, locations: locations, demo: demo)
             VStack(spacing: 9) {
                 metric("CPU", value: snapshot.cpuUsage)
-                metric("内存", value: snapshot.memPercent)
-                metric("磁盘", value: snapshot.diskTotal > 0 ? snapshot.diskUsed / snapshot.diskTotal * 100 : 0)
+                metric(L10n.text("内存"), value: snapshot.memPercent)
+                metric(L10n.text("磁盘"), value: snapshot.diskTotal > 0 ? snapshot.diskUsed / snapshot.diskTotal * 100 : 0)
             }
             HStack(spacing: 4) {
                 Text("↑\(PulseFormat.compactRate(snapshot.netTxRate))").frame(maxWidth: .infinity, alignment: .leading)

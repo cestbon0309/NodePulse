@@ -1,0 +1,5293 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "管理消息过大": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理消息过大"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Admin message is too large"
+          }
+        }
+      }
+    },
+    "无法验证设备身份，请检查设备密码设置": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法验证设备身份，请检查设备密码设置"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to verify this device. Check your passcode settings."
+          }
+        }
+      }
+    },
+    "验证身份以管理远程节点": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证身份以管理远程节点"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verify your identity to manage the remote node"
+          }
+        }
+      }
+    },
+    "身份验证未通过": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "身份验证未通过"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authentication failed"
+          }
+        }
+      }
+    },
+    "已取消身份验证": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已取消身份验证"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authentication cancelled"
+          }
+        }
+      }
+    },
+    "身份验证未通过，请使用设备密码重试": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "身份验证未通过，请使用设备密码重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authentication failed. Try your device passcode."
+          }
+        }
+      }
+    },
+    "未授权或握手失败，请检查管理公钥、密钥和探针时间；探针可能未启用 -A": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未授权或握手失败，请检查管理公钥、密钥和探针时间；探针可能未启用 -A"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unauthorized or handshake failed. Check the admin public key, secret and probe clock; -A may not be enabled."
+          }
+        }
+      }
+    },
+    "管理连接已断开，请重新连接": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理连接已断开，请重新连接"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Admin connection lost. Reconnect to continue."
+          }
+        }
+      }
+    },
+    "接入点端口无效": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接入点端口无效"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid endpoint port"
+          }
+        }
+      }
+    },
+    "节点离线或连接失败": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "节点离线或连接失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Node offline or connection failed"
+          }
+        }
+      }
+    },
+    "连接超时，节点可能离线": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接超时，节点可能离线"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection timed out; the node may be offline"
+          }
+        }
+      }
+    },
+    "管理连接超时": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理连接超时"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Admin connection timed out"
+          }
+        }
+      }
+    },
+    "HTTPS 接入点不支持管理，请使用直连或 TCP 中继": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTPS 接入点不支持管理，请使用直连或 TCP 中继"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTPS endpoints do not support administration. Use direct TCP or a TCP relay."
+          }
+        }
+      }
+    },
+    "节点离线，探针尚未连接中继": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "节点离线，探针尚未连接中继"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Node offline; the probe has not connected to the relay"
+          }
+        }
+      }
+    },
+    "中继连接被拒绝": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继连接被拒绝"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relay connection rejected"
+          }
+        }
+      }
+    },
+    "离线": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "离线"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline"
+          }
+        }
+      }
+    },
+    "管理请求超时": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理请求超时"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Admin request timed out"
+          }
+        }
+      }
+    },
+    "终端输入过大": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "终端输入过大"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminal input is too large"
+          }
+        }
+      }
+    },
+    "终端输出过快，请重新连接": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "终端输出过快，请重新连接"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminal output is too fast. Please reconnect."
+          }
+        }
+      }
+    },
+    "未知错误": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知错误"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unknown error"
+          }
+        }
+      }
+    },
+    "远程操作失败：%@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "远程操作失败：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remote operation failed: %@"
+          }
+        }
+      }
+    },
+    "响应校验失败": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "响应校验失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Response verification failed"
+          }
+        }
+      }
+    },
+    "连接失败：%@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接失败：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection failed: %@"
+          }
+        }
+      }
+    },
+    "密钥错误或路径不对": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密钥错误或路径不对"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Incorrect secret or path"
+          }
+        }
+      }
+    },
+    "HTTP 错误：%@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTP 错误：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTP error: %@"
+          }
+        }
+      }
+    },
+    "响应过大": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "响应过大"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Response is too large"
+          }
+        }
+      }
+    },
+    "节点槽位校验失败": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "节点槽位校验失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Node slot verification failed"
+          }
+        }
+      }
+    },
+    "超时": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超时"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timed out"
+          }
+        }
+      }
+    },
+    "连接被拒绝": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接被拒绝"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection refused"
+          }
+        }
+      }
+    },
+    "密钥错误或被拒绝（对端静默断开）": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密钥错误或被拒绝（对端静默断开）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Incorrect secret or rejected (peer closed silently)"
+          }
+        }
+      }
+    },
+    "解析失败": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解析失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to parse response"
+          }
+        }
+      }
+    },
+    "请输入 HTTPS 地址（开发环境允许 localhost/127.0.0.1 HTTP）": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入 HTTPS 地址（开发环境允许 localhost/127.0.0.1 HTTP）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter an HTTPS URL (localhost/127.0.0.1 HTTP is allowed for development)"
+          }
+        }
+      }
+    },
+    "未找到密钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到密钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Secret not found"
+          }
+        }
+      }
+    },
+    "钥匙串错误：%@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "钥匙串错误：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keychain error: %@"
+          }
+        }
+      }
+    },
+    "直连": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直连"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direct"
+          }
+        }
+      }
+    },
+    "中继": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relay"
+          }
+        }
+      }
+    },
+    "经由 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "经由 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Via %@"
+          }
+        }
+      }
+    },
+    "此节点不能单独删除接入点，请仅删除节点": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此节点不能单独删除接入点，请仅删除节点"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This endpoint cannot be removed for this node. Remove only the node."
+          }
+        }
+      }
+    },
+    "演示": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "演示"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demo"
+          }
+        }
+      }
+    },
+    "家庭路由器": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家庭路由器"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Home Router"
+          }
+        }
+      }
+    },
+    "东京 VPS": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "东京 VPS"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tokyo VPS"
+          }
+        }
+      }
+    },
+    "中继节点": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继节点"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relay Node"
+          }
+        }
+      }
+    },
+    "离线设备": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "离线设备"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline Device"
+          }
+        }
+      }
+    },
+    "工作站": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作站"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Workstation"
+          }
+        }
+      }
+    },
+    "演示中继": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "演示中继"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demo Relay"
+          }
+        }
+      }
+    },
+    "本机探针": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机探针"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local Probe"
+          }
+        }
+      }
+    },
+    "本机端到端中继": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机端到端中继"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local E2E Relay"
+          }
+        }
+      }
+    },
+    "本机管理探针": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机管理探针"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local Admin Probe"
+          }
+        }
+      }
+    },
+    "配对已被拒绝，密钥未保存。请在服务器上重新运行 pair 后重试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对已被拒绝，密钥未保存。请在服务器上重新运行 pair 后重试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing rejected; no secret was saved. Run pair again on the server."
+          }
+        }
+      }
+    },
+    "配对超时。请在服务器上重新开启配对，并在 30 秒内核对图案和数字。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对超时。请在服务器上重新开启配对，并在 30 秒内核对图案和数字。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing timed out. Restart pairing on the server and compare the pattern and digits within 30 seconds."
+          }
+        }
+      }
+    },
+    "配对连接失败或已断开。请确认地址、端口、防火墙，以及探针正在运行 -P。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对连接失败或已断开。请确认地址、端口、防火墙，以及探针正在运行 -P。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing connection failed or disconnected. Check the address, port, firewall and that the probe is running -P."
+          }
+        }
+      }
+    },
+    "配对握手校验失败，未保存密钥。请勿忽略图案或数字不一致。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对握手校验失败，未保存密钥。请勿忽略图案或数字不一致。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing handshake verification failed; no secret was saved. Never ignore mismatched patterns or digits."
+          }
+        }
+      }
+    },
+    "此接入点不支持管理": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此接入点不支持管理"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This endpoint does not support administration"
+          }
+        }
+      }
+    },
+    "请先在设置 → 管理密钥中生成密钥，并将公钥配置到探针 -A": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先在设置 → 管理密钥中生成密钥，并将公钥配置到探针 -A"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generate a key in Settings → Admin Keys first, then configure its public key with probe -A."
+          }
+        }
+      }
+    },
+    "正在连接实时探针…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在连接实时探针…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting to the live probe…"
+          }
+        }
+      }
+    },
+    "未发现实时探针": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未发现实时探针"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No live probe found"
+          }
+        }
+      }
+    },
+    "管理": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Administration"
+          }
+        }
+      }
+    },
+    "终端": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "终端"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminal"
+          }
+        }
+      }
+    },
+    "文件": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files"
+          }
+        }
+      }
+    },
+    "重启": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重启"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reboot"
+          }
+        }
+      }
+    },
+    "关机": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关机"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shut Down"
+          }
+        }
+      }
+    },
+    "以探针用户权限执行 · 端到端加密": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以探针用户权限执行 · 端到端加密"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runs as the probe user · End-to-end encrypted"
+          }
+        }
+      }
+    },
+    "重启此节点？": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重启此节点？"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reboot this node?"
+          }
+        }
+      }
+    },
+    "关闭此节点？": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭此节点？"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shut down this node?"
+          }
+        }
+      }
+    },
+    "确认重启": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认重启"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm Reboot"
+          }
+        }
+      }
+    },
+    "确认关机": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认关机"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm Shutdown"
+          }
+        }
+      }
+    },
+    "取消": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        }
+      }
+    },
+    "%@ 的连接将中断。请确认已保存工作，关机后可能需要现场重新启动。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的连接将中断。请确认已保存工作，关机后可能需要现场重新启动。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ will disconnect. Save your work first; shutting down may require physical access to restart."
+          }
+        }
+      }
+    },
+    "电源操作": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "电源操作"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Power Control"
+          }
+        }
+      }
+    },
+    "好": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "好"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        }
+      }
+    },
+    "探针已确认，正在%@…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "探针已确认，正在%@…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Probe confirmed. Performing %@…"
+          }
+        }
+      }
+    },
+    "你的管理身份": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的管理身份"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your Admin Identity"
+          }
+        }
+      }
+    },
+    "独立的 Ed25519 签名密钥。私钥仅保存在此设备的钥匙串中，不会发送给探针或中继。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "独立的 Ed25519 签名密钥。私钥仅保存在此设备的钥匙串中，不会发送给探针或中继。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An independent Ed25519 signing key. The private key stays in this device’s Keychain and is never sent to probes or relays."
+          }
+        }
+      }
+    },
+    "生成管理密钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成管理密钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generate Admin Key"
+          }
+        }
+      }
+    },
+    "管理公钥 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理公钥 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Admin public key %@"
+          }
+        }
+      }
+    },
+    "复制公钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制公钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Public Key"
+          }
+        }
+      }
+    },
+    "分享公钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享公钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share Public Key"
+          }
+        }
+      }
+    },
+    "添加到探针": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加到探针"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add to Probe"
+          }
+        }
+      }
+    },
+    "启动参数": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启动参数"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Launch Arguments"
+          }
+        }
+      }
+    },
+    "配置文件": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置文件"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configuration File"
+          }
+        }
+      }
+    },
+    "管理操作需要 Face ID": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理操作需要 Face ID"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Require Face ID for Administration"
+          }
+        }
+      }
+    },
+    "打开终端、文件或执行电源操作前验证身份。无生物识别时使用设备密码；模拟器或未设置设备密码时跳过。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开终端、文件或执行电源操作前验证身份。无生物识别时使用设备密码；模拟器或未设置设备密码时跳过。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verify your identity before opening a terminal, files or power controls. Use the device passcode if biometrics are unavailable; skipped on simulators or devices without a passcode."
+          }
+        }
+      }
+    },
+    "重新生成密钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新生成密钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regenerate Key"
+          }
+        }
+      }
+    },
+    "重新生成后，所有探针都需要更新允许的公钥。私钥无法恢复或跨设备同步。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新生成后，所有探针都需要更新允许的公钥。私钥无法恢复或跨设备同步。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "After regeneration, update the allowed public key on every probe. The private key cannot be recovered or synced between devices."
+          }
+        }
+      }
+    },
+    "管理密钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理密钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Admin Keys"
+          }
+        }
+      }
+    },
+    "重新生成管理密钥？": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新生成管理密钥？"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regenerate admin key?"
+          }
+        }
+      }
+    },
+    "替换旧密钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "替换旧密钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replace Old Key"
+          }
+        }
+      }
+    },
+    "旧私钥将被永久替换。请随后更新探针上的 -A / admin_keys。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "旧私钥将被永久替换。请随后更新探针上的 -A / admin_keys。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The old private key will be permanently replaced. Update -A / admin_keys on your probes afterwards."
+          }
+        }
+      }
+    },
+    "复制": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy"
+          }
+        }
+      }
+    },
+    "NodePulse-传输示例.bin": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NodePulse-传输示例.bin"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NodePulse-transfer-example.bin"
+          }
+        }
+      }
+    },
+    "请输入绝对路径，例如 /etc": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入绝对路径，例如 /etc"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter an absolute path, such as /etc"
+          }
+        }
+      }
+    },
+    "正在上传 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在上传 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uploading %@"
+          }
+        }
+      }
+    },
+    "文件名无效": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件名无效"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid filename"
+          }
+        }
+      }
+    },
+    "文件过大": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件过大"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File is too large"
+          }
+        }
+      }
+    },
+    "本地文件在上传期间发生变化": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地文件在上传期间发生变化"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local file changed during upload"
+          }
+        }
+      }
+    },
+    "正在保存文件…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在保存文件…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saving file…"
+          }
+        }
+      }
+    },
+    "正在下载 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在下载 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading %@"
+          }
+        }
+      }
+    },
+    "无法创建下载文件": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法创建下载文件"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to create the download file"
+          }
+        }
+      }
+    },
+    "文件已变化，请重新下载": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件已变化，请重新下载"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File changed. Please download it again."
+          }
+        }
+      }
+    },
+    "空文件夹": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空文件夹"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empty Folder"
+          }
+        }
+      }
+    },
+    "可以上传文件或新建文件夹": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以上传文件或新建文件夹"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload a file or create a folder"
+          }
+        }
+      }
+    },
+    "符号链接": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "符号链接"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Symbolic link"
+          }
+        }
+      }
+    },
+    "删除": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete"
+          }
+        }
+      }
+    },
+    "下载": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download"
+          }
+        }
+      }
+    },
+    "重命名": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rename"
+          }
+        }
+      }
+    },
+    "目录内容较多，仅显示部分条目。请前往更具体的路径。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目录内容较多，仅显示部分条目。请前往更具体的路径。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only part of this directory is shown. Navigate to a more specific path."
+          }
+        }
+      }
+    },
+    "文件 · %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件 · %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files · %@"
+          }
+        }
+      }
+    },
+    "完成": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        }
+      }
+    },
+    "上传文件": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上传文件"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload File"
+          }
+        }
+      }
+    },
+    "新建文件夹": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建文件夹"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Folder"
+          }
+        }
+      }
+    },
+    "前往路径": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前往路径"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Go to Path"
+          }
+        }
+      }
+    },
+    "重新连接": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新连接"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnect"
+          }
+        }
+      }
+    },
+    "%@%% · 端到端加密传输": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@%% · 端到端加密传输"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@%% · End-to-end encrypted transfer"
+          }
+        }
+      }
+    },
+    "/路径": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/路径"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/path"
+          }
+        }
+      }
+    },
+    "名称": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名称"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name"
+          }
+        }
+      }
+    },
+    "确定": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确定"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm"
+          }
+        }
+      }
+    },
+    "递归删除此文件夹？": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "递归删除此文件夹？"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete this folder recursively?"
+          }
+        }
+      }
+    },
+    "删除此文件？": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除此文件？"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete this file?"
+          }
+        }
+      }
+    },
+    "删除，且无法撤销": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除，且无法撤销"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete Permanently"
+          }
+        }
+      }
+    },
+    "文件夹中的全部内容都会被删除，且不会移入废纸篓。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件夹中的全部内容都会被删除，且不会移入废纸篓。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All contents of this folder will be deleted without moving them to Trash."
+          }
+        }
+      }
+    },
+    "文件不会移入废纸篓。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件不会移入废纸篓。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file will not be moved to Trash."
+          }
+        }
+      }
+    },
+    "符号链接：%@；请通过前往路径访问目标。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "符号链接：%@；请通过前往路径访问目标。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Symbolic link: %@. Use Go to Path to open its target."
+          }
+        }
+      }
+    },
+    "名称不能为空，也不能包含 / 或使用 .、..": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名称不能为空，也不能包含 / 或使用 .、.."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name must not be empty, contain /, or be . or .."
+          }
+        }
+      }
+    },
+    "已存在同名项目，请选择其他名称": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已存在同名项目，请选择其他名称"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An item with this name already exists. Choose another name."
+          }
+        }
+      }
+    },
+    "正在打开终端…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在打开终端…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opening terminal…"
+          }
+        }
+      }
+    },
+    "已连接 · %@ × %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已连接 · %@ × %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected · %@ × %@"
+          }
+        }
+      }
+    },
+    "终端已退出 · 代码 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "终端已退出 · 代码 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminal exited · Code %@"
+          }
+        }
+      }
+    },
+    "连接已断开，可重新连接": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接已断开，可重新连接"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnected. You can reconnect."
+          }
+        }
+      }
+    },
+    "连接已关闭": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接已关闭"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection closed"
+          }
+        }
+      }
+    },
+    "关闭": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close"
+          }
+        }
+      }
+    },
+    "键盘": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "键盘"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyboard"
+          }
+        }
+      }
+    },
+    "在线": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在线"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Online"
+          }
+        }
+      }
+    },
+    "内存": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内存"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Memory"
+          }
+        }
+      }
+    },
+    "磁盘": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "磁盘"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disk"
+          }
+        }
+      }
+    },
+    "端到端": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端到端"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "E2E"
+          }
+        }
+      }
+    },
+    "/秒": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/秒"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/s"
+          }
+        }
+      }
+    },
+    "%@天 %@小时": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@天 %@小时"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@d %@h"
+          }
+        }
+      }
+    },
+    "%@小时 %@分钟": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@小时 %@分钟"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@h %@m"
+          }
+        }
+      }
+    },
+    "%@ 分钟前": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 分钟前"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ min ago"
+          }
+        }
+      }
+    },
+    "时间": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "时间"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Time"
+          }
+        }
+      }
+    },
+    "CPU 使用率趋势": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CPU 使用率趋势"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CPU usage trend"
+          }
+        }
+      }
+    },
+    "已复制": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已复制"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copied"
+          }
+        }
+      }
+    },
+    "全部": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All"
+          }
+        }
+      }
+    },
+    "%@ 个接入点连接失败": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 个接入点连接失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ endpoint connections failed"
+          }
+        }
+      }
+    },
+    "关闭提示": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭提示"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dismiss message"
+          }
+        }
+      }
+    },
+    "节点筛选": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "节点筛选"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filter Nodes"
+          }
+        }
+      }
+    },
+    "复制 IP": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制 IP"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy IP"
+          }
+        }
+      }
+    },
+    "查看详情": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看详情"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View Details"
+          }
+        }
+      }
+    },
+    "没有匹配的节点": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有匹配的节点"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Matching Nodes"
+          }
+        }
+      }
+    },
+    "试试其他名称、IP 或系统": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "试试其他名称、IP 或系统"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try another name, IP or system"
+          }
+        }
+      }
+    },
+    "搜索名称、IP 或系统": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索名称、IP 或系统"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search name, IP or system"
+          }
+        }
+      }
+    },
+    "切换到默认布局": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换到默认布局"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch to default layout"
+          }
+        }
+      }
+    },
+    "切换到经典布局": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换到经典布局"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch to compact layout"
+          }
+        }
+      }
+    },
+    "经典": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "经典"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compact"
+          }
+        }
+      }
+    },
+    "默认": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default"
+          }
+        }
+      }
+    },
+    "添加探针": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加探针"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Probe"
+          }
+        }
+      }
+    },
+    "设置": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        }
+      }
+    },
+    "每个节点，尽在掌握": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个节点，尽在掌握"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every node, at a glance"
+          }
+        }
+      }
+    },
+    "连接你的 Linux 探针，实时查看\n服务器的健康状态与资源趋势。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接你的 Linux 探针，实时查看\n服务器的健康状态与资源趋势。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect your Linux probes to monitor server health and resource trends in real time."
+          }
+        }
+      }
+    },
+    "体验演示数据": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "体验演示数据"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try Demo Data"
+          }
+        }
+      }
+    },
+    "集群概览": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "集群概览"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cluster Overview"
+          }
+        }
+      }
+    },
+    "实时": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live"
+          }
+        }
+      }
+    },
+    "/ %@ 节点在线": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/ %@ 节点在线"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/ %@ nodes online"
+          }
+        }
+      }
+    },
+    "平均 CPU": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "平均 CPU"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Average CPU"
+          }
+        }
+      }
+    },
+    "平均内存": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "平均内存"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Average Memory"
+          }
+        }
+      }
+    },
+    "总上行": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "总上行"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total Upload"
+          }
+        }
+      }
+    },
+    "总下行": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "总下行"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total Download"
+          }
+        }
+      }
+    },
+    "负载 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "负载 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Load %@"
+          }
+        }
+      }
+    },
+    "尚未添加接入点": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未添加接入点"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Endpoints Yet"
+          }
+        }
+      }
+    },
+    "通过直连 TCP 或 HTTPS 连接探针": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过直连 TCP 或 HTTPS 连接探针"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect to a probe over direct TCP or HTTPS"
+          }
+        }
+      }
+    },
+    "已忽略 %@ 个校验失败的密文": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已忽略 %@ 个校验失败的密文"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ignored %@ ciphertexts that failed verification"
+          }
+        }
+      }
+    },
+    "%@ 毫秒": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 毫秒"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ms"
+          }
+        }
+      }
+    },
+    "更新于 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新于 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updated %@"
+          }
+        }
+      }
+    },
+    "等待首次连接": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待首次连接"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for first connection"
+          }
+        }
+      }
+    },
+    "未命名节点": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未命名节点"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unnamed Node"
+          }
+        }
+      }
+    },
+    "恢复": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore"
+          }
+        }
+      }
+    },
+    "已隐藏的节点": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已隐藏的节点"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hidden Nodes"
+          }
+        }
+      }
+    },
+    "恢复后将在下次成功刷新时重新显示，历史采样从零开始。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复后将在下次成功刷新时重新显示，历史采样从零开始。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restored nodes reappear after the next successful refresh, with a fresh history."
+          }
+        }
+      }
+    },
+    "接入点": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接入点"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Endpoints"
+          }
+        }
+      }
+    },
+    "添加接入点": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加接入点"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Endpoint"
+          }
+        }
+      }
+    },
+    "无法删除": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法删除"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to Delete"
+          }
+        }
+      }
+    },
+    "基本信息": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "基本信息"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Basic Information"
+          }
+        }
+      }
+    },
+    "名称，例如：家庭路由器": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名称，例如：家庭路由器"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name, e.g. Home Router"
+          }
+        }
+      }
+    },
+    "类型": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "类型"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Type"
+          }
+        }
+      }
+    },
+    "直连 TCP": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直连 TCP"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direct TCP"
+          }
+        }
+      }
+    },
+    "中继服务器（TCP）": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继服务器（TCP）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relay Server (TCP)"
+          }
+        }
+      }
+    },
+    "中继服务器（HTTPS）": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继服务器（HTTPS）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relay Server (HTTPS)"
+          }
+        }
+      }
+    },
+    "主机名或 IP 地址": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主机名或 IP 地址"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hostname or IP Address"
+          }
+        }
+      }
+    },
+    "端口": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端口"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Port"
+          }
+        }
+      }
+    },
+    "连接地址": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接地址"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection Address"
+          }
+        }
+      }
+    },
+    "连接共享中继的 -S 端口。同组探针使用 -R 发布加密快照。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接共享中继的 -S 端口。同组探针使用 -R 发布加密快照。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect to the shared relay’s -S port. Probes in the same group publish encrypted snapshots using -R."
+          }
+        }
+      }
+    },
+    "填写 HTTPS 基础地址或 /api/relay 完整路径，通过 POST 传输加密帧。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "填写 HTTPS 基础地址或 /api/relay 完整路径，通过 POST 传输加密帧。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter an HTTPS base URL or the full /api/relay path. Encrypted frames are sent over POST."
+          }
+        }
+      }
+    },
+    "直连使用端到端加密 TCP，对应探针的 -l 端口。无需配置 Web 服务器。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直连使用端到端加密 TCP，对应探针的 -l 端口。无需配置 Web 服务器。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direct connections use end-to-end encrypted TCP on the probe’s -l port. No web server is needed."
+          }
+        }
+      }
+    },
+    "HTTPS 模式适用于放在 Nginx 反向代理后的探针。填写 HTTPS 基础地址或 /api/nodes 完整路径。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTPS 模式适用于放在 Nginx 反向代理后的探针。填写 HTTPS 基础地址或 /api/nodes 完整路径。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTPS mode is for probes behind a reverse proxy such as Nginx. Enter an HTTPS base URL or the full /api/nodes path."
+          }
+        }
+      }
+    },
+    "认证": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "认证"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authentication"
+          }
+        }
+      }
+    },
+    "中继令牌": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继令牌"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relay Token"
+          }
+        }
+      }
+    },
+    "输入中继令牌": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入中继令牌"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter relay token"
+          }
+        }
+      }
+    },
+    "密钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Secret"
+          }
+        }
+      }
+    },
+    "隐藏令牌或密钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏令牌或密钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide token or secret"
+          }
+        }
+      }
+    },
+    "显示令牌或密钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示令牌或密钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show token or secret"
+          }
+        }
+      }
+    },
+    "组密钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "组密钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Group Secret"
+          }
+        }
+      }
+    },
+    "输入组密钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入组密钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter group secret"
+          }
+        }
+      }
+    },
+    "隐藏组密钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏组密钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide group secret"
+          }
+        }
+      }
+    },
+    "显示组密钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示组密钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show group secret"
+          }
+        }
+      }
+    },
+    "已生成并复制": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已生成并复制"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generated and Copied"
+          }
+        }
+      }
+    },
+    "生成随机组密钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成随机组密钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generate Random Group Secret"
+          }
+        }
+      }
+    },
+    "发现 %@ 个节点": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发现 %@ 个节点"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Found %@ nodes"
+          }
+        }
+      }
+    },
+    "测试连接": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试连接"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test Connection"
+          }
+        }
+      }
+    },
+    "端到端加密：中继无法解密或伪造节点数据。组密钥只在你的设备上保存，不会发送给中继；请在探针上配置相同的组密钥。令牌与组密钥分别保存在钥匙串中。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端到端加密：中继无法解密或伪造节点数据。组密钥只在你的设备上保存，不会发送给中继；请在探针上配置相同的组密钥。令牌与组密钥分别保存在钥匙串中。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "End-to-end encrypted: the relay cannot decrypt or forge node data. The group secret stays on your device and is never sent to the relay; configure the same group secret on your probes. The token and group secret are stored separately in Keychain."
+          }
+        }
+      }
+    },
+    "密钥仅保存在此设备的钥匙串中，不会上传或写入普通偏好设置。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密钥仅保存在此设备的钥匙串中，不会上传或写入普通偏好设置。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The secret stays in this device’s Keychain. It is never uploaded or stored in ordinary preferences."
+          }
+        }
+      }
+    },
+    "编辑接入点": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑接入点"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit Endpoint"
+          }
+        }
+      }
+    },
+    "保存": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save"
+          }
+        }
+      }
+    },
+    "无法保存": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to Save"
+          }
+        }
+      }
+    },
+    "监控": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "监控"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monitoring"
+          }
+        }
+      }
+    },
+    "刷新间隔": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新间隔"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refresh Interval"
+          }
+        }
+      }
+    },
+    "%@ 秒": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 秒"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ s"
+          }
+        }
+      }
+    },
+    "演示模式": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "演示模式"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demo Mode"
+          }
+        }
+      }
+    },
+    "关于": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关于"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "About"
+          }
+        }
+      }
+    },
+    "版本": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "版本"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version"
+          }
+        }
+      }
+    },
+    "项目源代码": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目源代码"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project Source"
+          }
+        }
+      }
+    },
+    "删除节点？": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除节点？"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete node?"
+          }
+        }
+      }
+    },
+    "删除节点": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除节点"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete Node"
+          }
+        }
+      }
+    },
+    "同时删除接入点和密钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同时删除接入点和密钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Also Delete Endpoint and Secret"
+          }
+        }
+      }
+    },
+    "将从仪表盘移除「%@」及其历史，并持续隐藏。可在设置 → 接入点中恢复。不会删除服务器上的数据。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将从仪表盘移除「%@」及其历史，并持续隐藏。可在设置 → 接入点中恢复。不会删除服务器上的数据。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove “%@” and its history from the dashboard and keep it hidden. Restore it in Settings → Endpoints. No server data will be deleted."
+          }
+        }
+      }
+    },
+    "显示 IP": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示 IP"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show IP"
+          }
+        }
+      }
+    },
+    "隐藏 IP": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏 IP"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide IP"
+          }
+        }
+      }
+    },
+    "系统": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System"
+          }
+        }
+      }
+    },
+    "操作系统": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作系统"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Operating System"
+          }
+        }
+      }
+    },
+    "内核": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内核"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kernel"
+          }
+        }
+      }
+    },
+    "架构": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "架构"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Architecture"
+          }
+        }
+      }
+    },
+    "CPU 型号": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CPU 型号"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CPU Model"
+          }
+        }
+      }
+    },
+    "核心数": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "核心数"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cores"
+          }
+        }
+      }
+    },
+    "运行时长": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行时长"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uptime"
+          }
+        }
+      }
+    },
+    "进程": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "进程"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Processes"
+          }
+        }
+      }
+    },
+    "TCP 连接": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TCP 连接"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TCP Connections"
+          }
+        }
+      }
+    },
+    "温度": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "温度"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Temperature"
+          }
+        }
+      }
+    },
+    "资源": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "资源"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resources"
+          }
+        }
+      }
+    },
+    "交换": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "交换"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swap"
+          }
+        }
+      }
+    },
+    "网络": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network"
+          }
+        }
+      }
+    },
+    "累计接收": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "累计接收"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total Received"
+          }
+        }
+      }
+    },
+    "累计发送": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "累计发送"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total Sent"
+          }
+        }
+      }
+    },
+    "节点已移除": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "节点已移除"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Node Removed"
+          }
+        }
+      }
+    },
+    "节点详情": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "节点详情"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Node Details"
+          }
+        }
+      }
+    },
+    "资源趋势": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "资源趋势"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resource Trends"
+          }
+        }
+      }
+    },
+    "最近 %@ 次采样": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近 %@ 次采样"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last %@ samples"
+          }
+        }
+      }
+    },
+    "趋势指标": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "趋势指标"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trend Metric"
+          }
+        }
+      }
+    },
+    "速率": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "速率"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rate"
+          }
+        }
+      }
+    },
+    "方向": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "方向"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direction"
+          }
+        }
+      }
+    },
+    "下行": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下行"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download"
+          }
+        }
+      }
+    },
+    "上行": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上行"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload"
+          }
+        }
+      }
+    },
+    "使用率": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用率"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usage"
+          }
+        }
+      }
+    },
+    "轻触或拖动图表，查看采样数值": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轻触或拖动图表，查看采样数值"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap or drag the chart to inspect samples"
+          }
+        }
+      }
+    },
+    "位置未知": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置未知"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Location unavailable"
+          }
+        }
+      }
+    },
+    "复制出口 IP": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制出口 IP"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy egress IP"
+          }
+        }
+      }
+    },
+    "中国": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中国"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "China"
+          }
+        }
+      }
+    },
+    "湖南": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "湖南"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hunan"
+          }
+        }
+      }
+    },
+    "长沙": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "长沙"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changsha"
+          }
+        }
+      }
+    },
+    "已扫码 · 尚未连接": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已扫码 · 尚未连接"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scanned · Not Connected"
+          }
+        }
+      }
+    },
+    "中转服务器": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中转服务器"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relay Server"
+          }
+        }
+      }
+    },
+    "探针": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "探针"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Probe"
+          }
+        }
+      }
+    },
+    "配对码": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对码"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing Code"
+          }
+        }
+      }
+    },
+    "链接已包含中转密码；组密钥只会在双方确认后加密传输。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "链接已包含中转密码；组密钥只会在双方确认后加密传输。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This link includes a relay token. The group secret is transferred encrypted only after both sides confirm."
+          }
+        }
+      }
+    },
+    "确认连接信息": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认连接信息"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm Connection Details"
+          }
+        }
+      }
+    },
+    "只连接你信任的地址。扫码不代表已验证身份，接下来仍须对照服务器终端上的图案和六位数字。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只连接你信任的地址。扫码不代表已验证身份，接下来仍须对照服务器终端上的图案和六位数字。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect only to addresses you trust. Scanning does not verify identity; you must still compare the pattern and six digits on the server terminal."
+          }
+        }
+      }
+    },
+    "同时授权本机管理": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同时授权本机管理"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Also Authorize Administration"
+          }
+        }
+      }
+    },
+    "授权可控制文件、终端与电源，可能拥有 root 权限。仅完整构建支持。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授权可控制文件、终端与电源，可能拥有 root 权限。仅完整构建支持。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authorization grants file, terminal and power access, potentially as root. Full builds only."
+          }
+        }
+      }
+    },
+    "连接并核对图案": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接并核对图案"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect and Compare Pattern"
+          }
+        }
+      }
+    },
+    "扫码配对": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫码配对"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan to Pair"
+          }
+        }
+      }
+    },
+    "相机不可用": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相机不可用"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Camera Unavailable"
+          }
+        }
+      }
+    },
+    "请在系统设置中允许相机访问。模拟器可返回粘贴服务器上的配对链接。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在系统设置中允许相机访问。模拟器可返回粘贴服务器上的配对链接。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow camera access in Settings. In the simulator, go back and paste the server’s pairing link."
+          }
+        }
+      }
+    },
+    "正在请求相机权限…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在请求相机权限…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requesting camera access…"
+          }
+        }
+      }
+    },
+    "扫描服务器二维码": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描服务器二维码"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan Server QR Code"
+          }
+        }
+      }
+    },
+    "无法启动扫码，可返回粘贴配对链接。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法启动扫码，可返回粘贴配对链接。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to start scanning. Go back and paste the pairing link."
+          }
+        }
+      }
+    },
+    "此设备没有可用相机，可返回粘贴配对链接。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此设备没有可用相机，可返回粘贴配对链接。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device has no available camera. Go back and paste the pairing link."
+          }
+        }
+      }
+    },
+    "相机初始化失败，请使用配对链接。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相机初始化失败，请使用配对链接。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Camera initialization failed. Use the pairing link."
+          }
+        }
+      }
+    },
+    "扫描服务器终端上的二维码，仅填写连接信息；仍须核对图案和数字。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描服务器终端上的二维码，仅填写连接信息；仍须核对图案和数字。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan the server terminal’s QR code to fill in connection details only. You must still compare the pattern and digits."
+          }
+        }
+      }
+    },
+    "直连配对": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直连配对"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direct Pairing"
+          }
+        }
+      }
+    },
+    "核对图案与数字，安全获取探针密钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "核对图案与数字，安全获取探针密钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compare the pattern and digits to securely obtain the probe secret"
+          }
+        }
+      }
+    },
+    "中转配对": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中转配对"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relay Pairing"
+          }
+        }
+      }
+    },
+    "先在服务器安装器中开启配对，或运行 npulse -P。只有双方确认一致后才会交换密钥。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先在服务器安装器中开启配对，或运行 npulse -P。只有双方确认一致后才会交换密钥。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start pairing in the server installer or run npulse -P. Secrets are exchanged only after both sides confirm a match."
+          }
+        }
+      }
+    },
+    "粘贴配对链接": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴配对链接"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste Pairing Link"
+          }
+        }
+      }
+    },
+    "预览连接信息": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预览连接信息"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview Connection Details"
+          }
+        }
+      }
+    },
+    "手动输入密钥": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手动输入密钥"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter Secret Manually"
+          }
+        }
+      }
+    },
+    "也可手动添加直连、HTTPS 或端到端中继接入点。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "也可手动添加直连、HTTPS 或端到端中继接入点。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can also add direct, HTTPS or end-to-end relay endpoints manually."
+          }
+        }
+      }
+    },
+    "无法识别配对二维码，请使用服务器当前显示的 NodePulse 二维码。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法识别配对二维码，请使用服务器当前显示的 NodePulse 二维码。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unrecognized pairing QR code. Scan the current NodePulse code shown on the server."
+          }
+        }
+      }
+    },
+    "无法打开配对链接": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法打开配对链接"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to Open Pairing Link"
+          }
+        }
+      }
+    },
+    "请先完成或取消当前配对，再打开新的配对链接。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先完成或取消当前配对，再打开新的配对链接。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finish or cancel the current pairing before opening another link."
+          }
+        }
+      }
+    },
+    "配对链接无效或版本不受支持。请重新扫描服务器当前的二维码。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对链接无效或版本不受支持。请重新扫描服务器当前的二维码。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid or unsupported pairing link. Scan the server’s current QR code again."
+          }
+        }
+      }
+    },
+    "无需公网 IP，中转配对": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无需公网 IP，中转配对"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pair through a relay, no public IP needed"
+          }
+        }
+      }
+    },
+    "与探针安全配对": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与探针安全配对"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pair Securely with a Probe"
+          }
+        }
+      }
+    },
+    "已扫码 · 仍需核对图案": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已扫码 · 仍需核对图案"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scanned · Compare Pattern Next"
+          }
+        }
+      }
+    },
+    "IP 地址或主机名": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IP 地址或主机名"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IP Address or Hostname"
+          }
+        }
+      }
+    },
+    "中转密码（访问令牌）": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中转密码（访问令牌）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relay Password (Access Token)"
+          }
+        }
+      }
+    },
+    "配对码 XXXX-XXXX": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对码 XXXX-XXXX"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing Code XXXX-XXXX"
+          }
+        }
+      }
+    },
+    "仅支持 TCP 中转配对，不使用 HTTPS。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅支持 TCP 中转配对，不使用 HTTPS。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing uses TCP relay only, not HTTPS."
+          }
+        }
+      }
+    },
+    "请先开启服务器的临时配对窗口。连接后请对照本机终端显示的图案和数字，不要使用对方发来的截图。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先开启服务器的临时配对窗口。连接后请对照本机终端显示的图案和数字，不要使用对方发来的截图。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the server’s temporary pairing window first. After connecting, compare against the pattern and digits on your own server terminal, never a screenshot sent by someone else."
+          }
+        }
+      }
+    },
+    "正在连接…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在连接…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting…"
+          }
+        }
+      }
+    },
+    "连接探针": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接探针"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect to Probe"
+          }
+        }
+      }
+    },
+    "核对安全图案": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "核对安全图案"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compare Security Pattern"
+          }
+        }
+      }
+    },
+    "与服务器终端上的图案和数字完全一致吗？": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与服务器终端上的图案和数字完全一致吗？"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Do the pattern and digits exactly match the server terminal?"
+          }
+        }
+      }
+    },
+    "安全图案": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安全图案"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Security pattern"
+          }
+        }
+      }
+    },
+    "管理授权可控制文件、终端和电源，可能拥有 root 权限；仅完整构建支持。请在 30 秒内确认。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理授权可控制文件、终端和电源，可能拥有 root 权限；仅完整构建支持。请在 30 秒内确认。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Admin authorization grants file, terminal and power access, potentially as root; full builds only. Confirm within 30 seconds."
+          }
+        }
+      }
+    },
+    "不一致": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不一致"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mismatch"
+          }
+        }
+      }
+    },
+    "一致": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一致"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Match"
+          }
+        }
+      }
+    },
+    "等待服务器确认…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待服务器确认…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for server confirmation…"
+          }
+        }
+      }
+    },
+    "请在服务器终端核对后输入 y 并回车。密钥仅在双方同意后传输。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在服务器终端核对后输入 y 并回车。密钥仅在双方同意后传输。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compare on the server terminal, then enter y and press Return. Secrets are transferred only after both sides agree."
+          }
+        }
+      }
+    },
+    "配对成功": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对成功"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paired Successfully"
+          }
+        }
+      }
+    },
+    "探针已添加，密钥已安全存入钥匙串。\n服务器退出配对并启动正常服务后即可监控。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "探针已添加，密钥已安全存入钥匙串。\n服务器退出配对并启动正常服务后即可监控。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Probe added and secret saved securely to Keychain. Monitoring starts after the server exits pairing and starts the normal service."
+          }
+        }
+      }
+    },
+    "未授予管理权限（服务器拒绝或为 lite 版），仍可正常监控。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未授予管理权限（服务器拒绝或为 lite 版），仍可正常监控。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Admin access was not granted (server refused or is a lite build). Monitoring still works normally."
+          }
+        }
+      }
+    },
+    "配对未完成": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对未完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing Incomplete"
+          }
+        }
+      }
+    },
+    "图案或数字不一致，已取消配对，未保存任何密钥。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图案或数字不一致，已取消配对，未保存任何密钥。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pattern or digits did not match. Pairing cancelled; no secrets were saved."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

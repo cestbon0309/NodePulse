@@ -16,7 +16,7 @@ struct DirectClient {
     }
     static func decodeResponse(_ data: Data, requestID: String) throws -> [NodeSnapshot] {
         guard let response = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              response["rid"] as? String == requestID else { throw ProbeError.transport("响应校验失败") }
+              response["rid"] as? String == requestID else { throw ProbeError.transport(L10n.text("响应校验失败")) }
         return try ProbeResponse.decode(data)
     }
 }
@@ -83,7 +83,7 @@ final class DirectOperation: @unchecked Sendable {
             if code == .ETIMEDOUT { return ProbeError.timeout }
             if code == .ECONNRESET || code == .EPIPE { return ProbeError.rejected }
         }
-        return ProbeError.transport("连接失败：\(error.localizedDescription)")
+        return ProbeError.transport(L10n.text("连接失败：%@", String(describing: error.localizedDescription)))
     }
 }
 
@@ -119,21 +119,21 @@ struct HTTPSClient {
         do {
             let (bytes, response) = try await session.bytes(for: request)
             guard let response = response as? HTTPURLResponse else { throw ProbeError.parse }
-            if response.statusCode == 404 { throw ProbeError.transport("密钥错误或路径不对") }
-            guard response.statusCode == 200 else { throw ProbeError.transport("HTTP 错误：\(response.statusCode)") }
+            if response.statusCode == 404 { throw ProbeError.transport(L10n.text("密钥错误或路径不对")) }
+            guard response.statusCode == 200 else { throw ProbeError.transport(L10n.text("HTTP 错误：%@", String(describing: response.statusCode))) }
             return try await boundedData(bytes, expectedLength: response.expectedContentLength)
         } catch let error as URLError {
             if error.code == .timedOut { throw ProbeError.timeout }
             if error.code == .cannotConnectToHost { throw ProbeError.refused }
-            throw ProbeError.transport("连接失败：\(error.localizedDescription)")
+            throw ProbeError.transport(L10n.text("连接失败：%@", String(describing: error.localizedDescription)))
         }
     }
     static let responseLimit = 262144 + 32
     static func boundedData<S: AsyncSequence>(_ bytes: S, expectedLength: Int64) async throws -> Data where S.Element == UInt8 {
-        guard expectedLength <= responseLimit else { throw ProbeError.transport("响应过大") }
+        guard expectedLength <= responseLimit else { throw ProbeError.transport(L10n.text("响应过大")) }
         var data = Data()
         for try await byte in bytes {
-            guard data.count < responseLimit else { throw ProbeError.transport("响应过大") }
+            guard data.count < responseLimit else { throw ProbeError.transport(L10n.text("响应过大")) }
             data.append(byte)
         }
         return data

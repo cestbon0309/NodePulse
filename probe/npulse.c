@@ -124,6 +124,7 @@ static int endpoint(const char *s, const char *def, int server) {
   freeaddrinfo(res);
   return fd;
 }
+#include "egress.h"
 static uint8_t *frame(const char *s, size_t *size, const uint8_t transport_key[32]) {
   size_t n = strlen(s);
   if (!n || n > MAX_FRAME)
@@ -398,6 +399,21 @@ static void http_not_found(Client *c) {
   else discard(c);
 }
 static void option(const char *k, const char *v) {
+  if (!strcmp(k, "egress_service") || !strcmp(k, "E")) {
+    if (!*v || strlen(v) >= 1024 || strpbrk(v, "\r\n")) { fprintf(stderr, "invalid egress_service\n"); exit(2); }
+#if ADMIN
+    if (strcmp(v, "off")) {
+      char urls[1024], host[256], path[256], *save = NULL;
+      snprintf(urls, sizeof(urls), "%s", v);
+      char *url = strtok_r(urls, ",", &save);
+      if (!url) { fprintf(stderr, "invalid egress_service\n"); exit(2); }
+      for (; url; url = strtok_r(NULL, ",", &save)) if (egress_url(url, host, path)) {
+        fprintf(stderr, "egress_service requires http:// URLs or off\n"); exit(2);
+      }
+    }
+#endif
+    egress_service = strdup(v); return;
+  }
 #if ADMIN
   if (!strcmp(k, "admin_keys") || !strcmp(k, "A")) { admin_keys_text = strdup(v); return; }
 #endif
@@ -462,6 +478,7 @@ static void config(const char *path) {
   fclose(f);
 }
 static void usage(void) {
+  puts("Egress IP (full builds): -E http://host/path[,http://fallback/path] (default enabled).\nConfig: egress_service=off disables discovery; lite omits it. HTTP discovery is unauthenticated.");
 #if PAIR
   puts("Temporary pairing: -P (-l addr:port -k SECRET | -R relay:port -T TOKEN -G GROUP) [-n NAME] [-W seconds (default 600)] [-Q ascii]");
 #else
@@ -489,11 +506,11 @@ int main(int argc, char **argv) {
       usage();
       return 0;
     }
-  while ((opt = getopt(argc, argv, "Pk:l:H:ui:n:c:S:T:G:R:W:Q:" ADMIN_FLAGS "h")) != -1)
+  while ((opt = getopt(argc, argv, "PE:k:l:H:ui:n:c:S:T:G:R:W:Q:" ADMIN_FLAGS "h")) != -1)
     if (opt == 'c')
       config(optarg);
   optind = 1;
-  while ((opt = getopt(argc, argv, "Pk:l:H:ui:n:c:S:T:G:R:W:Q:" ADMIN_FLAGS "h")) != -1) {
+  while ((opt = getopt(argc, argv, "PE:k:l:H:ui:n:c:S:T:G:R:W:Q:" ADMIN_FLAGS "h")) != -1) {
     if (opt == 'c')
       continue;
     if (opt == '?')
@@ -576,6 +593,7 @@ int main(int argc, char **argv) {
     clients[i].fd = -1;
   double next_sample = monotime() + 1, next_push = monotime();
   while (running) {
+    egress_tick(monotime(), collect);
 #if ADMIN || PAIR
     pipe_tick(monotime());
 #endif
@@ -779,6 +797,7 @@ int main(int argc, char **argv) {
         discard(c);
     }
   }
+  egress_shutdown();
   for (int i = 0; i < CLIENTS; i++)
     if (clients[i].fd >= 0)
       discard(&clients[i]);

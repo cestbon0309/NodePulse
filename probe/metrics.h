@@ -1,5 +1,8 @@
 #ifndef NP_METRICS_H
 #define NP_METRICS_H
+#ifndef ADMIN
+#define ADMIN 1
+#endif
 #include "vendor/monocypher-ed25519.h"
 #include <arpa/inet.h>
 #include <dirent.h>
@@ -14,6 +17,9 @@
 #include <time.h>
 #include <unistd.h>
 #define MAX_NODE_JSON 3840
+#if ADMIN
+static char egress_ip[INET6_ADDRSTRLEN];
+#endif
 #define SNAPSHOT_IPS 16
 #define SNAPSHOT_NAME 64
 #define SNAPSHOT_HOSTNAME 64
@@ -328,6 +334,9 @@ static char *snapshot(const char *name) {
     fclose(f);
   } else
     add(&b, "null");
+#if ADMIN
+  if (*egress_ip) { add(&b, ",\"egress_ip\":"); quote(&b, egress_ip); }
+#endif
   add(&b, ",\"ips\":[");
   struct ifaddrs *ifs = NULL;
   int comma = 0;

@@ -89,10 +89,10 @@ def interactive(root):
     else:
         argv = ["script", "-q", "-e", "-c", command, "/dev/null"]
     env = {k: v for k, v in os.environ.items() if not k.startswith("NPULSE_")}
-    env.update(DESTDIR=str(root), DRY_RUN="1", NPULSE_INIT="systemd", NPULSE_ARCH="x86_64", NPULSE_MIRROR=BASE, NPULSE_INSECURE="1")
-    prompts = ["模式 [默认", "TCP 监听端口", "节点名称", "输入不回显", "root 级控制权", "构建类型 full/lite"]
+    env.update(DESTDIR=str(root), DRY_RUN="1", NPULSE_INIT="systemd", NPULSE_ARCH="x86_64", NPULSE_MIRROR=BASE, NPULSE_INSECURE="1", NPULSE_BIND="0.0.0.0")
+    prompts = ["模式 [默认", "TCP 监听端口", "节点名称", "输入不回显", "root 级控制权", "构建类型 full/lite", "现在与手机配对"]
     secret = "interactive-secret-MUST-NOT-ECHO"
-    responses = ["", "", "", secret, "", ""]
+    responses = ["", "", "", secret, "", "", "n"]
     proc = subprocess.Popen(argv, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, start_new_session=True)
     transcript, step, deadline = b"", 0, time.monotonic() + 30

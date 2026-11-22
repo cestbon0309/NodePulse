@@ -2,6 +2,22 @@
 
 ## 一键安装
 
+直连安装会检测公网 IPv4/IPv6、提供网卡选择和防火墙放行命令，并在执行前询问。
+没有公网地址时默认建议共享中转（模式 4），组密钥在本机生成。
+自动安装可使用 `--bind ADDR`，只有显式 `--open-firewall` 才会自动执行防火墙命令。
+
+安装后可立即与手机配对，或运行 `sh install.sh pair`（自动停止/恢复服务）。
+App 添加接入点提供「扫码配对」「直连配对」「中转配对」及「手动输入密钥」。
+扫码只填写地址和一次性参数，**仍须核对两端图案与六位数字，服务器输入 y、手机点「一致」**。
+终端二维码/链接包含敏感参数，请勿分享。中转配对目前仅支持 TCP。
+协议、超时、编译开关与命令行参考见 [配对协议](docs/pairing-protocol.md)。
+
+配对回归（C/Python 向量、PTY 双确认、直连/中转/PSK、终端二维码）可运行
+`python3 probe/tools/test-pair.py FULL_HOST_HARNESS LITE_HOST_HARNESS`；
+宿主 harness 由 `probe/tools/test-pair.c` 与 Makefile 中的 vendor 源码编译，分别加 `-DADMIN=1/0`。
+测试依赖 `pip install cryptography opencv-python-headless qrcode pillow`；
+OpenCV 无法解码个别掩码时，使用独立 Python byte-mode ECC-M 编码逐模块核对。
+
 在 **root shell** 中执行（普通用户先 `sudo -i`；OpenWrt 默认即 root）：
 
 ```sh

@@ -7,12 +7,14 @@ fail() { printf '错误：%s\n' "$*" >&2; exit 1; }
 help() {
     cat <<'HELP'
 NodePulse 安装器（需要 root；POSIX sh / OpenWrt ash）
-用法：sh install.sh [install|upgrade|uninstall|status] [选项]
+用法：sh install.sh [install|upgrade|uninstall|status|pair] [选项]
   --yes                 无交互，使用环境变量与默认值；不自动删除配置
   --mode 1|2|3|4|5       直连 / HTTP+Nginx / 旧式上报 / E2E上报 / 纯共享中继
   --arch ARCH            x86_64,i386,aarch64,armv7,armv7-soft,mips,mipsel
   --full | --lite        完整版 / 精简版（精简版不能管理，也不能转发管理管道）
   --port PORT            直连或纯中继端口（默认 9000）
+  --bind ADDR            直连绑定地址；交互时默认检测公网网卡，--yes 默认 0.0.0.0
+  --open-firewall        同意为直连 TCP 端口添加防火墙规则（DRY_RUN 不执行）
   --http-port PORT       HTTP 模式端口（默认 9001）；纯中继设置后开启 HTTP
   --upstream HOST:PORT   模式 3/4 上游（IPv6 用 [地址]:端口）
   --name NAME            节点名称
@@ -24,6 +26,8 @@ NodePulse 安装器（需要 root；POSIX sh / OpenWrt ash）
 对应环境变量：NPULSE_YES=1, NPULSE_MODE, NPULSE_ARCH, NPULSE_FLAVOR=full|lite,
 NPULSE_PORT, NPULSE_HTTP_PORT, NPULSE_UPSTREAM, NPULSE_NAME, NPULSE_ADMIN_KEYS,
 NPULSE_ADMIN=yes|no, NPULSE_ALSO_RELAY=yes|no, NPULSE_PURGE=yes|no。
+NPULSE_BIND 与 --bind 等价；NPULSE_OPEN_FIREWALL=yes 与 --open-firewall 等价。
+pair 停止服务、临时运行 SAS 配对、保存明确授权的管理公钥后重启服务。
 密钥仅通过环境变量传入：NPULSE_SECRET, NPULSE_TOKEN, NPULSE_GROUP_SECRET。
 未提供的密钥自动安全生成 32 个字符。已有上游时必须填写与上游匹配的密钥。
 NPULSE_INTERVAL 默认 5 秒。NPULSE_VERSION=vX.Y.Z 固定版本，否则使用 latest。
@@ -48,6 +52,8 @@ MODE=${NPULSE_MODE:-1}
 ARCH=${NPULSE_ARCH:-}
 FLAVOR=${NPULSE_FLAVOR:-}
 PORT=${NPULSE_PORT:-9000}
+BIND=${NPULSE_BIND:-}
+OPEN_FIREWALL=${NPULSE_OPEN_FIREWALL:-no}
 HTTP_PORT=${NPULSE_HTTP_PORT:-}
 UPSTREAM=${NPULSE_UPSTREAM:-}
 NAME=${NPULSE_NAME:-$(uname -n)}
@@ -65,19 +71,22 @@ DRY_RUN=${DRY_RUN:-0}
 VERSION=${NPULSE_VERSION:-}
 WORK=
 ECHO_OFF=0
+PAIR_STOPPED=0
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        install|upgrade|uninstall|status) ACTION=$1; shift ;;
+        install|upgrade|uninstall|status|pair) ACTION=$1; shift ;;
         --help|-h) help; exit 0 ;;
         --yes|-y) YES=1; shift ;;
         --full) FLAVOR=full; shift ;;
         --lite) FLAVOR=lite; shift ;;
         --also-relay) ALSO_RELAY=yes; shift ;;
         --purge) PURGE=yes; shift ;;
-        --mode|--arch|--port|--http-port|--upstream|--name|--admin-keys)
+        --open-firewall) OPEN_FIREWALL=yes; shift ;;
+        --mode|--arch|--port|--bind|--http-port|--upstream|--name|--admin-keys)
             [ "$#" -ge 2 ] || fail "$1 缺少参数"
             case "$1" in
                 --mode) MODE=$2 ;; --arch) ARCH=$2 ;; --port) PORT=$2 ;;
+                --bind) BIND=$2 ;;
                 --http-port) HTTP_PORT=$2 ;; --upstream) UPSTREAM=$2 ;;
                 --name) NAME=$2 ;; --admin-keys) ADMIN_KEYS=$2 ;;
             esac
@@ -85,7 +94,7 @@ while [ "$#" -gt 0 ]; do
         *) fail "未知参数（使用 --help）" ;;
     esac
 done
-for setting in "$PURGE" "$ALSO_RELAY" "$ADMIN"; do case "$setting" in yes|no) ;; *) fail '开关须为 yes 或 no' ;; esac; done
+for setting in "$PURGE" "$ALSO_RELAY" "$ADMIN" "$OPEN_FIREWALL"; do case "$setting" in yes|no) ;; *) fail '开关须为 yes 或 no' ;; esac; done
 case "$YES:$DRY_RUN" in 0:0|0:1|1:0|1:1) ;; *) fail 'NPULSE_YES 和 DRY_RUN 须为 0 或 1' ;; esac
 if [ "$DRY_RUN" = 1 ]; then
     case "$DESTDIR" in /*) ;; *) fail 'DRY_RUN 必须指定绝对 DESTDIR' ;; esac
@@ -105,6 +114,7 @@ fi
 CONFIG=$DESTDIR/etc/npulse/npulse.conf
 STATE=$DESTDIR/etc/npulse/install.state
 cleanup() {
+    if [ "$PAIR_STOPPED" = 1 ]; then service start || printf '警告：恢复服务失败，请手动启动 npulse。\n' >&2; fi
     if [ "$ECHO_OFF" = 1 ]; then stty echo </dev/tty 2>/dev/null || :; fi
     if [ -n "$WORK" ]; then rm -rf "$WORK"; fi
 }
@@ -130,6 +140,90 @@ safe_value() {
     if printf '%s' "$1" | LC_ALL=C grep '[[:cntrl:]]' >/dev/null; then fail '配置字段不能含控制字符'; fi
 }
 port() { case "$1" in ''|*[!0-9]*|0*) fail '端口须为 1–65535（不含前导零）' ;; esac; [ "${#1}" -le 5 ] && [ "$1" -le 65535 ] || fail '端口超出范围'; }
+public_addresses() {
+    addresses=
+    if command -v ip >/dev/null 2>&1; then addresses=$(ip -o addr show 2>/dev/null || :); fi
+    if [ -z "$addresses" ] && command -v ifconfig >/dev/null 2>&1; then addresses=$(ifconfig -a 2>/dev/null || :); fi
+    printf '%s\n' "$addresses" | awk '
+    function public(a, p,n,i,s) {
+        if (index(a, ":")) {
+            s=tolower(a)
+            if (s=="::" || s=="::1" || s=="0:0:0:0:0:0:0:1" || s ~ /^fe[89ab]/ || s ~ /^f[cd]/ || s ~ /^ff/) return 0
+            if (s ~ /^::ffff:/) {sub(/^::ffff:/,"",s); return public(s)}
+            return 1
+        }
+        n=split(a,p,"."); if(n!=4) return 0
+        for(i=1;i<=4;i++) if(p[i] !~ /^[0-9]+$/ || p[i]+0>255) return 0
+        return !(p[1]==0 || p[1]==10 || p[1]==127 || p[1]>=224 || (p[1]==172 && p[2]>=16 && p[2]<=31) || (p[1]==192 && p[2]==168) || (p[1]==100 && p[2]>=64 && p[2]<=127) || (p[1]==169 && p[2]==254))
+    }
+    /^[^ \t]/ {iface=$1; sub(/:$/,"",iface)}
+    $1 ~ /^[0-9]+:$/ {iface=$2; sub(/:$/,"",iface); sub(/@.*/,"",iface)}
+    {for(i=1;i<=NF;i++) if($i=="inet" || $i=="inet6") {
+        a=$(i+1); sub(/^addr:/,"",a); sub(/\/.*/,"",a); sub(/%.*/,"",a)
+        if(public(a) && !seen[a]++) print a,iface
+    }}'
+}
+select_bind() {
+    if [ -n "$BIND" ]; then return; fi
+    candidates=$(public_addresses)
+    if [ "$YES" = 1 ]; then BIND=0.0.0.0; return; fi
+    count=$(printf '%s\n' "$candidates" | awk 'NF {n++} END {print n+0}')
+    case "$count" in
+        0) printf '未检测到公网地址，可能位于 NAT 后；推荐共享中继（模式 4），无需公网 IP。\n'
+           ask '切换到共享中继模式 4，或输入 1 继续监听 0.0.0.0？[4/1，默认 4]' 4
+           case "$ANSWER" in 4) MODE=4; LISTEN=no ;; 1) BIND=0.0.0.0 ;; *) fail '请选择 4 或 1' ;; esac ;;
+        1) address=${candidates%% *}; iface=${candidates#* }
+           ask "检测到公网地址 $address（网卡 $iface），在 $address:$PORT 上启用探针？[Y/n]" y
+           case "$ANSWER" in y|Y|yes) BIND=$address ;; n|N|no) BIND=0.0.0.0 ;; *) fail '请输入 y 或 n' ;; esac ;;
+        *) printf '检测到多个公网地址：\n'; printf '%s\n' "$candidates" | awk '{printf "%d. %s（网卡 %s）\n",NR,$1,$2}'
+           printf '0. 0.0.0.0（所有 IPv4 网卡）\n'; ask '请选择地址编号 [默认 0]：' 0
+           case "$ANSWER" in ''|*[!0-9]*) fail '地址编号无效' ;; esac
+           [ "$ANSWER" -le "$count" ] || fail '地址编号无效'
+           if [ "$ANSWER" = 0 ]; then BIND=0.0.0.0; else BIND=$(printf '%s\n' "$candidates" | awk -v n="$ANSWER" 'NR==n {print $1}'); fi ;;
+    esac
+}
+bind_endpoint() {
+    case "$BIND" in *:*) printf '[%s]:%s' "$BIND" "$PORT" ;; *) printf '%s:%s' "${BIND:-0.0.0.0}" "$PORT" ;; esac
+}
+firewall_plan() {
+    FW=none
+    if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep '^Status: active' >/dev/null; then FW=ufw
+    elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state 2>/dev/null | grep '^running' >/dev/null; then FW=firewalld
+    elif [ "$INIT" = procd ] && command -v uci >/dev/null 2>&1; then FW=uci
+    elif command -v nft >/dev/null 2>&1; then
+        FW=nft
+        NFT_CHAIN=$(nft list ruleset 2>/dev/null | awk '$1=="table" {family=$2; table=$3} $1=="chain" {chain=$2} /type filter hook input/ {if(family ~ /^(inet|ip|ip6)$/ && table ~ /^[a-zA-Z0-9_-]+$/ && chain ~ /^[a-zA-Z0-9_-]+$/) {print family,table,chain; exit}}' || :)
+    elif command -v iptables >/dev/null 2>&1; then FW=iptables
+    fi
+    case "$FW" in
+        ufw) printf 'ufw allow %s/tcp\n' "$PORT" ;;
+        firewalld) printf 'firewall-cmd --permanent --add-port=%s/tcp && firewall-cmd --reload\n' "$PORT" ;;
+        nft) if [ -n "$NFT_CHAIN" ]; then printf 'nft insert rule %s tcp dport %s accept\n' "$NFT_CHAIN" "$PORT"
+             else printf 'nft add table inet npulse\nnft '\''add chain inet npulse input { type filter hook input priority 0; policy accept; }'\''\nnft add rule inet npulse input tcp dport %s accept\n' "$PORT"; fi ;;
+        iptables) case "$BIND" in *:*) printf 'ip6tables -I INPUT -p tcp --dport %s -j ACCEPT\n' "$PORT" ;; *) printf 'iptables -I INPUT -p tcp --dport %s -j ACCEPT\n' "$PORT" ;; esac ;;
+        uci) printf "rule=\$(uci add firewall rule)\nuci set \"firewall.\$rule.name=NodePulse\"\nuci set \"firewall.\$rule.src=wan\"\nuci set \"firewall.\$rule.proto=tcp\"\nuci set \"firewall.\$rule.dest_port=%s\"\nuci set \"firewall.\$rule.target=ACCEPT\"\nuci commit firewall\n/etc/init.d/firewall reload\n" "$PORT" ;;
+        none) printf '未检测到防火墙管理工具；请手动允许 TCP %s。\n' "$PORT" ;;
+    esac
+}
+open_firewall() {
+    firewall_plan
+    [ "$FW" != none ] || return 0
+    if [ "$OPEN_FIREWALL" != yes ]; then ask '是否现在执行？[y/N]' n; case "$ANSWER" in y|Y|yes) OPEN_FIREWALL=yes ;; esac; fi
+    [ "$OPEN_FIREWALL" = yes ] || return 0
+    if [ "$DRY_RUN" = 1 ]; then printf '[DRY_RUN] 不执行防火墙命令。\n'; return; fi
+    case "$FW" in
+        ufw) ufw allow "$PORT/tcp" ;;
+        firewalld) firewall-cmd --permanent --add-port="$PORT/tcp" && firewall-cmd --reload ;;
+        nft) if [ -n "$NFT_CHAIN" ]; then
+                 family=${NFT_CHAIN%% *}; rest=${NFT_CHAIN#* }; table=${rest%% *}; chain=${rest#* }
+                 nft insert rule "$family" "$table" "$chain" tcp dport "$PORT" accept
+             else nft add table inet npulse && nft 'add chain inet npulse input { type filter hook input priority 0; policy accept; }' && nft add rule inet npulse input tcp dport "$PORT" accept; fi ;;
+        iptables) case "$BIND" in *:*) ip6tables -I INPUT -p tcp --dport "$PORT" -j ACCEPT ;; *) iptables -I INPUT -p tcp --dport "$PORT" -j ACCEPT ;; esac ;;
+        uci) rule=$(uci add firewall rule)
+             uci set "firewall.$rule.name=NodePulse"; uci set "firewall.$rule.src=wan"; uci set "firewall.$rule.proto=tcp"
+             uci set "firewall.$rule.dest_port=$PORT"; uci set "firewall.$rule.target=ACCEPT"; uci commit firewall; /etc/init.d/firewall reload ;;
+    esac
+}
 random() {
     [ -r /dev/urandom ] || fail '缺少安全随机源 /dev/urandom'
     if command -v od >/dev/null 2>&1; then bytes=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
@@ -263,7 +357,7 @@ write_config() {
         if [ -n "$SECRET" ]; then printf 'secret=%s\n' "$SECRET"; fi
         if [ -n "$TOKEN" ]; then printf 'token=%s\n' "$TOKEN"; fi
         if [ -n "$GROUP" ]; then printf 'group_secret=%s\n' "$GROUP"; fi
-        if [ "$LISTEN" = yes ]; then printf 'listen=0.0.0.0:%s\n' "$PORT"; fi
+        if [ "$LISTEN" = yes ]; then printf 'listen=%s\n' "$(bind_endpoint)"; fi
         case "$MODE" in
             2) printf 'http=127.0.0.1:%s\n' "$HTTP_PORT" ;;
             3) printf 'upstream=%s\n' "$UPSTREAM" ;;
@@ -339,8 +433,9 @@ HARDEN
 }
 summary() {
     printf '\nNodePulse 已安装：%s / %s；配置 /etc/npulse/npulse.conf\n' "$ARCH" "$FLAVOR"
-    address=
-    if command -v ip >/dev/null 2>&1; then
+    address=$BIND
+    case "$address" in 0.0.0.0|::) address= ;; esac
+    if [ -z "$address" ] && command -v ip >/dev/null 2>&1; then
         address=$(ip -4 addr show scope global 2>/dev/null | awk '$1 == "inet" {split($2,a,"/"); print a[1]; exit}')
         if [ -z "$address" ]; then address=$(ip -6 addr show scope global 2>/dev/null | awk '$1 == "inet6" {split($2,a,"/"); print a[1]; exit}'); fi
     fi
@@ -383,9 +478,70 @@ NGINX
     fi
 }
 
+pair_installed() {
+    [ -n "$WORK" ] || WORK=$(mktemp -d "${TMPDIR:-/tmp}/npulse-pair.XXXXXX")
+    if [ "$DRY_RUN" = 1 ]; then printf '[DRY_RUN] 配对：不执行下载的二进制。\n'; return; fi
+    PAIR_STOPPED=1
+    service stop
+    paired=no
+    while :; do
+        {
+            printf 'name=%s\n' "$NAME"
+            if [ "$MODE" = 4 ]; then printf 'relay_upstream=%s\ntoken=%s\ngroup_secret=%s\n' "$UPSTREAM" "$TOKEN" "$GROUP"
+            else printf 'listen=%s\nsecret=%s\n' "$(bind_endpoint)" "$SECRET"; fi
+        } > "$WORK/pair.conf"
+        pair_status=0
+        "$DESTDIR$BIN" -P -c "$WORK/pair.conf" > "$WORK/pair-output" || pair_status=$?
+        if [ "$pair_status" = 0 ]; then paired=yes; break; fi
+        if [ "$pair_status" != 3 ] || [ "$MODE" != 4 ]; then break; fi
+        printf '中转密码错误或无法连接。\n'
+        [ "$YES" = 0 ] || break
+        ask '重新填写中转地址和密码？[Y/n]' y
+        case "$ANSWER" in y|Y|yes) ;; *) break ;; esac
+        ask '中转地址 host:port（IPv6 用 [地址]:端口）：' "$UPSTREAM"; UPSTREAM=$ANSWER; safe_value "$UPSTREAM"
+        case "$UPSTREAM" in *:*) port "${UPSTREAM##*:}" ;; *) fail '缺少中转 host:port' ;; esac
+        credentials '中转密码（访问令牌）' "$TOKEN"; TOKEN=$ANSWER
+    done
+    if [ "$paired" = yes ] && [ "$MODE" = 4 ]; then
+        awk '!/^(relay_upstream|token|group_secret)=/' "$CONFIG" > "$CONFIG.new"
+        printf 'relay_upstream=%s\ntoken=%s\ngroup_secret=%s\n' "$UPSTREAM" "$TOKEN" "$GROUP" >> "$CONFIG.new"
+        chmod 600 "$CONFIG.new"; mv "$CONFIG.new" "$CONFIG"
+    fi
+    if [ "$paired" = yes ] && [ "$FLAVOR" = full ]; then
+        public=$(awk -F= '$1=="admin_pk" && NF==2 {print $2}' "$WORK/pair-output")
+        if [ -n "$public" ]; then
+            [ "${#public}" = 64 ] || fail '配对返回了无效公钥'
+            case "$public" in *[!0-9a-fA-F]*) fail '配对返回了无效公钥' ;; esac
+            public=$(printf '%s' "$public" | tr 'A-F' 'a-f')
+            old=$(awk -F= '$1=="admin_keys" {print $2}' "$CONFIG")
+            case ",$old," in *",$public,"*) ;; *)
+                if [ -n "$old" ]; then public=$old,$public; fi
+                printf '%s\n' "$public" | awk -F, 'NF>32 {exit 1}' || fail '管理公钥已达 32 个上限'
+                awk '!/^admin_keys=/' "$CONFIG" > "$CONFIG.new"
+                printf 'admin_keys=%s\n' "$public" >> "$CONFIG.new"; chmod 600 "$CONFIG.new"; mv "$CONFIG.new" "$CONFIG" ;;
+            esac
+            ADMIN_KEYS=$public; write_unit; service reload
+        fi
+    fi
+    service start
+    PAIR_STOPPED=0
+    if [ "$paired" != yes ]; then printf '配对未完成；服务已恢复，可稍后运行 pair 或使用手动密钥。\n'; fi
+}
+
 if [ "$ACTION" != install ]; then
     load_state
     case "$ACTION" in
+        pair) [ -f "$CONFIG" ] && [ -f "$DESTDIR$BIN" ] || fail '现有安装不完整'
+              BIND=; PORT=9000; ADMIN_KEYS=; MODE=1; LISTEN=no; UPSTREAM=; TOKEN=; GROUP=; SECRET=
+              while IFS='=' read -r key value; do
+                  case "$key" in listen) LISTEN=yes; BIND=${value%:*}; BIND=${BIND#\[}; BIND=${BIND%\]}; PORT=${value##*:} ;;
+                      admin_keys) ADMIN_KEYS=$value ;; relay_upstream) UPSTREAM=$value; MODE=4 ;; token) TOKEN=$value ;;
+                      group_secret) GROUP=$value ;; secret) SECRET=$value ;; name) NAME=$value ;; esac
+              done < "$CONFIG"
+              [ -n "$BIND" ] || [ "$MODE" = 4 ] || fail '此安装没有可配对的直连或中转配置'
+              if [ "$MODE" = 4 ] && [ -z "$GROUP" ]; then GROUP=$SECRET; fi
+              PRIVILEGED_PORT=no; if [ "$PORT" -lt 1024 ]; then PRIVILEGED_PORT=yes; fi
+              pair_installed; summary; exit ;;
         status) service status; exit ;;
         upgrade)
             [ -f "$CONFIG" ] && [ -f "$DESTDIR$BIN" ] || fail '现有安装不完整'
@@ -420,6 +576,8 @@ elif [ "$MODE" != 5 ]; then
     case "$ALSO_RELAY" in yes) LISTEN=yes ;; no) ;; *) fail '中继选项须为 yes 或 no' ;; esac
 fi
 if [ "$LISTEN" = yes ] || [ "$MODE" = 5 ]; then ask "TCP 监听端口 [默认 $PORT]：" "$PORT"; PORT=$ANSWER; port "$PORT"; fi
+if [ "$MODE" = 1 ]; then select_bind; fi
+if [ -n "$BIND" ]; then safe_value "$BIND" 128; case "$BIND" in *[!0-9a-fA-F:.%_-]*) fail '绑定地址须为 IP 地址' ;; esac; fi
 if [ "$MODE" = 2 ]; then
     ask "HTTP 回环端口 [默认 ${HTTP_PORT:-9001}]：" "${HTTP_PORT:-9001}"; HTTP_PORT=$ANSWER; port "$HTTP_PORT"
 elif [ "$MODE" = 5 ]; then
@@ -434,7 +592,7 @@ if [ "$MODE" = 3 ] || [ "$MODE" = 4 ]; then
 fi
 if [ "$MODE" != 5 ]; then ask "节点名称 [默认 $NAME]：" "$NAME"; NAME=$ANSWER; fi
 if [ "$LISTEN" = yes ] || [ "$MODE" = 2 ] || [ "$MODE" = 3 ]; then credentials '探针密钥（旧式上报需与上游一致）' "$SECRET"; SECRET=$ANSWER; else SECRET=; fi
-if [ "$MODE" = 4 ] || [ "$MODE" = 5 ]; then credentials '中继访问令牌（推送端需与中继一致）' "$TOKEN"; TOKEN=$ANSWER; else TOKEN=; fi
+if [ "$MODE" = 4 ] || [ "$MODE" = 5 ]; then credentials '中转密码 / 中继访问令牌（需与中继一致）' "$TOKEN"; TOKEN=$ANSWER; else TOKEN=; fi
 if [ "$MODE" = 4 ]; then credentials '组密钥（仅可信组成员持有）' "$GROUP"; GROUP=$ANSWER; else GROUP=; fi
 if [ -n "$ADMIN_KEYS" ]; then ADMIN=yes; fi
 if [ "$MODE" != 5 ]; then ask "启用远程管理？[yes/no，默认 $ADMIN]（警告：root 级控制权）" "$ADMIN"; ADMIN=$ANSWER; fi
@@ -467,6 +625,12 @@ if { [ "$LISTEN" = yes ] || [ "$MODE" = 5 ]; } && [ "$PORT" -lt 1024 ]; then PRI
 if [ -n "$HTTP_PORT" ] && [ "$HTTP_PORT" -lt 1024 ]; then PRIVILEGED_PORT=yes; fi
 fetch_binary
 replace_binary; write_config; write_unit
-service enable; service start
+service enable
+if [ "$MODE" = 1 ] || [ "$MODE" = 4 ]; then
+    if [ "$MODE" = 1 ]; then open_firewall; fi
+    pair_default=yes; if [ "$YES" = 1 ]; then pair_default=no; fi
+    ask '现在与手机配对？[Y/n]' "$pair_default"
+    case "$ANSWER" in y|Y|yes) pair_installed ;; *) service start ;; esac
+else service start; fi
 printf '服务已启用并启动。\n'
 summary

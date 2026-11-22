@@ -5,6 +5,7 @@ import hashlib
 import http.server
 import os
 from pathlib import Path
+import re
 import select
 import shlex
 import shutil
@@ -313,17 +314,30 @@ try:
         run(root, "upgrade", "--yes")
         assert config(root) == saved
         path = root / "etc/npulse/npulse.conf"
-        path.write_text(path.read_text() + "upstream=old.example:9000\n")
-        before, binary = path.read_bytes(), (root / "usr/local/bin/npulse").read_bytes()
-        failed = run(root, "upgrade", "--yes", ok=False)
-        assert "旧式 upstream 上报已移除" in failed.stderr and "模式 3" in failed.stderr
-        assert path.read_bytes() == before and (root / "usr/local/bin/npulse").read_bytes() == binary
-        assert "restart" not in failed.stdout
+        rejected = re.search(r'else if \(([^\n]+)\) \{\n\s*fprintf\(stderr, "legacy relay removed',
+                             (ROOT / "probe/npulse.c").read_text())
+        assert rejected, "probe legacy-key rejection branch not found"
+        legacy_keys = re.findall(r'!strcmp\(k, "([^"]+)"\)', rejected[1])
+        assert {"upstream", "u"}.issubset(legacy_keys)
+        original = path.read_text()
+        binary_path = root / "usr/local/bin/npulse"
+        binary_path.write_bytes(b"keep-existing-binary")
+        unit_path = root / "etc/systemd/system/npulse.service"
+        state_path = root / "etc/npulse/install.state"
+        for key in legacy_keys:
+            for assignment in (f"{key}=old.example:9000\n", f" \t{key} \t= old.example:9000\n"):
+                path.write_text(original + assignment)
+                before = {p: p.read_bytes() for p in (path, binary_path, unit_path, state_path)}
+                failed = run(root, "upgrade", "--yes", ok=False)
+                assert "旧式 upstream 上报已移除" in failed.stderr and "模式 3" in failed.stderr
+                assert {p: p.read_bytes() for p in before} == before
+                assert failed.stdout == "", "upgrade performed work before rejecting legacy config"
         run(root, "uninstall", "--yes", "--purge")
     for args in (("--also-relay", "9000"), ("--also-relay", "bad"), ("--also-relay", "65536"),
                  ("--mode", "2", "--also-relay", "9002")):
         run(new_root(), "--yes", *args, ok=False)
     print("PASS direct plus shared relay: interactive default PORT+1, explicit flag/env token, one config/process, both firewall ports and summary; invalid/conflicting ports rejected; legacy upstream upgrade fails without replacing binary/config or restarting")
+    print("PASS all probe-rejected legacy aliases (upstream/u), including surrounding whitespace: upgrade preserves sentinel binary, config, unit and install state; no download/restart output")
 
     tools = isolated_tools(exclude=("stty",))
     if shutil.which("curl"): (tools / "curl").symlink_to(shutil.which("curl"))

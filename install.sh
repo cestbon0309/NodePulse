@@ -692,7 +692,7 @@ if [ "$ACTION" != install ]; then
         status) service status; exit ;;
         upgrade)
             [ -f "$CONFIG" ] && [ -f "$DESTDIR$BIN" ] || fail '现有安装不完整'
-            if grep '^[[:space:]]*upstream[[:space:]]*=' "$CONFIG" >/dev/null; then
+            if grep -e '^[[:space:]]*upstream[[:space:]]*=' -e '^[[:space:]]*u[[:space:]]*=' "$CONFIG" >/dev/null; then
                 fail '旧式 upstream 上报已移除；请备份配置，改用共享中继（-R/-S、relay_upstream/relay_listen），选择安装器模式 3 后重新安装；本次未升级或重启服务'
             fi
             if [ "$FLAVOR" = lite ] && grep '^admin_keys=' "$CONFIG" >/dev/null; then fail '精简版配置不能包含管理密钥'; fi

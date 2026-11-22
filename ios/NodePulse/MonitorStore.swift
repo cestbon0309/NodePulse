@@ -18,6 +18,15 @@ struct NodeItem: Identifiable {
     var probeInterval: Double = 5
     var endToEnd = false
     var id: String { key }
+    var connectionLabel: String {
+        guard endToEnd || snapshot.relay == true else { return "直连" }
+        return endpointName.isEmpty || endpointName == snapshot.name ? "中继" : "经由 \(endpointName)"
+    }
+}
+struct HiddenNode: Codable, Identifiable {
+    var id: String
+    var endpointID: UUID
+    var name: String
 }
 struct EndpointStatus {
     var lastSuccess: Date?
@@ -31,6 +40,7 @@ final class MonitorStore {
     var pairingURL: URL?
     private(set) var endpoints: [Endpoint]
     private(set) var nodes: [NodeItem] = []
+    private(set) var hiddenNodes: [HiddenNode]
     private(set) var statuses: [UUID: EndpointStatus] = [:]
     var refreshInterval: Double { didSet { defaults.set(refreshInterval, forKey: "refreshInterval") } }
     var demoMode: Bool { didSet {
@@ -48,6 +58,7 @@ final class MonitorStore {
         self.defaults = defaults
         self.secrets = secrets
         endpoints = defaults.data(forKey: "endpoints").flatMap { try? JSONDecoder().decode([Endpoint].self, from: $0) } ?? []
+        hiddenNodes = defaults.data(forKey: "hiddenNodes").flatMap { try? JSONDecoder().decode([HiddenNode].self, from: $0) } ?? []
         let interval = defaults.double(forKey: "refreshInterval")
         refreshInterval = interval > 0 ? interval : 3
         demoMode = defaults.bool(forKey: "demoMode")
@@ -78,8 +89,32 @@ final class MonitorStore {
         try secrets.deleteGroup(endpoint.id)
         try secrets.delete(endpoint.id)
         endpoints.removeAll { $0.id == endpoint.id }; nodes.removeAll { $0.endpointID == endpoint.id }
+        hiddenNodes.removeAll { $0.endpointID == endpoint.id }; persistHiddenNodes()
         statuses[endpoint.id] = nil; generation += 1; persist()
     }
+    func removableEndpoint(for node: NodeItem) -> Endpoint? {
+        guard let endpoint = endpoints.first(where: { $0.id == node.endpointID }),
+              !endpoint.kind.isGroup, node.snapshot.relay != true,
+              nodes.filter({ $0.endpointID == endpoint.id }).count == 1,
+              !hiddenNodes.contains(where: { $0.endpointID == endpoint.id }) else { return nil }
+        return endpoint
+    }
+    func deleteNode(_ node: NodeItem, removeEndpoint: Bool = false) throws {
+        if removeEndpoint {
+            guard let endpoint = removableEndpoint(for: node) else { throw ProbeError.transport("此节点不能单独删除接入点，请仅删除节点") }
+            try delete(endpoint)
+            return
+        }
+        guard !hiddenNodes.contains(where: { $0.id == node.key }) else { return }
+        hiddenNodes.append(HiddenNode(id: node.key, endpointID: node.endpointID, name: node.snapshot.name))
+        nodes.removeAll { $0.key == node.key }
+        generation += 1; persistHiddenNodes()
+    }
+    func restoreNode(_ node: HiddenNode) {
+        hiddenNodes.removeAll { $0.id == node.id }
+        generation += 1; persistHiddenNodes()
+    }
+    private func persistHiddenNodes() { defaults.set(try? JSONEncoder().encode(hiddenNodes), forKey: "hiddenNodes") }
     func secret(for endpoint: Endpoint) throws -> String { try secrets.get(endpoint.id) }
     func groupSecret(for endpoint: Endpoint) throws -> String { try secrets.getGroup(endpoint.id) }
     private func persist() { defaults.set(try? JSONEncoder().encode(endpoints), forKey: "endpoints") }
@@ -146,6 +181,7 @@ final class MonitorStore {
             let upstreamTS = snapshots.first(where: { $0.relay != true })?.ts ?? now.timeIntervalSince1970
             for snapshot in snapshots {
                 let key = "\(endpoint.id)/\(snapshot.id)"
+                guard !hiddenNodes.contains(where: { $0.id == key }) else { continue }
                 let index = nodes.firstIndex { $0.key == key }
                 let old = index.map { nodes[$0] }
                 let timestamp = !endpoint.kind.isGroup && snapshot.relay == true ? (snapshot.lastSeen ?? snapshot.ts) : snapshot.ts

@@ -7,6 +7,8 @@ struct NodeDetail: View {
     @State private var metric = "CPU"
     @State private var selection: Date?
     @State private var copied = false
+    @State private var deleting: NodeItem?
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var item: NodeItem? { store.nodes.first { $0.key == nodeKey } }
     var body: some View {
@@ -19,7 +21,7 @@ struct NodeDetail: View {
                         Text(s.name).font(.largeTitle.bold()).multilineTextAlignment(.center)
                         Text(s.os).font(.subheadline).foregroundStyle(.secondary)
                         if item.endToEnd { EndToEndBadge() }
-                        HStack { OnlineStatus(online: item.online); Text("经由 \(item.endpointName)").font(.caption).foregroundStyle(.secondary) }
+                        HStack { OnlineStatus(online: item.online); Text(item.connectionLabel).font(.caption).foregroundStyle(.secondary) }
                         if let ip = s.ips.first { Button { copy(ip) } label: { Label(ip, systemImage: "doc.on.doc").font(.caption.monospaced()).padding(10).background(.mint.opacity(0.08), in: Capsule()) } }
                     }.frame(maxWidth: .infinity).padding(.vertical, 10)
                     HStack {
@@ -59,6 +61,12 @@ struct NodeDetail: View {
             } else { ContentUnavailableView("节点已移除", systemImage: "server.rack") }
         }.background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("节点详情").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if let item { Button("删除", systemImage: "trash", role: .destructive) { deleting = item } }
+                }
+            }
+            .nodeDeletion(store: store, node: $deleting) { dismiss() }
             .overlay(alignment: .bottom) { if copied { Toast().padding(.bottom, 24).transition(.move(edge: .bottom).combined(with: .opacity)) } }
     }
     private func copy(_ text: String) {

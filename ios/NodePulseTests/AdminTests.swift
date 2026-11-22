@@ -83,15 +83,18 @@ final class AdminTests: XCTestCase {
                     _ = try await session.request("put", ["handle": handle, "offset": offset, "data": chunk.base64EncodedString()])
                 }
                 _ = try await session.request("put_end", ["handle": handle])
-                var downloaded = Data()
+                var downloaded = Data(); var identity = ""
                 while downloaded.count < data.count {
-                    let response = try await session.request("get", ["path": root + "/roundtrip.bin", "offset": downloaded.count, "len": 65536])
+                    var fields: [String: Any] = ["path": root + "/roundtrip.bin", "offset": downloaded.count, "len": 65536]
+                    if !identity.isEmpty { fields["identity"] = identity }
+                    let response = try await session.request("get", fields)
+                    identity = try XCTUnwrap(response["identity"] as? String)
                     let chunk = try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(response["data"] as? String)))
                     XCTAssertFalse(chunk.isEmpty); if chunk.isEmpty { throw AdminError.disconnected }
                     downloaded += chunk
                 }
                 XCTAssertEqual(Data(SHA256.hash(data: data)), Data(SHA256.hash(data: downloaded)))
-                let end = try await session.request("get", ["path": root + "/roundtrip.bin", "offset": data.count, "len": 65536])
+                let end = try await session.request("get", ["path": root + "/roundtrip.bin", "offset": data.count, "len": 65536, "identity": identity])
                 XCTAssertEqual(end["data"] as? String, ""); XCTAssertEqual(end["eof"] as? Bool, true)
                 let empty = try await session.request("put_begin", ["path": root + "/empty", "size": 0, "overwrite": false])
                 _ = try await session.request("put_end", ["handle": try XCTUnwrap(empty["handle"] as? Int)])

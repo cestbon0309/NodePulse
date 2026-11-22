@@ -118,7 +118,7 @@ including on invalid input. Never infer ACKs from notification sequence numbers.
 | power | action: reboot or poweroff | root only; queue ok first, then >=1s after it is written, sync() + Linux reboot(RB_AUTOBOOT/RB_POWER_OFF); on EPERM fork/exec /sbin/reboot or /sbin/poweroff; later errors go to stderr |
 | ls | path | entries:[{name,type,size,mode,mtime,target?}], truncated:bool; <=5000 entries, also truncates before the 128KB session frame bound; listing is not sorted |
 | stat | path | type,size,mode,mtime,target? (lstat, does not follow final symlink) |
-| get | path, offset>=0, len:0...65536 | data:base64,size:<current file size>,eof:bool; regular files only; arbitrary-offset read. A zero-byte read is EOF even if stat reports a larger size (e.g. sysfs). |
+| get | path, offset>=0, len:0...65536, identity?:string | Returns data:base64,size,eof,identity. Identity contains dev/ino/size/mtime (nanoseconds). Clients MUST echo identity for offset>0; absent or changed identity returns ESTALE and fails the download. A zero-byte read is EOF even when stat reports a larger size (sysfs). |
 | put_begin | path,size>=0,mode?:0...07777,overwrite:bool | handle:int; exclusive 0600 `<path>.npulse-part`; default final mode 0600 |
 | put | handle,offset,data:base64 (<=65536 decoded bytes) | ok; offset must equal bytes written; cannot exceed declared size |
 | put_end | handle | exact size required; fchmod + fsync + atomic publish; overwrite uses rename, no-overwrite uses exclusive link + unlink to prevent a race |

@@ -122,10 +122,14 @@ struct AdminFile: Identifiable {
                 let url = directory.appendingPathComponent(entry.name)
                 guard FileManager.default.createFile(atPath: url.path, contents: nil) else { throw AdminError.message("无法创建下载文件") }
                 let file = try FileHandle(forWritingTo: url); defer { try? file.close() }
-                let active = try await active(); var offset: Int64 = 0
+                let active = try await active(); var offset: Int64 = 0; var identity: String?
                 while true {
                     try Task.checkCancellation()
-                    let response = try await active.request("get", ["path": remote, "offset": offset, "len": 65536])
+                    var fields: [String: Any] = ["path": remote, "offset": offset, "len": 65536]
+                    if let identity { fields["identity"] = identity }
+                    let response = try await active.request("get", fields)
+                    guard let current = response["identity"] as? String, identity == nil || identity == current else { throw AdminError.message("文件已变化，请重新下载") }
+                    identity = current
                     guard let text = response["data"] as? String, let data = Data(base64Encoded: text), data.count <= 65536,
                           let eof = response["eof"] as? Bool else { throw AdminError.disconnected }
                     try file.write(contentsOf: data); offset += Int64(data.count)

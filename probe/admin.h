@@ -346,7 +346,26 @@ static int admin_request(Admin *a, char *plain) {
     struct stat st; uint8_t data[65536]; ssize_t n = -1;
     if (fstat(fd, &st)) error = errno;
     else if (!S_ISREG(st.st_mode)) error = EINVAL;
-    else { do { n = pread(fd, data, (size_t)length, (off_t)offset); } while (n < 0 && errno == EINTR); if (n < 0) error = errno; }
+    else {
+#ifdef __APPLE__
+      long ns = st.st_mtimespec.tv_nsec;
+#else
+      long ns = st.st_mtim.tv_nsec;
+#endif
+      char identity[192];
+      snprintf(identity, sizeof(identity), "%llu:%llu:%lld:%lld:%ld", (unsigned long long)st.st_dev,
+               (unsigned long long)st.st_ino, (long long)st.st_size, (long long)st.st_mtime, ns);
+      char *expected = string(&j, field(&j, 0, "identity"));
+      if ((offset > 0 && !expected) || (expected && strcmp(expected, identity))) error = ESTALE;
+      free(expected);
+      if (!error) {
+        add(&b, ",\"identity\":"); quote(&b, identity);
+        do { n = pread(fd, data, (size_t)length, (off_t)offset); } while (n < 0 && errno == EINTR);
+        if (n < 0) error = errno;
+        struct stat after;
+        if (!error && (fstat(fd, &after) || after.st_size != st.st_size || after.st_mtime != st.st_mtime)) error = ESTALE;
+      }
+    }
     close(fd);
     if (error) goto done;
     char *encoded = base64_encode(data, (size_t)n);

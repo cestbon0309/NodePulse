@@ -196,6 +196,16 @@ def main(root):
         rejected(lambda: client.request("mv", **{"from": str(destination), "to": str(remote / "moved.bin")}))
         assert (remote / "moved.bin").read_bytes() == b"keep"
         client.request("mv", **{"from": str(destination), "to": str(remote / "moved.bin"), "overwrite": True})
+        changing = remote / "rotation"
+        changing.write_bytes(b"old-data")
+        first = client.request("get", path=str(changing), offset=0, len=4)
+        changing.rename(remote / "rotation.old")
+        changing.write_bytes(b"new-data")
+        rejected(lambda: client.request("get", path=str(changing), offset=4, len=4, identity=first["identity"]))
+        first = client.request("get", path=str(changing), offset=0, len=4)
+        changing.write_bytes(b"changed length")
+        rejected(lambda: client.request("get", path=str(changing), offset=4, len=4, identity=first["identity"]))
+        changing.unlink(); (remote / "rotation.old").unlink()
         handles = [client.request("put_begin", path=str(remote / f"open-{i}"), size=2, overwrite=False)["handle"] for i in range(4)]
         rejected(lambda: client.request("put_begin", path=str(remote / "fifth"), size=0, overwrite=False))
         rejected(lambda: client.request("put", handle=handles[0], offset=1, data="YQ=="))

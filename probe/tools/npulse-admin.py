@@ -219,9 +219,11 @@ class AdminClient:
 
     def download(self, remote, local):
         offset = 0
+        identity = None
         with open(local, "xb") as dest:
             while True:
-                obj = self.request("get", path=remote, offset=offset, len=65536)
+                obj = self.request("get", path=remote, offset=offset, len=65536, **({"identity": identity} if identity else {}))
+                identity = obj["identity"]
                 data = base64.b64decode(obj["data"], validate=True)
                 dest.write(data)
                 offset += len(data)

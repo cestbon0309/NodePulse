@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct NodePulseApp: App {
+    @AppStorage(PulseTheme.storageKey) private var theme = PulseTheme.default
     @State private var store = MonitorStore()
     @Environment(\.scenePhase) private var phase
     init() {
@@ -35,7 +36,8 @@ struct NodePulseApp: App {
     var body: some Scene {
         WindowGroup {
             root
-                .tint(Color("AccentColor"))
+                .environment(\.pulseTheme, theme)
+                .tint(theme.accent)
                 .onOpenURL { url in if url.scheme?.lowercased() == "nodepulse" { store.pairingURL = url } }
                 .onChange(of: phase, initial: true) { _, phase in
                     if phase == .active { store.start() } else { store.stop() }

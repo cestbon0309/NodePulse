@@ -149,6 +149,7 @@ struct AdminFile: Identifiable {
 }
 
 @MainActor struct AdminFilesScreen: View {
+    @Environment(\.pulseTheme) private var theme
     @State private var model: AdminFilesModel
     @State private var importing = false
     @State private var prompt: FilePrompt?
@@ -165,13 +166,13 @@ struct AdminFile: Identifiable {
                 breadcrumb
                 List {
                     if let error = model.error {
-                        Section { Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange) }
+                        Section { Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(theme.warning) }
                     }
                     if model.entries.isEmpty && !model.loading { ContentUnavailableView(L10n.text("空文件夹"), systemImage: "folder", description: Text(L10n.text("可以上传文件或新建文件夹"))) }
                     ForEach(model.entries) { entry in
                         Button { activate(entry) } label: {
                             HStack(spacing: 14) {
-                                Image(systemName: entry.symbol).font(.title2).foregroundStyle(entry.directory ? .teal : .secondary).frame(width: 30)
+                                Image(systemName: entry.symbol).font(.title2).foregroundStyle(entry.directory ? theme.ink : .secondary).frame(width: 30)
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(entry.name).foregroundStyle(.primary).lineLimit(2).font(.subheadline.weight(.medium))
                                     Text(entry.type == "l" ? "→ \(entry.target ?? L10n.text("符号链接"))" : "\(PulseFormat.bytes(Double(entry.size))) · \(entry.modified.formatted(date: .numeric, time: .shortened))")
@@ -188,10 +189,10 @@ struct AdminFile: Identifiable {
                                 Button(L10n.text("删除"), systemImage: "trash", role: .destructive) { deletion = entry }
                             }
                     }
-                    if model.truncated { Text(L10n.text("目录内容较多，仅显示部分条目。请前往更具体的路径。")).font(.caption).foregroundStyle(.orange) }
+                    if model.truncated { Text(L10n.text("目录内容较多，仅显示部分条目。请前往更具体的路径。")).font(.caption).foregroundStyle(theme.warning) }
                 }.listStyle(.insetGrouped).disabled(model.progress != nil)
                     .refreshable { if model.progress == nil { await model.load(model.path) } }
-            }.background(Color(uiColor: .systemGroupedBackground))
+            }.background(theme.background)
                 .navigationTitle(L10n.text("文件 · %@", String(describing: model.target.node.snapshot.name))).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button(L10n.text("完成")) { model.stop(); dismiss() } }
@@ -208,7 +209,7 @@ struct AdminFile: Identifiable {
                     if let progress = model.progress {
                         VStack(spacing: 12) {
                             HStack { VStack(alignment: .leading, spacing: 4) { Text(model.transferTitle).font(.subheadline.weight(.medium)); Text(L10n.text("%@%% · 端到端加密传输", String(describing: Int(progress * 100)))).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button(L10n.text("取消"), role: .destructive) { model.cancelTransfer() }.disabled(model.committing) }
-                            ProgressView(value: progress).tint(.teal)
+                            ProgressView(value: progress).tint(theme.accent)
                         }.padding(20).background(.regularMaterial)
                     }
                 }

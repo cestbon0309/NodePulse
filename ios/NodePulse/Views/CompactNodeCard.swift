@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct CompactNodeCard: View {
+    @Environment(\.pulseTheme) private var theme
     var item: NodeItem
     var locations: GeolocationStore
     var demo = false
@@ -11,7 +12,7 @@ struct CompactNodeCard: View {
                 HStack(spacing: 6) {
                     Text(snapshot.name).font(.subheadline.weight(.semibold)).lineLimit(1)
                     Spacer(minLength: 0)
-                    Circle().fill(item.online ? .mint : .gray).frame(width: 6, height: 6)
+                    Circle().fill(item.online ? theme.accent : .gray).frame(width: 6, height: 6)
                         .accessibilityLabel(item.online ? L10n.text("在线") : L10n.text("离线"))
                 }
                 Text(snapshot.os).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
@@ -30,7 +31,7 @@ struct CompactNodeCard: View {
                 .foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7)
                 .contentTransition(.numericText())
         }.padding(14).foregroundStyle(.primary)
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22))
+            .background(theme.surface, in: RoundedRectangle(cornerRadius: 22))
             .saturation(item.online ? 1 : 0).opacity(item.online ? 1 : 0.65)
     }
     private func metric(_ title: String, value: Double) -> some View {
@@ -41,9 +42,9 @@ struct CompactNodeCard: View {
                 Text("\(value, specifier: "%.0f")%").monospacedDigit().contentTransition(.numericText())
             }.font(.caption2)
             GeometryReader { geometry in
-                Capsule().fill(PulseFormat.color(value).opacity(0.1))
+                Capsule().fill(theme.gauge(value).opacity(0.1))
                     .overlay(alignment: .leading) {
-                        Capsule().fill(PulseFormat.color(value).gradient)
+                        Capsule().fill(theme.gauge(value).gradient)
                             .frame(width: geometry.size.width * min(max(value / 100, 0), 1))
                     }
             }.frame(height: 3)

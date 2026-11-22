@@ -57,6 +57,7 @@ struct AdminDestination: Identifiable {
 }
 
 struct NodeAdminSection: View {
+    @Environment(\.pulseTheme) private var theme
     let store: MonitorStore
     let node: NodeItem
     @State private var destination: AdminDestination?
@@ -68,14 +69,14 @@ struct NodeAdminSection: View {
     var body: some View {
         if let endpoint = store.endpoints.first(where: { $0.id == node.endpointID }), AdminSession.supports(endpoint.kind) {
             VStack(alignment: .leading, spacing: 16) {
-                HStack { Label(L10n.text("管理"), systemImage: "slider.horizontal.3").font(.headline); Spacer(); if busy { ProgressView() } else { Image(systemName: "lock.shield").foregroundStyle(.teal) } }
+                HStack { Label(L10n.text("管理"), systemImage: "slider.horizontal.3").font(.headline); Spacer(); if busy { ProgressView() } else { Image(systemName: "lock.shield").foregroundStyle(theme.ink) } }
                 HStack(spacing: 12) {
                     action(L10n.text("终端"), symbol: "terminal") { open(terminal: true) }
                     action(L10n.text("文件"), symbol: "folder") { open(terminal: false) }
                     action(L10n.text("重启"), symbol: "arrow.clockwise", destructive: true) { power = "reboot"; confirmed = true }
                     action(L10n.text("关机"), symbol: "power", destructive: true) { power = "poweroff"; confirmed = true }
                 }.disabled(busy)
-                if let error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+                if let error { Text(error).font(.caption).foregroundStyle(theme.warning).textSelection(.enabled) }
                 Text(L10n.text("以探针用户权限执行 · 端到端加密")).font(.caption2).foregroundStyle(.secondary)
             }.pulsePanel()
                 .fullScreenCover(item: $destination) { item in
@@ -93,8 +94,8 @@ struct NodeAdminSection: View {
         Button(action: run) {
             VStack(spacing: 9) { Image(systemName: symbol).font(.title3); Text(title).font(.caption.weight(.medium)) }
                 .frame(maxWidth: .infinity).padding(.vertical, 14)
-                .background((destructive ? Color.orange : .teal).opacity(0.08), in: RoundedRectangle(cornerRadius: 15))
-        }.buttonStyle(.plain).foregroundStyle(destructive ? .orange : .teal)
+                .background((destructive ? theme.warning : theme.ink).opacity(0.08), in: RoundedRectangle(cornerRadius: 15))
+        }.buttonStyle(.plain).foregroundStyle(destructive ? theme.warning : theme.ink)
     }
     private func open(terminal: Bool) {
         busy = true; error = nil
@@ -122,6 +123,7 @@ struct NodeAdminSection: View {
 }
 
 struct AdminKeySettings: View {
+    @Environment(\.pulseTheme) private var theme
     @AppStorage("adminBiometrics") private var biometrics = true
     @State private var publicKey = ""
     @State private var error: String?
@@ -130,7 +132,7 @@ struct AdminKeySettings: View {
         Form {
             Section {
                 VStack(alignment: .leading, spacing: 14) {
-                    Image(systemName: "key.horizontal.fill").font(.system(size: 30)).foregroundStyle(.teal).padding(.vertical, 6)
+                    Image(systemName: "key.horizontal.fill").font(.system(size: 30)).foregroundStyle(theme.ink).padding(.vertical, 6)
                     Text(L10n.text("你的管理身份")).font(.title2.bold())
                     Text(L10n.text("独立的 Ed25519 签名密钥。私钥仅保存在此设备的钥匙串中，不会发送给探针或中继。")).font(.subheadline).foregroundStyle(.secondary)
                 }.padding(.vertical, 8)
@@ -159,7 +161,7 @@ struct AdminKeySettings: View {
             if !publicKey.isEmpty {
                 Section { Button(L10n.text("重新生成密钥"), role: .destructive) { regenerate = true } } footer: { Text(L10n.text("重新生成后，所有探针都需要更新允许的公钥。私钥无法恢复或跨设备同步。")) }
             }
-            if let error { Section { Text(error).foregroundStyle(.red) } }
+            if let error { Section { Text(error).foregroundStyle(theme.critical) } }
         }.navigationTitle(L10n.text("管理密钥")).navigationBarTitleDisplayMode(.inline)
             .task { do { publicKey = try AdminIdentity.load().map { GroupCrypto.hex($0.publicKey.rawRepresentation) } ?? "" } catch { self.error = error.localizedDescription } }
             .confirmationDialog(L10n.text("重新生成管理密钥？"), isPresented: $regenerate, titleVisibility: .visible) {

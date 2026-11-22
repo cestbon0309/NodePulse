@@ -87,6 +87,7 @@ final class AdminTerminalModel {
 }
 
 @MainActor struct AdminTerminalScreen: View {
+    @Environment(\.pulseTheme) private var theme
     @State private var model: AdminTerminalModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
@@ -95,10 +96,10 @@ final class AdminTerminalModel {
         NavigationStack {
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
-                    Circle().fill(model.running ? .mint : .orange).frame(width: 6, height: 6)
+                    Circle().fill(model.running ? theme.ink : theme.warning).frame(width: 6, height: 6)
                     Text(model.status).font(.caption).lineLimit(3)
                     Spacer()
-                    if model.connecting { ProgressView().tint(.mint) }
+                    if model.connecting { ProgressView().tint(theme.accent) }
                     if !model.running && !model.connecting { Button(L10n.text("重新连接")) { Task { await model.start() } }.font(.caption.bold()) }
                 }.foregroundStyle(.secondary).padding(.horizontal, 16).padding(.vertical, 10).background(.white.opacity(0.04))
                 TerminalSurface(model: model)
@@ -107,14 +108,14 @@ final class AdminTerminalModel {
                         key("Esc", bytes: [27]); key("Tab", bytes: [9])
                         Button("Ctrl") { model.control.toggle() }
                             .font(.system(.caption, design: .monospaced).bold()).padding(.horizontal, 13).frame(height: 38)
-                            .background(model.control ? Color.teal : .white.opacity(0.08), in: RoundedRectangle(cornerRadius: 9))
+                            .background(model.control ? theme.accent : .white.opacity(0.08), in: RoundedRectangle(cornerRadius: 9))
                         ForEach([("↑", "A"), ("↓", "B"), ("←", "D"), ("→", "C")], id: \.0) { title, code in
                             key(title, bytes: Array("\u{1b}[\(code)".utf8))
                         }
                         ForEach(["|", "~", "/", "-"], id: \.self) { key($0, bytes: Array($0.utf8)) }
                     }.padding(.horizontal, 12).padding(.vertical, 8)
                 }.background(.white.opacity(0.04))
-            }.background(Color(red: 0.035, green: 0.05, blue: 0.07))
+            }.background(theme == .grayscale ? Color(white: 0.045) : Color(red: 0.035, green: 0.05, blue: 0.07))
                 .navigationTitle(model.target.node.snapshot.name).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button(L10n.text("关闭")) { model.stop(); dismiss() } }
@@ -123,7 +124,7 @@ final class AdminTerminalModel {
                         else { _ = model.terminal?.becomeFirstResponder() }
                     } }
                 }
-        }.preferredColorScheme(.dark).tint(.mint)
+        }.preferredColorScheme(.dark).tint(theme.accent)
             .task { await model.start() }
             .onDisappear { model.stop() }
             .onChange(of: phase) { _, phase in if phase == .background { model.stop() } }
@@ -137,6 +138,7 @@ final class AdminTerminalModel {
 }
 
 @MainActor private struct TerminalSurface: UIViewRepresentable {
+    @Environment(\.pulseTheme) private var theme
     let model: AdminTerminalModel
     func makeCoordinator() -> Coordinator { Coordinator(model: model) }
     func makeUIView(context: Context) -> TerminalView {
@@ -148,7 +150,10 @@ final class AdminTerminalModel {
         model.terminal = terminal
         return terminal
     }
-    func updateUIView(_ uiView: TerminalView, context: Context) {}
+    func updateUIView(_ uiView: TerminalView, context: Context) {
+        uiView.nativeBackgroundColor = theme == .grayscale ? UIColor(white: 0.045, alpha: 1) : UIColor(red: 0.035, green: 0.05, blue: 0.07, alpha: 1)
+        uiView.nativeForegroundColor = theme == .grayscale ? UIColor(white: 0.88, alpha: 1) : UIColor(red: 0.84, green: 0.91, blue: 0.91, alpha: 1)
+    }
     static func dismantleUIView(_ uiView: TerminalView, coordinator: Coordinator) { uiView.terminalDelegate = nil }
     final class Coordinator: NSObject, TerminalViewDelegate {
         let model: AdminTerminalModel

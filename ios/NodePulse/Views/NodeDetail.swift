@@ -2,6 +2,7 @@ import SwiftUI
 import Charts
 
 struct NodeDetail: View {
+    @Environment(\.pulseTheme) private var theme
     var store: MonitorStore
     var nodeKey: String
     @State private var metric = "CPU"
@@ -26,7 +27,7 @@ struct NodeDetail: View {
                         HStack { OnlineStatus(online: item.online); Text(item.connectionLabel).font(.caption).foregroundStyle(.secondary) }
                         if let ip = s.ips.first {
                             HStack {
-                                Button { copy(ip) } label: { Label(PulseFormat.ip(ip, hidden: hideIPAddresses), systemImage: "doc.on.doc").font(.caption.monospaced()).padding(10).background(.mint.opacity(0.08), in: Capsule()) }
+                                Button { copy(ip) } label: { Label(PulseFormat.ip(ip, hidden: hideIPAddresses), systemImage: "doc.on.doc").font(.caption.monospaced()).padding(10).background(theme.ink.opacity(0.08), in: Capsule()) }
                                 Button(hideIPAddresses ? L10n.text("显示 IP") : L10n.text("隐藏 IP"), systemImage: hideIPAddresses ? "eye.slash" : "eye") { hideIPAddresses.toggle() }
                                     .labelStyle(.iconOnly).padding(10)
                             }
@@ -67,7 +68,7 @@ struct NodeDetail: View {
                 }.padding(20).frame(maxWidth: 780).frame(maxWidth: .infinity)
                     .animation(reduceMotion ? nil : .smooth(duration: 0.6), value: s)
             } else { ContentUnavailableView(L10n.text("节点已移除"), systemImage: "server.rack") }
-        }.background(Color(uiColor: .systemGroupedBackground))
+        }.background(theme.background)
             .navigationTitle(L10n.text("节点详情")).navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -92,7 +93,7 @@ struct NodeDetail: View {
     private func resource(_ title: String, used: Double, total: Double) -> some View {
         VStack(spacing: 8) {
             HStack { Text(title); Spacer(); Text("\(PulseFormat.bytes(used)) / \(PulseFormat.bytes(total))").foregroundStyle(.secondary).contentTransition(.numericText()) }.font(.caption)
-            ProgressView(value: total > 0 ? min(used / total, 1) : 0).tint(PulseFormat.color(total > 0 ? used / total * 100 : 0))
+            ProgressView(value: total > 0 ? min(used / total, 1) : 0).tint(theme.gauge(total > 0 ? used / total * 100 : 0))
         }.padding(.vertical, 8)
     }
     private func chart(_ item: NodeItem) -> some View {
@@ -102,7 +103,7 @@ struct NodeDetail: View {
             let sample = HistorySample.displayed(in: item.history, at: selection)
             HStack {
                 Text(sample.map { metric == L10n.text("网络") ? "↓ \(PulseFormat.rate($0.rxRate))   ↑ \(PulseFormat.rate($0.txRate))" : String(format: "%.1f%%", metric == "CPU" ? $0.cpu : $0.memPercent) } ?? "—")
-                    .foregroundStyle(.mint).contentTransition(.numericText())
+                    .foregroundStyle(theme.ink).contentTransition(.numericText())
                 Spacer(minLength: 8)
                 Text(sample.map { $0.date.formatted(date: .omitted, time: .standard) } ?? "—").foregroundStyle(.secondary)
             }.font(.caption.monospacedDigit()).lineLimit(1).minimumScaleFactor(0.7).frame(height: 24)
@@ -110,19 +111,19 @@ struct NodeDetail: View {
             Chart(Array(item.history.enumerated()), id: \.offset) { _, sample in
                 if metric == L10n.text("网络") {
                     AreaMark(x: .value(L10n.text("时间"), sample.date), y: .value(L10n.text("速率"), sample.rxRate), stacking: .unstacked)
-                        .foregroundStyle(LinearGradient(colors: [.mint.opacity(0.18), .clear], startPoint: .top, endPoint: .bottom)).interpolationMethod(.catmullRom)
+                        .foregroundStyle(LinearGradient(colors: [theme.ink.opacity(0.18), .clear], startPoint: .top, endPoint: .bottom)).interpolationMethod(.catmullRom)
                     LineMark(x: .value(L10n.text("时间"), sample.date), y: .value(L10n.text("速率"), sample.rxRate), series: .value(L10n.text("方向"), L10n.text("下行")))
                         .foregroundStyle(by: .value(L10n.text("方向"), L10n.text("下行"))).interpolationMethod(.catmullRom)
                     LineMark(x: .value(L10n.text("时间"), sample.date), y: .value(L10n.text("速率"), sample.txRate), series: .value(L10n.text("方向"), L10n.text("上行")))
                         .foregroundStyle(by: .value(L10n.text("方向"), L10n.text("上行"))).interpolationMethod(.catmullRom)
                 } else {
                     AreaMark(x: .value(L10n.text("时间"), sample.date), y: .value(L10n.text("使用率"), metric == "CPU" ? sample.cpu : sample.memPercent))
-                        .foregroundStyle(LinearGradient(colors: [.mint.opacity(0.28), .mint.opacity(0.01)], startPoint: .top, endPoint: .bottom)).interpolationMethod(.catmullRom)
+                        .foregroundStyle(LinearGradient(colors: [theme.ink.opacity(0.28), theme.ink.opacity(0.01)], startPoint: .top, endPoint: .bottom)).interpolationMethod(.catmullRom)
                     LineMark(x: .value(L10n.text("时间"), sample.date), y: .value(L10n.text("使用率"), metric == "CPU" ? sample.cpu : sample.memPercent))
-                        .foregroundStyle(.mint).interpolationMethod(.catmullRom)
+                        .foregroundStyle(theme.ink).interpolationMethod(.catmullRom)
                 }
                 if let selection { RuleMark(x: .value(L10n.text("时间"), selection)).foregroundStyle(.secondary.opacity(0.4)) }
-            }.chartForegroundStyleScale([L10n.text("下行"): Color.mint, L10n.text("上行"): Color.orange])
+            }.chartForegroundStyleScale([L10n.text("下行"): theme.ink, L10n.text("上行"): theme.secondaryInk])
                 .chartLegend(metric == L10n.text("网络") ? .visible : .hidden)
                 .chartXSelection(value: $selection)
                 .chartYScale(domain: metric == L10n.text("网络") ? 0...max(1000, item.history.flatMap { [$0.rxRate, $0.txRate] }.max() ?? 1000) : 0...100)

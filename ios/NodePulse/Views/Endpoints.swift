@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct EndpointList: View {
+    @Environment(\.pulseTheme) private var theme
     @Bindable var store: MonitorStore
     @Environment(\.dismiss) private var dismiss
     @State private var editing: Endpoint?
@@ -14,8 +15,8 @@ struct EndpointList: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack { OnlineStatus(online: store.statuses[endpoint.id]?.lastSuccess != nil && store.statuses[endpoint.id]?.error == nil); Text(endpoint.name).font(.headline).foregroundStyle(.primary); Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
                         if let status = store.statuses[endpoint.id] {
-                            if let error = status.error { Text(error).font(.caption).foregroundStyle(.orange) }
-                            if status.droppedBlobs > 0 { Text(L10n.text("已忽略 %@ 个校验失败的密文", String(describing: status.droppedBlobs))).font(.caption).foregroundStyle(.orange) }
+                            if let error = status.error { Text(error).font(.caption).foregroundStyle(theme.warning) }
+                            if status.droppedBlobs > 0 { Text(L10n.text("已忽略 %@ 个校验失败的密文", String(describing: status.droppedBlobs))).font(.caption).foregroundStyle(theme.warning) }
                             HStack {
                                 if let latency = status.latency { Text(L10n.text("%@ 毫秒", String(describing: Int(latency)))) }
                                 if let date = status.lastSuccess { Text(L10n.text("更新于 %@", String(describing: date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))))) }
@@ -50,6 +51,7 @@ struct EndpointList: View {
 }
 
 struct EndpointForm: View {
+    @Environment(\.pulseTheme) private var theme
     static func swappedPort(_ port: String, from: Int, to: Int) -> String {
         let defaults = [0: "9000", 2: "9010"]
         guard let next = defaults[to], defaults[from] == nil || port == defaults[from] else { return port }
@@ -141,7 +143,7 @@ struct EndpointForm: View {
                             testing = false
                         }
                     } label: { HStack { Text(L10n.text("测试连接")); Spacer(); if testing { ProgressView() } else { Image(systemName: "bolt.horizontal.circle") } } }.disabled(endpoint == nil || testing)
-                    if let result { Label(result, systemImage: success ? "checkmark.circle.fill" : "xmark.circle.fill").foregroundStyle(success ? .mint : .orange).font(.subheadline) }
+                    if let result { Label(result, systemImage: success ? "checkmark.circle.fill" : "xmark.circle.fill").foregroundStyle(success ? theme.ink : theme.warning).font(.subheadline) }
                 } footer: {
                     Text(isGroup ? L10n.text("端到端加密：中继无法解密或伪造节点数据。组密钥只在你的设备上保存，不会发送给中继；请在探针上配置相同的组密钥。令牌与组密钥分别保存在钥匙串中。") : L10n.text("密钥仅保存在此设备的钥匙串中，不会上传或写入普通偏好设置。"))
                 }
@@ -176,12 +178,16 @@ struct EndpointForm: View {
 }
 
 struct SettingsView: View {
+    @AppStorage(PulseTheme.storageKey) private var theme = PulseTheme.default
     @Bindable var store: MonitorStore
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
             Form {
                 Section(L10n.text("监控")) {
+                    Picker(L10n.text("主题"), selection: $theme) {
+                        ForEach(PulseTheme.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
                     Picker(L10n.text("刷新间隔"), selection: $store.refreshInterval) { ForEach([1.0, 2, 3, 5, 10], id: \.self) { Text(L10n.text("%@ 秒", String(describing: Int($0)))).tag($0) } }
                     Toggle(L10n.text("演示模式"), isOn: $store.demoMode)
                     NavigationLink(L10n.text("接入点")) { EndpointList(store: store) }

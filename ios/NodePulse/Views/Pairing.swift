@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AddEndpointView: View {
+    @Environment(\.pulseTheme) private var theme
     @Bindable var store: MonitorStore
     @Environment(\.dismiss) private var dismiss
     @State private var manual = false
@@ -26,7 +27,7 @@ struct AddEndpointView: View {
                                 Text(L10n.text("直连配对")).font(.headline)
                                 Text(L10n.text("核对图案与数字，安全获取探针密钥")).font(.caption).foregroundStyle(.secondary)
                             }.padding(.vertical, 10)
-                        } icon: { Image(systemName: "qrcode.viewfinder").font(.title2).foregroundStyle(.mint) }
+                        } icon: { Image(systemName: "qrcode.viewfinder").font(.title2).foregroundStyle(theme.ink) }
                     }.accessibilityIdentifier("direct-pairing")
                     Button { relay = true; activeInvite = nil; initialAdmin = false; pairing = true } label: { Label(L10n.text("中转配对"), systemImage: "point.3.connected.trianglepath.dotted").padding(.vertical, 8) }
                 } footer: { Text(L10n.text("先在服务器安装器中开启配对，或运行 npulse -P。只有双方确认一致后才会交换密钥。")) }
@@ -70,6 +71,7 @@ struct AddEndpointView: View {
 }
 
 struct PairingView: View {
+    @Environment(\.pulseTheme) private var theme
     @Bindable var store: MonitorStore
     var relay = false
     var invite: PairInvite?
@@ -93,9 +95,9 @@ struct PairingView: View {
         ScrollView {
             VStack(spacing: 24) {
                 if phase == 0 || phase == 1 {
-                    Image(systemName: "network.badge.shield.half.filled").font(.system(size: 52, weight: .light)).foregroundStyle(.mint).padding(.top, 24)
+                    Image(systemName: "network.badge.shield.half.filled").font(.system(size: 52, weight: .light)).foregroundStyle(theme.ink).padding(.top, 24)
                     Text(relay ? L10n.text("无需公网 IP，中转配对") : L10n.text("与探针安全配对")).font(.title2.bold())
-                    if invite != nil { Label(L10n.text("已扫码 · 仍需核对图案"), systemImage: "qrcode").font(.caption).foregroundStyle(.mint) }
+                    if invite != nil { Label(L10n.text("已扫码 · 仍需核对图案"), systemImage: "qrcode").font(.caption).foregroundStyle(theme.ink) }
                     VStack(alignment: .leading, spacing: 16) {
                         TextField(L10n.text("IP 地址或主机名"), text: $host).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).accessibilityIdentifier("pair-host")
                         Divider()
@@ -110,25 +112,25 @@ struct PairingView: View {
                     Text(L10n.text("请先开启服务器的临时配对窗口。连接后请对照本机终端显示的图案和数字，不要使用对方发来的截图。")).font(.subheadline).foregroundStyle(.secondary)
                     Button(action: connect) {
                         HStack { if phase == 1 { ProgressView() }; Text(phase == 1 ? L10n.text("正在连接…") : L10n.text("连接探针")) }.frame(maxWidth: .infinity).padding(10)
-                    }.buttonStyle(.borderedProminent).tint(.mint).disabled(phase == 1 || host.trimmingCharacters(in: .whitespaces).isEmpty || validPort == nil || (relay && (token.isEmpty || relayCode.count != 9)))
+                    }.buttonStyle(.borderedProminent).tint(theme.accent).disabled(phase == 1 || host.trimmingCharacters(in: .whitespaces).isEmpty || validPort == nil || (relay && (token.isEmpty || relayCode.count != 9)))
                 } else if phase == 2 || phase == 3, let session {
                     Label(L10n.text("核对安全图案"), systemImage: "checkmark.shield").font(.title2.bold()).padding(.top, 12)
                     Text(L10n.text("与服务器终端上的图案和数字完全一致吗？")).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     VStack(spacing: 20) {
-                        Text(session.art.trimmingCharacters(in: .newlines)).font(.system(size: 19, weight: .medium, design: .monospaced)).lineSpacing(2).fixedSize().foregroundStyle(.mint)
+                        Text(session.art.trimmingCharacters(in: .newlines)).font(.system(size: 19, weight: .medium, design: .monospaced)).lineSpacing(2).fixedSize().foregroundStyle(theme.ink)
                             .accessibilityLabel(L10n.text("安全图案")).accessibilityValue(session.art)
                         Text(session.code).font(.system(size: 42, weight: .semibold, design: .monospaced)).tracking(4).accessibilityIdentifier("pair-code")
                     }.frame(maxWidth: .infinity).padding(.vertical, 26)
-                        .background(.mint.opacity(0.08), in: RoundedRectangle(cornerRadius: 28))
-                        .overlay(RoundedRectangle(cornerRadius: 28).stroke(.mint.opacity(0.25)))
+                        .background(theme.ink.opacity(0.08), in: RoundedRectangle(cornerRadius: 28))
+                        .overlay(RoundedRectangle(cornerRadius: 28).stroke(theme.ink.opacity(0.25)))
                         .scaleEffect(appeared ? 1 : 0.94).opacity(appeared ? 1 : 0)
                         .onAppear { withAnimation(reduceMotion ? nil : .spring(duration: 0.5)) { appeared = true } }
                     if phase == 2 {
-                        Toggle(L10n.text("同时授权本机管理"), isOn: $grantAdmin).tint(.mint)
+                        Toggle(L10n.text("同时授权本机管理"), isOn: $grantAdmin).tint(theme.accent)
                         Text(L10n.text("管理授权可控制文件、终端和电源，可能拥有 root 权限；仅完整构建支持。请在 30 秒内确认。")).font(.caption).foregroundStyle(.secondary)
                         HStack(spacing: 16) {
                             Button(L10n.text("不一致"), role: .destructive) { confirm(false) }.buttonStyle(.bordered).frame(maxWidth: .infinity)
-                            Button(L10n.text("一致")) { confirm(true) }.buttonStyle(.borderedProminent).tint(.mint).frame(maxWidth: .infinity).accessibilityIdentifier("pair-confirm")
+                            Button(L10n.text("一致")) { confirm(true) }.buttonStyle(.borderedProminent).tint(theme.accent).frame(maxWidth: .infinity).accessibilityIdentifier("pair-confirm")
                         }.controlSize(.large)
                     } else {
                         ProgressView(L10n.text("等待服务器确认…")).padding()
@@ -136,12 +138,12 @@ struct PairingView: View {
                     }
                 } else if phase == 4 {
                     Spacer(minLength: 60)
-                    Image(systemName: "checkmark.shield.fill").font(.system(size: 84)).foregroundStyle(.mint.gradient).symbolEffect(.bounce, value: phase)
+                    Image(systemName: "checkmark.shield.fill").font(.system(size: 84)).foregroundStyle(theme.ink.gradient).symbolEffect(.bounce, value: phase)
                     Text(L10n.text("配对成功")).font(.largeTitle.bold()).accessibilityIdentifier("pair-success")
                     Text(savedName).font(.title3).foregroundStyle(.secondary)
                     Text(L10n.text("探针已添加，密钥已安全存入钥匙串。\n服务器退出配对并启动正常服务后即可监控。")).multilineTextAlignment(.center).foregroundStyle(.secondary)
-                    if adminUnavailable { Text(L10n.text("未授予管理权限（服务器拒绝或为 lite 版），仍可正常监控。")).font(.callout).foregroundStyle(.orange) }
-                    Button(L10n.text("完成"), action: done).buttonStyle(.borderedProminent).tint(.mint).controlSize(.large)
+                    if adminUnavailable { Text(L10n.text("未授予管理权限（服务器拒绝或为 lite 版），仍可正常监控。")).font(.callout).foregroundStyle(theme.warning) }
+                    Button(L10n.text("完成"), action: done).buttonStyle(.borderedProminent).tint(theme.accent).controlSize(.large)
                 }
             }.padding(24).frame(maxWidth: 520).frame(maxWidth: .infinity)
         }.navigationTitle(relay ? L10n.text("中转配对") : L10n.text("直连配对")).navigationBarTitleDisplayMode(.inline)

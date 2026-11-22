@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(\.pulseTheme) private var theme
     @Bindable var store: MonitorStore
     @State private var filter = L10n.text("全部")
     @State private var search = ""
@@ -34,7 +35,7 @@ struct ContentView: View {
                             Button { sheet = .endpoints } label: { Label(L10n.text("%@ 个接入点连接失败", String(describing: failures)), systemImage: "exclamationmark.triangle.fill") }
                             Spacer()
                             Button { errorDismissed = true } label: { Image(systemName: "xmark") }.accessibilityLabel(L10n.text("关闭提示"))
-                        }.font(.caption.weight(.medium)).foregroundStyle(.orange).padding(14).background(.orange.opacity(0.1), in: Capsule())
+                        }.font(.caption.weight(.medium)).foregroundStyle(theme.warning).padding(14).background(theme.warning.opacity(0.1), in: Capsule())
                     }
                     if store.endpoints.isEmpty && !store.demoMode {
                         emptyState
@@ -62,7 +63,7 @@ struct ContentView: View {
                         if visible.isEmpty { ContentUnavailableView(L10n.text("没有匹配的节点"), systemImage: "magnifyingglass", description: Text(L10n.text("试试其他名称、IP 或系统"))) }
                     }
                 }.padding(20).frame(maxWidth: 1200).frame(maxWidth: .infinity)
-            }.background(Color(uiColor: .systemGroupedBackground))
+            }.background(theme.background)
                 .navigationTitle("NodePulse")
                 .searchable(text: $search, prompt: L10n.text("搜索名称、IP 或系统"))
                 .refreshable { await store.refresh() }
@@ -99,31 +100,32 @@ struct ContentView: View {
     }
     private var emptyState: some View {
         VStack(spacing: 22) {
-            Image(systemName: "waveform.path.ecg.rectangle").font(.system(size: 76, weight: .ultraLight)).foregroundStyle(.mint.gradient)
-                .padding(30).background(.mint.opacity(0.07), in: RoundedRectangle(cornerRadius: 40))
+            Image(systemName: "waveform.path.ecg.rectangle").font(.system(size: 76, weight: .ultraLight)).foregroundStyle(theme.ink.gradient)
+                .padding(30).background(theme.ink.opacity(0.07), in: RoundedRectangle(cornerRadius: 40))
             Text(L10n.text("每个节点，尽在掌握")).font(.title2.bold())
             Text(L10n.text("连接你的 Linux 探针，实时查看\n服务器的健康状态与资源趋势。"))
                 .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center).lineSpacing(5)
-            Button { sheet = .add } label: { Label(L10n.text("添加探针"), systemImage: "plus").frame(maxWidth: .infinity).padding(8) }.buttonStyle(.borderedProminent).tint(.mint)
-            Button(L10n.text("体验演示数据")) { store.demoMode = true; Task { await store.refresh() } }.foregroundStyle(.mint)
+            Button { sheet = .add } label: { Label(L10n.text("添加探针"), systemImage: "plus").frame(maxWidth: .infinity).padding(8) }.buttonStyle(.borderedProminent).tint(theme.accent)
+            Button(L10n.text("体验演示数据")) { store.demoMode = true; Task { await store.refresh() } }.foregroundStyle(theme.ink)
         }.padding(.vertical, 64).frame(maxWidth: 400)
     }
 }
 
 struct SummaryHeader: View {
+    @Environment(\.pulseTheme) private var theme
     var nodes: [NodeItem]
     private var online: [NodeItem] { nodes.filter(\.online) }
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             HStack {
                 Label(L10n.text("集群概览"), systemImage: "waveform.path.ecg").font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
-                Spacer(); Text(L10n.text("实时")).font(.caption.weight(.medium)).foregroundStyle(.mint)
+                Spacer(); Text(L10n.text("实时")).font(.caption.weight(.medium)).foregroundStyle(theme.ink)
             }
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("\(online.count)").font(.system(size: 46, weight: .semibold, design: .rounded)).contentTransition(.numericText())
                 Text(L10n.text("/ %@ 节点在线", String(describing: nodes.count))).font(.subheadline).foregroundStyle(.secondary)
                 Spacer()
-                Image(systemName: "antenna.radiowaves.left.and.right").font(.system(size: 32, weight: .light)).foregroundStyle(.mint.opacity(0.6))
+                Image(systemName: "antenna.radiowaves.left.and.right").font(.system(size: 32, weight: .light)).foregroundStyle(theme.ink.opacity(0.6))
             }
             HStack {
                 StatTile(title: L10n.text("平均 CPU"), value: String(format: "%.0f%%", online.isEmpty ? 0 : online.map { $0.snapshot.cpuUsage }.reduce(0,+) / Double(online.count)), symbol: "cpu")
@@ -136,12 +138,13 @@ struct SummaryHeader: View {
             }
         }.padding(24).background {
             RoundedRectangle(cornerRadius: 28).fill(.regularMaterial)
-                .overlay { RoundedRectangle(cornerRadius: 28).fill(LinearGradient(colors: [.mint.opacity(0.12), .cyan.opacity(0.04), .clear], startPoint: .topLeading, endPoint: .bottomTrailing)) }
+                .overlay { RoundedRectangle(cornerRadius: 28).fill(LinearGradient(colors: [theme.ink.opacity(0.12), theme.secondaryInk.opacity(0.04), .clear], startPoint: .topLeading, endPoint: .bottomTrailing)) }
         }
     }
 }
 
 struct NodeCard: View {
+    @Environment(\.pulseTheme) private var theme
     var item: NodeItem
     var index: Int
     var locations: GeolocationStore
@@ -160,7 +163,7 @@ struct NodeCard: View {
                 VStack(alignment: .trailing, spacing: 6) {
                     OnlineStatus(online: item.online)
                     if item.usesEndToEndEncryption { EndToEndBadge() }
-                    if item.endToEnd { Text(L10n.text("中继")).font(.system(size: 10, weight: .medium)).padding(.horizontal, 7).padding(.vertical, 3).background(.cyan.opacity(0.12), in: Capsule()).foregroundStyle(.cyan) }
+                    if item.endToEnd { Text(L10n.text("中继")).font(.system(size: 10, weight: .medium)).padding(.horizontal, 7).padding(.vertical, 3).background(theme.secondaryInk.opacity(0.12), in: Capsule()).foregroundStyle(theme.secondaryInk) }
                 }
             }
             NodeLocation(ip: item.snapshot.egressIp, locations: locations, demo: demo)

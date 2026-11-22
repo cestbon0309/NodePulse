@@ -20,7 +20,7 @@ def function(name):
 
 with tempfile.TemporaryDirectory(prefix="npulse-interfaces-") as directory:
     tools = Path(directory)
-    for name in ("awk", "grep", "head"):
+    for name in ("awk", "grep", "dd"):
         (tools / name).symlink_to(shutil.which(name))
     def tool(name, body):
         path = tools / name
@@ -29,7 +29,8 @@ with tempfile.TemporaryDirectory(prefix="npulse-interfaces-") as directory:
     tool("ifconfig", 'printf "%s\\n" "$IFCONFIG"')
     fetch_log = tools / "fetch-log"
     fetch_body = '''
-if [ "$1" = --help ]; then echo 'wget -T timeout -O file'; exit 0; fi
+if [ "$1" = --help ]; then echo "${WGET_HELP:-wget -T timeout -O file}"; exit 0; fi
+case "$*" in *'-t '*) [ "${WGET_TRIES:-0}" = 1 ] || exit 99 ;; esac
 for url do :; done
 printf '%s\\n' "$*" >> "$FETCH_LOG"
 case "$FETCH_MODE:$url" in
@@ -64,7 +65,7 @@ esac
     for address in "172.15.0.1 172.32.0.1 100.63.255.254 100.128.0.1 2001:db8::1".split():
         assert run(f"2: eth0 {'inet6' if ':' in address else 'inet'} {address}/24").stdout.strip() == address + " eth0", address
     assert run("2: eth0 inet 100.90.0.2/24", expression=selected).stdout.endswith("1|yes|0.0.0.0|0.0.0.0:9527")
-    assert run(one, "n", selected).stdout.endswith("4|no||0.0.0.0:9527")
+    assert run(one, "n", selected).stdout.endswith("3|no||0.0.0.0:9527")
     assert run("", "n\n1", selected).stdout.endswith("0.0.0.0|0.0.0.0:9527")
     fixture = "eth0 Link encap:Ethernet\n          inet addr:8.8.8.8 Bcast:8.8.8.255\nen0: flags=8863\n\tinet6 2001:db8::8 prefixlen 64\n"
     assert run(IP_FAIL="1", IFCONFIG=fixture).stdout.splitlines() == ["8.8.8.8 eth0", "2001:db8::8 en0"]
@@ -90,6 +91,14 @@ esac
         assert run(one, "y\n9.9.9.9", selected).stdout.endswith("0.0.0.0:9527")
         assert run(expression='YES=1; PUBLIC_IP=auto; select_bind; printf "%s" "$PUBLIC_IP"').stdout == "8.8.4.4"
         run(choice="y\n192.168.1.1", expression=selected, ok=False)
+    run(expression='YES=1; PUBLIC_IP=auto; select_bind', WGET_HELP="wget -T timeout --tries=NUMBER -O file", WGET_TRIES="1")
+    assert "-t 1" in fetch_log.read_text()
+    (tools / "dd").unlink()
+    result = run(choice="y\n9.9.9.9", expression=selected)
+    assert result.stdout.endswith("0.0.0.0:9527") and "查询失败" in result.stdout
+    run(expression='YES=1; PUBLIC_IP=auto; select_bind', ok=False)
+    (tools / "dd").symlink_to(shutil.which("dd"))
+    print("PASS wget discovery without head/timeout: BusyBox help omits unsupported retry flag; GNU help gets one try; missing dd falls back to manual or fails clearly unattended")
     for address in excluded + ["999.1.1.1", "8.8.8", "08.8.8.8", "1.1.1.1 extra", "<html>", "3::1", "2606:::1", "2606:1:2:3:4:5:6:7:8", "2606:gg::1", "2001:db8::1"]:
         run(expression='valid_public_ip "$CHECK_IP"', CHECK_IP=address, ok=False)
     for address in ("8.8.8.8", "2606:4700:4700::1111", "2606:4700:4700:0:0:0:0:1111"):

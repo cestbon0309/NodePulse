@@ -164,37 +164,17 @@ try:
     http_nodes = json.loads(http(query_port, "/api/nodes?key=simple-key")[1])["nodes"]
     assert len(http_nodes) == 1 and http_nodes[0]["relay"] is False and http_nodes[0]["id"]
     print("PASS HTTP: Bearer/query auth 200, missing/wrong key and wrong route empty 404, HTTP-only local snapshot")
-    start("-k", secret, "-u", f"127.0.0.1:{direct}", "-i", "1", "-n", "relay-only")
-    relayed = wait_for(lambda: next((n for n in get(direct)["nodes"] if n.get("relay")), None))
-    assert relayed["name"] == "relay-only" and abs(relayed["last_seen"] - time.time()) < 5
-    manual = {"op": "push", "ts": int(time.time()), "node": {"id": "manual", "name": "first"}}
-    assert client.exchange("127.0.0.1", direct, secret, manual) == {"ok": True}
-    manual["node"]["name"] = "updated"
-    assert client.exchange("127.0.0.1", direct, secret, manual) == {"ok": True}
-    assert [n["name"] for n in get(direct)["nodes"] if n["id"] == "manual"] == ["updated"]
-    print("PASS relay-only periodic upstream push, last_seen metadata, push ACK and replacement by id")
-    assert client.exchange("127.0.0.1", direct, secret,
-                           {"op": "push", "ts": int(time.time()), "node": worst_snapshot})["ok"]
-    accepted = next(node for node in get(direct)["nodes"] if node["id"] == worst_snapshot["id"])
-    assert accepted["ips"] == worst_snapshot["ips"] and accepted["name"] == worst_snapshot["name"]
-    print("PASS worst-case generated snapshot: 64 source IPs capped to 16, escaped bounded strings and extreme metrics accepted by push")
-    bounded = port()
-    start("-k", secret, "-l", f"127.0.0.1:{bounded}")
-    wait_for(lambda: get(bounded))
-    for size in (3841, 8192):
-        node = {"id": "oversized", "padding": ""}
-        node["padding"] = "x" * (size - len(json.dumps(node, separators=(",", ":"))))
-        silent(bounded, client.encode(secret, {"op": "push", "ts": int(time.time()), "node": node}))
-    assert len(get(bounded)["nodes"]) == 1
-    for index in range(64):
-        node = {"id": f"bounded-{index}", "padding": ""}
-        node["padding"] = "x" * (3840 - len(json.dumps(node, separators=(",", ":"))))
-        assert client.exchange("127.0.0.1", bounded, secret,
-                               {"op": "push", "ts": int(time.time()), "node": node})["ok"]
-    full = get(bounded)
-    assert len(full["nodes"]) == 65
-    assert len(json.dumps(full).encode()) < 256 * 1024
-    print("PASS relay frame budget: oversized pushes silent; 64 boundary-size nodes plus self fit one get")
+    for args in (("-u", "localhost:9000"), ("-u",)):
+        removed = subprocess.run([os.path.abspath(sys.argv[1]), *args], capture_output=True, text=True)
+        assert removed.returncode == 2 and "removed, use -R/-S" in removed.stderr
+    with tempfile.TemporaryDirectory() as directory:
+        removed_config = pathlib.Path(directory) / "legacy.conf"
+        removed_config.write_text("upstream=localhost:9000\n")
+        removed = subprocess.run([os.path.abspath(sys.argv[1]), "-c", str(removed_config)], capture_output=True, text=True)
+        assert removed.returncode == 2 and "removed, use -R/-S" in removed.stderr
+    silent(direct, client.encode(secret, {"op": "push", "ts": int(time.time()), "node": {"id": "removed", "name": "child"}}))
+    assert len(get(direct)["nodes"]) == 1
+    print("PASS removed legacy -u/upstream fail with -R/-S guidance; authenticated child pushes are rejected and cannot alter direct nodes")
     with tempfile.TemporaryDirectory() as directory:
         config_port = port()
         config = pathlib.Path(directory) / "probe.conf"
@@ -203,6 +183,7 @@ try:
         assert wait_for(lambda: get(config_port))["nodes"][0]["name"] == "cli-wins"
     print("PASS key=value configuration and CLI precedence")
     subprocess.run([sys.executable, str(probe / "tools/test-group.py"), sys.argv[1]], check=True)
+    subprocess.run([sys.executable, str(probe / "tools/test-combined.py"), sys.argv[1]], check=True)
     print("ALL INTEGRATION CHECKS PASSED")
 finally:
     for proc in processes:

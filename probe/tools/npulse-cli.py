@@ -261,13 +261,13 @@ def main():
     parser.add_argument("-T", "--token")
     parser.add_argument("-G", "--group-secret")
     parser.add_argument("--raw", action="store_true", help="print opaque gget response")
-    parser.add_argument("op", choices=["get", "push", "gget", "gpush"], default="get", nargs="?")
-    parser.add_argument("--node", help="snapshot JSON file, required for push")
+    parser.add_argument("op", choices=["get", "gget", "gpush"], default="get", nargs="?")
+    parser.add_argument("--node", help="snapshot JSON file, required for gpush")
     args = parser.parse_intermixed_args()
     obj = {"op": args.op, "ts": int(time.time())}
-    if args.op in ("push", "gpush"):
+    if args.op == "gpush":
         if not args.node:
-            parser.error("push/gpush requires --node")
+            parser.error("gpush requires --node")
         with open(args.node, encoding="utf-8") as src:
             obj["node"] = json.load(src)
     if args.op in ("gget", "gpush"):
@@ -280,7 +280,7 @@ def main():
             result = open_blobs(group, result)
     else:
         if not args.key:
-            parser.error("get/push require -k SECRET")
+            parser.error("get requires -k SECRET")
         result = exchange(args.host, args.port, args.key, obj)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 

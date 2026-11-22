@@ -115,11 +115,10 @@ try:
                       "-T", TOKEN, binary=harness)
         wait_for(lambda: get(tcp))
         print("PASS bounded worst-case snapshot with 16 IPs encrypts below 7168-byte blob cap and survives relay round trip")
-        legacy, direct, normal_http = port(), port(), port()
-        start("-l", f"127.0.0.1:{legacy}", "-k", "legacy-secret", "-n", "legacy-upstream")
-        start("--publisher", "-R", f"127.0.0.1:{tcp}", "-T", TOKEN, "-k", "legacy-secret", "-G", A,
+        direct, normal_http = port(), port()
+        start("--publisher", "-R", f"127.0.0.1:{tcp}", "-T", TOKEN, "-k", "direct-secret", "-G", A,
               "-l", f"127.0.0.1:{direct}", "-H", f"127.0.0.1:{normal_http}",
-              "-u", f"127.0.0.1:{legacy}", "-n", "group-a-one", "-i", "1", binary=harness)
+              "-n", "group-a-one", "-i", "1", binary=harness)
         start("--publisher", "-R", f"127.0.0.1:{tcp}", "-T", TOKEN, "-k", A, "-n", "group-a-two", "-i", "1", binary=harness)
         config = Path(temp) / "publisher.conf"
         config.write_text(f"relay_upstream=127.0.0.1:{tcp}\ntoken={TOKEN}\ngroup_secret={B}\nname=group-b-one\ninterval=1\n")
@@ -141,16 +140,13 @@ try:
         node_file.write_text('{"id":"cli-node","name":"cli"}')
         assert json.loads(subprocess.check_output([*cli, "-G", B, "gpush", "--node", str(node_file)], text=True))["ok"]
         print("PASS pure relay + 2 group A probes + 1 group B probe: isolated decrypted nodes; raw storage is opaque")
-        def legacy_get(p):
-            return c.exchange("127.0.0.1", p, "legacy-secret", {"op": "get", "ts": int(time.time())})
-        assert legacy_get(direct)["nodes"][0]["name"] == "group-a-one"
-        wait_for(lambda: len(legacy_get(legacy)["nodes"]) == 2)
+        assert c.exchange("127.0.0.1", direct, "direct-secret", {"op": "get", "ts": int(time.time())})["nodes"][0]["name"] == "group-a-one"
         conn = http.client.HTTPConnection("127.0.0.1", normal_http, timeout=3)
-        conn.request("GET", "/api/nodes", headers={"Authorization": "Bearer legacy-secret"})
+        conn.request("GET", "/api/nodes", headers={"Authorization": "Bearer direct-secret"})
         response = conn.getresponse()
         assert response.status == 200 and json.loads(response.read())["nodes"][0]["name"] == "group-a-one"
         conn.close()
-        print("PASS -R combines with -l/-u/normal -H; explicit -G overrides -k; fallback -k and key=value group configuration work")
+        print("PASS -R combines with -l/normal -H; explicit -G overrides -k; fallback -k and key=value group configuration work")
 
         bad = c.group_request(B)
         bad["gid"] = c.group_keys(A)[3]

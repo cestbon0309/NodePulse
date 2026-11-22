@@ -66,8 +66,7 @@ struct NodeAdminSection: View {
     @State private var confirmed = false
     @State private var message: String?
     var body: some View {
-        if let endpoint = store.endpoints.first(where: { $0.id == node.endpointID }), AdminSession.supports(endpoint.kind),
-           endpoint.kind.isGroup || node.snapshot.relay != true {
+        if let endpoint = store.endpoints.first(where: { $0.id == node.endpointID }), AdminSession.supports(endpoint.kind) {
             VStack(alignment: .leading, spacing: 16) {
                 HStack { Label("管理", systemImage: "slider.horizontal.3").font(.headline); Spacer(); if busy { ProgressView() } else { Image(systemName: "lock.shield").foregroundStyle(.teal) } }
                 HStack(spacing: 12) {

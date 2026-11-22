@@ -1,6 +1,23 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "端到端加密": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端到端加密"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "E2E encrypted"
+          }
+        }
+      }
+    },
     "管理消息过大": {
       "extractionState": "manual",
       "localizations": {

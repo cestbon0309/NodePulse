@@ -1,7 +1,37 @@
 import XCTest
+import SwiftUI
 @testable import NodePulse
 
 final class NodePulseTests: XCTestCase {
+    @MainActor func testCompactCardHeightIndependentOfBadgeLocationAndEmptyMetadata() throws {
+        let suite = "Compact-\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = MonitorStore(defaults: defaults, secrets: MemorySecrets())
+        for size in [DynamicTypeSize.large, .accessibility3] {
+            var baseline: CGFloat?
+            for encrypted in [false, true] {
+                for address in [nil, "1.1.1.1", "invalid", "10.0.0.1"] as [String?] {
+                    for empty in [false, true] {
+                        let kind: Endpoint.Kind = encrypted ? .direct(host: "localhost", port: 9000) : .https(urlString: "https://example.com")
+                        let endpoint = Endpoint(name: "test", kind: kind)
+                        var snapshot = NodeSnapshot(); snapshot.id = "node"
+                        snapshot.name = empty ? "" : "A long node name that truncates"
+                        snapshot.os = empty ? "" : "OpenWrt 23.05"; snapshot.egressIp = address
+                        store.apply(endpoint, result: .success([snapshot]), latency: 1)
+                        if empty { store.apply(endpoint, result: .failure(ProbeError.timeout), latency: 1) }
+                        let item = try XCTUnwrap(store.nodes.last)
+                        let renderer = ImageRenderer(content: CompactNodeCard(item: item, locations: store.locations, demo: true)
+                            .frame(width: 180).environment(\.dynamicTypeSize, size))
+                        let height = try XCTUnwrap(renderer.uiImage).size.height
+                        XCTAssertGreaterThan(height, 100)
+                        if let baseline { XCTAssertEqual(height, baseline, accuracy: 1) }
+                        else { baseline = height }
+                    }
+                }
+            }
+        }
+    }
+
     @MainActor func testDetailHeaderAddressSelection() {
         XCTAssertEqual(DetailHeader.addresses(primary: "192.168.1.1", egress: "1.1.1.1"), ["192.168.1.1", "1.1.1.1"])
         XCTAssertEqual(DetailHeader.addresses(primary: "1.1.1.1", egress: "1.1.1.1"), ["1.1.1.1"])

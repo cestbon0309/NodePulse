@@ -201,6 +201,7 @@ try:
         start("-k", secret, "-c", str(config), "-n", "cli-wins")
         assert wait_for(lambda: get(config_port))["nodes"][0]["name"] == "cli-wins"
     print("PASS key=value configuration and CLI precedence")
+    subprocess.run([sys.executable, str(probe / "tools/test-group.py"), sys.argv[1]], check=True)
     print("ALL INTEGRATION CHECKS PASSED")
 finally:
     for proc in processes:

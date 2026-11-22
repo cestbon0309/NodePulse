@@ -1,0 +1,31 @@
+{
+  "S": "跨语言-test-secret",
+  "TOKEN": "vector-relay-token",
+  "node": {
+    "id": "vector-node",
+    "name": "测试节点",
+    "ts": 1700000000
+  },
+  "seed": "7006fe7a985367cd8affe382a44dc913e406826a27a02bfc7c4604e3145c6bb1",
+  "enc_key": "1fe18075c3442639d68ce62aeb105b8b75e510de166d17e3e024280b0c2948e9",
+  "outer_key": "6e88d0b06f8d7d2ab5ce4afbbd1f8933ab5df2e76ea2948e8718d8e44284c7ce",
+  "gid": "8e7bc0a364bc283bfb3d6c459310feb91aeda19344e86c6927f4b83ec0ece0e1",
+  "slot": "20b59f4be54d6f3c8c3251e7eb6efe05",
+  "nonce": "000102030405060708090a0b",
+  "plaintext": "{\"id\":\"vector-node\",\"name\":\"测试节点\",\"ts\":1700000000}",
+  "ad": "8e7bc0a364bc283bfb3d6c459310feb91aeda19344e86c6927f4b83ec0ece0e1:20b59f4be54d6f3c8c3251e7eb6efe05",
+  "blob": "AAECAwQFBgcICQoLJpFznCKZPHQnZgCPXR98PuxRNZLbdWGTjMLit32jZULNA0ovhehlbfzm7OBjKpV0m5CfgD8XKZFWRe5zx14iFAuzhLN7An4TlxA=",
+  "message": "npulse-gpush\n8e7bc0a364bc283bfb3d6c459310feb91aeda19344e86c6927f4b83ec0ece0e1\n20b59f4be54d6f3c8c3251e7eb6efe05\n1700000000\n00112233445566778899aabbccddeeff\nAAECAwQFBgcICQoLJpFznCKZPHQnZgCPXR98PuxRNZLbdWGTjMLit32jZULNA0ovhehlbfzm7OBjKpV0m5CfgD8XKZFWRe5zx14iFAuzhLN7An4TlxA=",
+  "signature": "45f868805021eedf46ed98964cc717e9bae69bf0f9b6e0a8dc3abbbf5ba9086defb0fbcc446a5a2b18630a6679242e0bac2a0632381f1f3c778853cdf73a5806",
+  "gpush": {
+    "op": "gpush",
+    "ts": 1700000000,
+    "rid": "00112233445566778899aabbccddeeff",
+    "gid": "8e7bc0a364bc283bfb3d6c459310feb91aeda19344e86c6927f4b83ec0ece0e1",
+    "slot": "20b59f4be54d6f3c8c3251e7eb6efe05",
+    "blob": "AAECAwQFBgcICQoLJpFznCKZPHQnZgCPXR98PuxRNZLbdWGTjMLit32jZULNA0ovhehlbfzm7OBjKpV0m5CfgD8XKZFWRe5zx14iFAuzhLN7An4TlxA=",
+    "sig": "45f868805021eedf46ed98964cc717e9bae69bf0f9b6e0a8dc3abbbf5ba9086defb0fbcc446a5a2b18630a6679242e0bac2a0632381f1f3c778853cdf73a5806"
+  },
+  "gget_message": "npulse-gget\n8e7bc0a364bc283bfb3d6c459310feb91aeda19344e86c6927f4b83ec0ece0e1\n1700000000\n00112233445566778899aabbccddeeff",
+  "gget_signature": "1b840fb2e939dfe2076e39dabda0ce34cb000fd04c2d4f62850c12be8950b2ffb287c83c7970f42e05f33d1c547d01de5aaa291331d36aa6074abc52538c8006"
+}

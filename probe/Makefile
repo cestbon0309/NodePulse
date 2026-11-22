@@ -1,7 +1,7 @@
 CC = cc
 CFLAGS ?= -Os -flto -std=gnu99 -Wall -Wextra -ffunction-sections -fdata-sections
 SOURCES = npulse.c vendor/monocypher.c vendor/monocypher-ed25519.c
-HEADERS = json.h metrics.h vendor/monocypher.h vendor/monocypher-ed25519.h
+HEADERS = json.h metrics.h group.h vendor/monocypher.h vendor/monocypher-ed25519.h
 LDFLAGS ?= -static -Wl,--gc-sections -s
 
 npulse: $(SOURCES) $(HEADERS)

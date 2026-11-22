@@ -410,7 +410,12 @@ static int admin_request(Admin *a, char *plain) {
     else { if (admin_remove(fd, name, recursive, 0)) error = errno; close(fd); }
     free(name);
   } else if (!strcmp(t, "mkdir") && path) { if (mkdir(path, 0755)) error = errno;
-  } else if (!strcmp(t, "mv") && from && to) { if (rename(from, to)) error = errno;
+  } else if (!strcmp(t, "mv") && from && to) {
+    int overwrite = 0; struct stat st;
+    if (field(&j, 0, "overwrite") >= 0 && admin_bool(&j, "overwrite", &overwrite)) error = EINVAL;
+    else if (!overwrite && !lstat(to, &st)) error = EEXIST;
+    else if (!overwrite && errno != ENOENT) error = errno;
+    else if (rename(from, to)) error = errno;
   } else if (!strcmp(t, "pty_open")) {
     long long cols, rows;
     if (admin_number(&j, "cols", &cols) || admin_number(&j, "rows", &rows) || cols < 1 || cols > 65535 || rows < 1 || rows > 65535) { error = EINVAL; goto done; }

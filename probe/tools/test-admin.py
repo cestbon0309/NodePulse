@@ -192,7 +192,10 @@ def main(root):
         rejected(lambda: client.request("stat", path=str(remote / "missing")))
         rejected(lambda: client.request("get", path=str(destination), offset=-1, len=1))
         rejected(lambda: client.request("get", path=str(destination), offset=0, len=65537))
-        client.request("mv", **{"from": str(destination), "to": str(remote / "moved.bin")})
+        (remote / "moved.bin").write_bytes(b"keep")
+        rejected(lambda: client.request("mv", **{"from": str(destination), "to": str(remote / "moved.bin")}))
+        assert (remote / "moved.bin").read_bytes() == b"keep"
+        client.request("mv", **{"from": str(destination), "to": str(remote / "moved.bin"), "overwrite": True})
         handles = [client.request("put_begin", path=str(remote / f"open-{i}"), size=2, overwrite=False)["handle"] for i in range(4)]
         rejected(lambda: client.request("put_begin", path=str(remote / "fifth"), size=0, overwrite=False))
         rejected(lambda: client.request("put", handle=handles[0], offset=1, data="YQ=="))

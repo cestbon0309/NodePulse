@@ -125,7 +125,7 @@ including on invalid input. Never infer ACKs from notification sequence numbers.
 | put_abort | handle | close + unlink owned part |
 | rm | path,recursive:bool | own fd-relative walker, never follows final/descendant symlinks, recursion depth <=65; non-recursive empty directories supported |
 | mkdir | path | mkdir mode 0755 (subject to umask); parent must exist |
-| mv | from,to | OS rename semantics (can replace destination) |
+| mv | from,to,overwrite?:bool | Fails with EEXIST for an existing destination (including symlinks), unless overwrite:true is explicit. iOS surfaces the error without retrying destructively. |
 | pty_open | cols,rows:1...65535 | pty:int; forkpty login shell; max 4 per session |
 | pty_in | pty,data:base64 (<=65536 decoded bytes) | no response; nonblocking input queue <=128KB per PTY |
 | pty_resize | pty,cols,rows:1...65535 | TIOCSWINSZ |

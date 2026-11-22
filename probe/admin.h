@@ -351,7 +351,7 @@ static int admin_request(Admin *a, char *plain) {
     if (error) goto done;
     char *encoded = base64_encode(data, (size_t)n);
     if (!encoded) { error = ENOMEM; goto done; }
-    add(&b, ",\"data\":\"%s\",\"size\":%lld,\"eof\":%s", encoded, (long long)st.st_size, (uint64_t)offset + (size_t)n >= (uint64_t)st.st_size ? "true" : "false"); free(encoded);
+    add(&b, ",\"data\":\"%s\",\"size\":%lld,\"eof\":%s", encoded, (long long)st.st_size, (!n || (uint64_t)offset + (size_t)n >= (uint64_t)st.st_size) ? "true" : "false"); free(encoded);
   } else if (!strcmp(t, "put_begin") && path) {
     long long size, mode = 0600; int overwrite;
     if (admin_number(&j, "size", &size) || size < 0 || admin_bool(&j, "overwrite", &overwrite) ||

@@ -226,6 +226,8 @@ def main(root):
         assert (remote / "race").read_bytes() == b"new existing target"
         handle = client.request("put_begin", path=str(remote / "empty"), size=0, overwrite=False)["handle"]
         client.request("put_end", handle=handle)
+        zero_read = client.request("get", path=str(remote / "moved.bin"), offset=0, len=0)
+        assert zero_read["eof"] is True and zero_read["data"] == ""
         empty = client.request("get", path=str(remote / "empty"), offset=0, len=65536)
         assert empty["data"] == "" and empty["eof"] is True
         client.request("put_begin", path=str(remote / "disconnected"), size=10, overwrite=False)

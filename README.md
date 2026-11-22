@@ -165,6 +165,94 @@ O32 ABI (`musleabi` in current Zig). All use static musl, `-Os`, LTO,
 function/data sections, linker garbage collection and stripping. Build failures
 and warnings are errors. `make` supports `CC`, `CFLAGS`, and `LDFLAGS` overrides.
 
+## 共享中继（端到端加密）
+
+共享中继只保存、转发不透明密文，不需要组密钥，也不采集自身指标。
+每个组使用独立的高熵组密钥；同组成员互信，可以解密或发布本组节点。
+`TOKEN` 只控制中继访问，不提供节点身份隔离，也不能代替组密钥。
+中继可见组公钥 `gid`、匿名槽位及其数量、密文大小与通信时间；无法读取或
+伪造节点内容，但可拒绝服务、隐藏节点或重放旧密文。接收端须检查密文内已认证的
+快照 `ts`，并结合 `age` 提示陈旧状态；`age` 本身由中继提供，并非端到端可信。
+协议没有前向保密，也没有口令拉伸，请使用随机长密钥并限制 TOKEN 的分发。
+
+### 部署纯中继
+
+```sh
+sudo install -m 0755 probe/dist/npulse-linux-x86_64 /usr/local/bin/npulse
+sudo install -m 0600 probe/deploy/npulse-relay.conf /etc/npulse-relay.conf
+sudo install -m 0644 probe/deploy/npulse-relay.service /etc/systemd/system/
+sudoedit /etc/npulse-relay.conf  # 替换 token；不要放入组密钥
+sudo systemctl daemon-reload
+sudo systemctl enable --now npulse-relay
+sudo ufw allow 9010/tcp  # 探针 gpush 的加密 TCP 端口；仅 HTTPS 访问时可不开放
+```
+
+等价命令：`npulse -S 0.0.0.0:9010 -T TOKEN -H 127.0.0.1:9011`。
+HTTP 端口不应对公网开放。Nginx 示例中的精确匹配 `location = /api/relay`
+代理到 9011，按已有证书配置部署并开放 `443/tcp`。
+仅 HTTP 中继可运行 `npulse -H 127.0.0.1:9011 -T TOKEN`（不带 `-k`）。
+`-S` 存在时，`-H` 提供中继 API；普通探针的 `-H` 仍提供 `/api/nodes`。
+纯中继的启动和循环都跳过指标初始化及 `/proc` 采样。
+
+### 发布节点与读取分组
+
+在每台受监控主机上运行（同组使用同一 GROUP_SECRET）：
+
+```sh
+npulse -R relay.example.com:9010 -T TOKEN -G GROUP_SECRET -i 5 -n router
+# 可同时保留本机直连、旧式中继或 HTTP；省略 -G 时采用 -k 的值：
+npulse -k GROUP_SECRET -R relay.example.com:9010 -T TOKEN -l 9000 -n server
+```
+
+发布端只需允许出站 TCP 9010，无需开放入站端口（启用 `-l` 时另行开放 9000）。
+对应配置键为 `relay_upstream`、`token`、`group_secret`、`interval`、`name`。
+
+```sh
+python3 -m pip install cryptography
+python3 probe/tools/npulse-cli.py relay.example.com 9010 -T TOKEN -G GROUP_SECRET gget
+python3 probe/tools/npulse-cli.py relay.example.com 9010 -T TOKEN -G GROUP_SECRET gget --raw
+python3 probe/tools/npulse-cli.py relay.example.com 9010 -T TOKEN -G GROUP_SECRET gpush --node snapshot.json
+```
+
+默认 `gget` 解密并检查快照 id 的槽位派生，输出节点、`age` 和槽位；`--raw`
+只输出不透明槽位。iOS 分组接入将在下一阶段实现，本阶段未修改 iOS。
+
+### 协议与边界
+
+所有字符串按 UTF-8 编码。`enc_key = SHA512("npulse-e2e-enc:" || S)[0:32]`；
+Ed25519 种子为 `SHA512("npulse-e2e-sign:" || S)[0:32]`，使用 RFC 8032，
+`gid` 为其 32 字节公钥的小写十六进制。
+`slot = hex(SHA512("npulse-e2e-slot:" || enc_key || node_id)[0:16])`。
+`blob = base64(nonce12 || ChaChaPoly(enc_key, snapshot, AD=gid+":"+slot).ciphertext || tag16)`。
+中继外层沿用现有帧，密钥为 `SHA512(TOKEN)[0:32]`，密文上限 262144 字节，
+整帧多 32 字节；无 magic。每个连接一问一答。
+
+`gpush` 字段为 `op,ts,rid,gid,slot,blob,sig`，签名消息为
+`"npulse-gpush\n{gid}\n{slot}\n{ts}\n{rid}\n{blob}"`；
+`gget` 字段为 `op,ts,rid,gid,sig`，签名消息为
+`"npulse-gget\n{gid}\n{ts}\n{rid}"`，均无末尾换行。
+`rid` 为随机 16 字节的小写 hex，`sig` 为 64 字节签名的 128 字符小写 hex。
+响应回显 `rid`；get 额外返回 `blobs:[{slot,blob,age}]`，push 仅返回 `ok:true,rid`。
+时间戳必须在 ±120 秒内；维护最近 256 个外层 nonce 和最近 256 个已验证的
+`(gid,rid)`，缓存窗口 240 秒。签名、格式、容量、令牌或认证失败均静默关闭。
+
+最多 256 组，每组 32 个槽位，十分钟后过期并按需清理，容量满时拒绝新增，
+已有槽位仍可更新。单个 base64 blob 上限 **7168 字节**。
+已有快照上限为 3840 字节（16 个 IP 及有界字符串），封装成 blob 最多
+`4×ceil((3840+28)/3) = 5160` 字节，留有 2008 字节余量。
+编译期同时断言快照封装预算和 `32×(7168+128)+256 < 262144` 的响应预算。
+纯中继不会解密 blob；通过验证的恶意组成员仍能在本组发布任意密文。
+
+HTTP 使用 `POST /api/relay`，Content-Type 为 `application/octet-stream`，
+Content-Length 必填且不超过 262176；body 为一整帧，成功返回 200 和响应帧。
+支持 HTTP/1.0、1.1，不接受 chunked、重复 Content-Length 或其他路由；
+HTTP 格式/路由错误返回空 404，外层加密或签名错误仍静默关闭。
+
+固定跨语言向量：`probe/tools/e2e-vector.json`（测试用组密钥、TOKEN、种子、派生密钥、
+gid、slot、固定 nonce/blob 和 push/get 消息签名）。向量由独立 Node crypto 生成，
+Python cryptography 与 C Monocypher 测试逐字节核对，供下一阶段 CryptoKit 测试复用。
+运行 `python3 probe/tools/test-probe.py probe/npulse-host` 会连同分组集成测试一起执行。
+
 ## Run
 
 ```
@@ -173,14 +261,17 @@ npulse -k 'shared-secret' -u upstream.example:9000 -i 5 -n satellite
 npulse -c /etc/npulse.conf
 ```
 
-`-k` is required. `-l [addr:]port` is the encrypted direct listener (default
+`-k` is required for normal direct/HTTP/upstream modes, not for pure shared
+relays or `-R` with an explicit `-G`. `-l [addr:]port` is the encrypted direct listener (default
 address `0.0.0.0`). `-H [addr:]port` is plain HTTP (default `127.0.0.1`), intended
 **only behind a TLS reverse proxy**. `-u host:port` pushes upstream every `-i`
 seconds (default 5); all three modes may be combined. IPv6 endpoints use
 `[address]:port`. `-n` defaults to hostname. `-h` prints usage. At least one
 listener or upstream is required. Config is unquoted `key=value`, with blank
 lines and `#` comment lines; keys are `secret`, `listen`, `http`, `upstream`,
-`interval`, `name`. CLI values override configuration regardless of order.
+`interval`, `name`, `relay_listen` (`-S`), `token` (`-T`), `group_secret` (`-G`),
+`relay_upstream` (`-R`); single-letter flag names are also accepted as keys.
+CLI values override configuration regardless of order.
 Protect the config file and command-line secret from other local users.
 
 Direct requests are IETF ChaCha20-Poly1305 frames:

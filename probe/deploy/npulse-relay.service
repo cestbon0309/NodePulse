@@ -1,0 +1,21 @@
+[Unit]
+Description=NodePulse opaque E2E relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+LoadCredential=npulse-relay.conf:/etc/npulse-relay.conf
+ExecStart=/usr/local/bin/npulse -c %d/npulse-relay.conf
+DynamicUser=yes
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectProc=invisible
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

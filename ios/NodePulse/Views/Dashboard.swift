@@ -77,17 +77,19 @@ struct ContentView: View {
                 }
                 .sheet(item: $sheet) { selection in
                     switch selection {
-                    case .add: EndpointForm(store: store)
+                    case .add: AddEndpointView(store: store)
                     case .settings: SettingsView(store: store)
                     case .endpoints: NavigationStack { EndpointList(store: store) }
                     }
                 }
                 .onChange(of: failures) { _, _ in errorDismissed = false }
+                .onChange(of: store.pairingURL) { _, value in if value != nil { sheet = .add } }
                 .animation(reduceMotion ? nil : .smooth(duration: 0.6), value: store.nodes.map { $0.snapshot.cpuUsage })
                 .animation(reduceMotion ? nil : .spring(duration: 0.45, bounce: 0.12), value: classicLayout)
                 .task {
+                    if store.pairingURL != nil { sheet = .add }
                     #if DEBUG
-                    if ProcessInfo.processInfo.arguments.contains("-show-add") { sheet = .add }
+                    if ProcessInfo.processInfo.arguments.contains("-show-add") || ProcessInfo.processInfo.arguments.contains("-show-pair") { sheet = .add }
                     #endif
                 }
         }

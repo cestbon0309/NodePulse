@@ -37,6 +37,7 @@ struct NodePulseApp: App {
             root
                 .environment(\.locale, Locale(identifier: "zh_Hans_CN"))
                 .tint(Color("AccentColor"))
+                .onOpenURL { url in if url.scheme?.lowercased() == "nodepulse" { store.pairingURL = url } }
                 .onChange(of: phase, initial: true) { _, phase in
                     if phase == .active { store.start() } else { store.stop() }
                 }

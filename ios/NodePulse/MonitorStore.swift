@@ -28,6 +28,7 @@ struct EndpointStatus {
 
 @Observable @MainActor
 final class MonitorStore {
+    var pairingURL: URL?
     private(set) var endpoints: [Endpoint]
     private(set) var nodes: [NodeItem] = []
     private(set) var statuses: [UUID: EndpointStatus] = [:]

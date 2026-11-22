@@ -18,6 +18,9 @@ final class AdminTests: XCTestCase {
         XCTAssertEqual(EndpointForm.swappedPort("9010", from: 2, to: 0), "9000")
         XCTAssertEqual(EndpointForm.swappedPort("9000", from: 2, to: 0), "9000")
         XCTAssertEqual(EndpointForm.swappedPort("9999", from: 0, to: 2), "9999")
+        XCTAssertEqual(EndpointForm.swappedPort("9000", from: 1, to: 2), "9010")
+        XCTAssertEqual(EndpointForm.swappedPort("9999", from: 3, to: 2), "9010")
+        XCTAssertEqual(EndpointForm.swappedPort("9010", from: 3, to: 0), "9000")
     }
     func testPythonHandshakeAndCounterVector() throws {
         let client = "07a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c"

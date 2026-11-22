@@ -36,7 +36,7 @@ struct EndpointList: View {
 struct EndpointForm: View {
     static func swappedPort(_ port: String, from: Int, to: Int) -> String {
         let defaults = [0: "9000", 2: "9010"]
-        guard port == defaults[from], let next = defaults[to] else { return port }
+        guard let next = defaults[to], defaults[from] == nil || port == defaults[from] else { return port }
         return next
     }
     var store: MonitorStore

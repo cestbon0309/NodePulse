@@ -5,7 +5,9 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGNING_ALLOWED: YES
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGNING_REQUIRED: YES
 targets:
   NodePulse:
     type: application
@@ -15,8 +17,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cestbon.nodepulse
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_NSLocalNetworkUsageDescription: Connect to your monitoring probes.
-        INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: 连接局域网中的监控探针，查看节点状态。
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
   NodePulseTests:
     type: bundle.unit-test

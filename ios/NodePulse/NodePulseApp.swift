@@ -4,31 +4,31 @@ import SwiftUI
 struct NodePulseApp: App {
     @State private var store = MonitorStore()
     @Environment(\.scenePhase) private var phase
+    init() {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        let store = MonitorStore()
+        if args.contains("-demo") { store.demoMode = true }
+        if args.contains("-empty") {
+            store.demoMode = false
+            for endpoint in store.endpoints { try? store.delete(endpoint) }
+        }
+        if args.contains("-live") {
+            store.demoMode = false
+            for endpoint in store.endpoints { try? store.delete(endpoint) }
+            try? store.save(Endpoint(name: "本机探针", kind: .direct(host: "127.0.0.1", port: 19090)), secret: "integration-secret")
+        }
+        _store = State(initialValue: store)
+        #endif
+    }
     var body: some Scene {
         WindowGroup {
             ContentView(store: store)
+                .environment(\.locale, Locale(identifier: "zh_Hans_CN"))
+                .tint(Color("AccentColor"))
                 .onChange(of: phase, initial: true) { _, phase in
                     if phase == .active { store.start() } else { store.stop() }
                 }
-        }
-    }
-}
-
-struct ContentView: View {
-    @Bindable var store: MonitorStore
-    var body: some View {
-        NavigationStack {
-            List {
-                Toggle("演示模式", isOn: $store.demoMode)
-                ForEach(store.nodes) { item in
-                    VStack(alignment: .leading) {
-                        Text(item.snapshot.name.isEmpty ? item.snapshot.hostname : item.snapshot.name)
-                        Text("\(item.online ? "在线" : "离线") · \(item.snapshot.os) · CPU \(item.snapshot.cpuUsage, specifier: "%.1f")%")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .navigationTitle("NodePulse")
         }
     }
 }

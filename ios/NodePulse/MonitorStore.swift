@@ -156,5 +156,12 @@ final class MonitorStore {
             s.uptime = 86400 * Double(index + 1); s.temp = 42 + 3 * sin(demoTick); return s
         }
         apply(endpoint, result: .success(snapshots), latency: 12)
+        for index in nodes.indices where nodes[index].history.count == 1 {
+            let s = nodes[index].snapshot
+            nodes[index].history = (0..<40).map { tick in
+                let wave = sin(Double(tick) * 0.22 + Double(index))
+                return HistorySample(date: Date().addingTimeInterval(Double(tick - 39) * 3), cpu: max(0, s.cpuUsage + wave * 12), memPercent: s.memPercent + wave * 3, rxRate: max(0, s.netRxRate * (1 + wave * 0.3)), txRate: max(0, s.netTxRate * (1 + wave * 0.25)))
+            }
+        }
     }
 }

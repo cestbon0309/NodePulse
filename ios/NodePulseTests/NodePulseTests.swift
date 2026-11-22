@@ -69,7 +69,7 @@ final class NodePulseTests: XCTestCase {
         await store.refresh(); let first = store.nodes[0].snapshot.cpuUsage
         await store.refresh()
         XCTAssertEqual(store.nodes.count, 5); XCTAssertNotEqual(store.nodes[0].snapshot.cpuUsage, first)
-        XCTAssertTrue(store.nodes.contains { !$0.online }); XCTAssertEqual(store.nodes[0].history.count, 2)
+        XCTAssertTrue(store.nodes.contains { !$0.online }); XCTAssertEqual(store.nodes[0].history.count, 41)
     }
     func testLiveProbe() async throws {
         guard ProcessInfo.processInfo.environment["NPULSE_E2E"] == "1" else {
@@ -88,8 +88,7 @@ final class NodePulseTests: XCTestCase {
     }
     func testKeychainWhenSigned() throws {
         let secrets = SecretStore(), id = UUID()
-        do { try secrets.set("test-value", for: id) }
-        catch ProbeError.keychain(-34018) { throw XCTSkip("Unsigned simulator app lacks Keychain entitlement (-34018); run signed to verify Security storage") }
+        try secrets.set("test-value", for: id)
         defer { try? secrets.delete(id) }
         XCTAssertEqual(try secrets.get(id), "test-value")
     }

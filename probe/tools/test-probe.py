@@ -91,6 +91,15 @@ try:
                         str(probe / "vendor/monocypher-ed25519.c"),
                         str(probe / "vendor/monocypher.c"), "-o", str(binary)], check=True)
         subprocess.run([str(binary), str(root)], check=True)
+        binary = root / "test-snapshot"
+        subprocess.run([os.environ.get("CC", "cc"), str(probe / "tools/test-snapshot.c"),
+                        str(probe / "vendor/monocypher-ed25519.c"),
+                        str(probe / "vendor/monocypher.c"), "-o", str(binary)], check=True)
+        worst_snapshot = json.loads(subprocess.check_output([str(binary)], text=True))
+        assert len(worst_snapshot["ips"]) == 16
+        for field, limit in (("name", 64), ("hostname", 64), ("os", 64),
+                             ("cpu_model", 96), ("kernel", 32), ("arch", 16)):
+            assert len(worst_snapshot[field].encode()) == limit
     rid = "0123456789abcdef" * 2
     client.validate_response({"rid": rid}, rid)
     for captured in ({}, {"rid": "0" * 32}):
@@ -163,17 +172,22 @@ try:
     assert client.exchange("127.0.0.1", direct, secret, manual) == {"ok": True}
     assert [n["name"] for n in get(direct)["nodes"] if n["id"] == "manual"] == ["updated"]
     print("PASS relay-only periodic upstream push, last_seen metadata, push ACK and replacement by id")
+    assert client.exchange("127.0.0.1", direct, secret,
+                           {"op": "push", "ts": int(time.time()), "node": worst_snapshot})["ok"]
+    accepted = next(node for node in get(direct)["nodes"] if node["id"] == worst_snapshot["id"])
+    assert accepted["ips"] == worst_snapshot["ips"] and accepted["name"] == worst_snapshot["name"]
+    print("PASS worst-case generated snapshot: 64 source IPs capped to 16, escaped bounded strings and extreme metrics accepted by push")
     bounded = port()
     start("-k", secret, "-l", f"127.0.0.1:{bounded}")
     wait_for(lambda: get(bounded))
-    for size in (3073, 8192):
+    for size in (3841, 8192):
         node = {"id": "oversized", "padding": ""}
         node["padding"] = "x" * (size - len(json.dumps(node, separators=(",", ":"))))
         silent(bounded, client.encode(secret, {"op": "push", "ts": int(time.time()), "node": node}))
     assert len(get(bounded)["nodes"]) == 1
     for index in range(64):
         node = {"id": f"bounded-{index}", "padding": ""}
-        node["padding"] = "x" * (3072 - len(json.dumps(node, separators=(",", ":"))))
+        node["padding"] = "x" * (3840 - len(json.dumps(node, separators=(",", ":"))))
         assert client.exchange("127.0.0.1", bounded, secret,
                                {"op": "push", "ts": int(time.time()), "node": node})["ok"]
     full = get(bounded)

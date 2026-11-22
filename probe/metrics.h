@@ -4,6 +4,7 @@
 #include <arpa/inet.h>
 #include <dirent.h>
 #include <ifaddrs.h>
+#include <math.h>
 #include <net/if.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -12,6 +13,16 @@
 #include <sys/utsname.h>
 #include <time.h>
 #include <unistd.h>
+#define MAX_NODE_JSON 3840
+#define SNAPSHOT_IPS 16
+#define SNAPSHOT_NAME 64
+#define SNAPSHOT_HOSTNAME 64
+#define SNAPSHOT_OS 64
+#define SNAPSHOT_CPU_MODEL 96
+#define SNAPSHOT_KERNEL 32
+#define SNAPSHOT_ARCH 16
+#define SNAPSHOT_MAX_JSON (6 * (SNAPSHOT_NAME + SNAPSHOT_HOSTNAME + SNAPSHOT_OS + SNAPSHOT_CPU_MODEL + SNAPSHOT_KERNEL + SNAPSHOT_ARCH) + SNAPSHOT_IPS * (INET6_ADDRSTRLEN + 2) + 1024)
+typedef char SnapshotPayloadBudget[SNAPSHOT_MAX_JSON <= MAX_NODE_JSON ? 1 : -1];
 typedef struct {
   char *s;
   size_t n, cap;
@@ -54,6 +65,20 @@ static void quote(Buffer *b, const char *s) {
       add(b, "%c", c);
   }
   add(b, "\"");
+}
+static void quote_limited(Buffer *b, const char *s, size_t limit) {
+  size_t n = strnlen(s, limit);
+  while (n && ((unsigned char)s[n] & 0xc0) == 0x80)
+    n--;
+  char limited[limit + 1];
+  memcpy(limited, s, n);
+  limited[n] = 0;
+  quote(b, limited);
+}
+static double bounded_metric(double value) {
+  if (!isfinite(value))
+    return 0;
+  return value < -1e12 ? -1e12 : value > 1e12 ? 1e12 : value;
 }
 static double monotime(void) {
   struct timespec t;
@@ -207,17 +232,17 @@ static char *snapshot(const char *name) {
   add(&b, "{\"id\":");
   quote(&b, node_id);
   add(&b, ",\"name\":");
-  quote(&b, name);
+  quote_limited(&b, name, SNAPSHOT_NAME);
   add(&b, ",\"hostname\":");
-  quote(&b, hostname_buf);
+  quote_limited(&b, hostname_buf, SNAPSHOT_HOSTNAME);
   add(&b, ",\"os\":");
-  quote(&b, os_name);
+  quote_limited(&b, os_name, SNAPSHOT_OS);
   add(&b, ",\"kernel\":");
-  quote(&b, uts.release);
+  quote_limited(&b, uts.release, SNAPSHOT_KERNEL);
   add(&b, ",\"arch\":");
-  quote(&b, uts.machine);
+  quote_limited(&b, uts.machine, SNAPSHOT_ARCH);
   add(&b, ",\"cpu_model\":");
-  quote(&b, cpu_model);
+  quote_limited(&b, cpu_model, SNAPSHOT_CPU_MODEL);
   double loads[3] = {0};
   getloadavg(loads, 3);
   long cores = sysconf(_SC_NPROCESSORS_ONLN);
@@ -289,14 +314,15 @@ static char *snapshot(const char *name) {
       "\"disk_total\":%llu,\"disk_used\":%llu,\"net_rx\":%llu,\"net_tx\":%llu,"
       "\"net_rx_rate\":%.2f,\"net_tx_rate\":%.2f,\"uptime\":%.2f,\"procs\":%u,"
       "\"tcp_conns\":%u,\"temp\":",
-      cores > 0 ? cores : 1, cpu_usage, loads[0], loads[1], loads[2], mt,
+      cores > 0 ? cores : 1, bounded_metric(cpu_usage), bounded_metric(loads[0]),
+      bounded_metric(loads[1]), bounded_metric(loads[2]), mt,
       mt > ma ? mt - ma : 0, st, st > sf ? st - sf : 0, disk, used, rx, tx,
-      rx_rate, tx_rate, up, procs, tcp);
+      bounded_metric(rx_rate), bounded_metric(tx_rate), bounded_metric(up), procs, tcp);
   double temp;
   f = fopen("/sys/class/thermal/thermal_zone0/temp", "r");
   if (f) {
     if (fscanf(f, "%lf", &temp) == 1)
-      add(&b, "%.2f", temp / 1000);
+      add(&b, "%.2f", bounded_metric(temp / 1000));
     else
       add(&b, "null");
     fclose(f);
@@ -306,7 +332,7 @@ static char *snapshot(const char *name) {
   struct ifaddrs *ifs = NULL;
   int comma = 0;
   if (!getifaddrs(&ifs)) {
-    for (struct ifaddrs *p = ifs; p; p = p->ifa_next) {
+    for (struct ifaddrs *p = ifs; p && comma < SNAPSHOT_IPS; p = p->ifa_next) {
       if (!p->ifa_addr || (p->ifa_flags & IFF_LOOPBACK))
         continue;
       int af = p->ifa_addr->sa_family;
@@ -328,6 +354,8 @@ static char *snapshot(const char *name) {
     freeifaddrs(ifs);
   }
   add(&b, "],\"ts\":%lld,\"version\":\"0.1.0\"}", (long long)time(NULL));
+  if (b.n > SNAPSHOT_MAX_JSON || b.n > MAX_NODE_JSON)
+    abort();
   return b.s;
 }
 #endif

@@ -12,8 +12,7 @@
 #define MAX_FRAME (256 * 1024)
 #define CLIENTS 32
 #define RELAY_NODES 64
-#define MAX_NODE_JSON 3072
-typedef char RelayFrameBudget[(RELAY_NODES * (MAX_NODE_JSON + 64) + 32768 < MAX_FRAME) ? 1 : -1];
+typedef char RelayFrameBudget[(RELAY_NODES * (MAX_NODE_JSON + 64) + MAX_NODE_JSON + 128 < MAX_FRAME) ? 1 : -1];
 static uint8_t key[32];
 static const char *secret, *display, *listen_addr, *http_addr, *upstream;
 static int interval = 5;

@@ -136,7 +136,8 @@ for development. Redirects are rejected to avoid forwarding bearer secrets.
 The Chinese adaptive dashboard includes detail charts, endpoint management,
 settings and demo mode. Debug launch arguments: `-demo YES`, `-empty YES`,
 `-show-add YES`, and `-live YES` (localhost:19090 / integration-secret).
-Regenerate the icon with `cd ios && swift tools/generate-icon.swift`.
+The icon source is `design/icon.svg`. Render it with `rsvg-convert -w 1024 -h 1024 design/icon.svg -o design/icon.png`
+(install `librsvg` first), then copy the PNG into the AppIcon asset catalog.
 The probe does not transmit its configured interval, so relay freshness uses a
 5-second initial estimate, then the observed snapshot timestamp cadence.
 

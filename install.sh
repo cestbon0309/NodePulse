@@ -193,21 +193,18 @@ firewall_plan() {
     elif command -v nft >/dev/null 2>&1; then
         FW=nft
         NFT_CHAIN=$(nft list ruleset 2>/dev/null | awk -v bind="$BIND" '
-            $1=="table" {family=$2; table=$3} $1=="chain" {chain=$2}
-            /type filter hook input/ {
-                if(family ~ /^(inet|ip|ip6)$/ && table ~ /^[a-zA-Z0-9_-]+$/ && chain ~ /^[a-zA-Z0-9_-]+$/ && !input[family])
-                    input[family]=family " " table " " chain
-            }
-            END {
+            BEGIN {
                 wildcard=(bind=="" || bind=="0.0.0.0" || bind=="::")
-                family=(index(bind, ":") ? "ip6" : "ip")
-                if(input["inet"]) print input["inet"]
-                else if(wildcard && (input["ip"] || input["ip6"])) {
-                    print (input["ip"] ? input["ip"] : "ip npulse input create")
-                    print (input["ip6"] ? input["ip6"] : "ip6 npulse input create")
-                } else if(!wildcard && input[family]) print input[family]
-                else print "inet npulse input create"
-            }' || :)
+                target=(index(bind, ":") ? "ip6" : "ip")
+            }
+            $1=="table" {family=$2; table=$3} $1=="chain" {chain=$2}
+            /^[[:space:]]*type[[:space:]]+[^[:space:]]+[[:space:]]+hook[[:space:]]+input[[:space:];]/ {
+                if(family ~ /^(inet|ip|ip6)$/ && (wildcard || family=="inet" || family==target) && table ~ /^[a-zA-Z0-9_-]+$/ && chain ~ /^[a-zA-Z0-9_-]+$/) {
+                    print family,table,chain
+                    found=1
+                }
+            }
+            END {if(!found) print "inet npulse input create"}' || :)
     elif command -v iptables >/dev/null 2>&1; then FW=iptables
     fi
     case "$FW" in

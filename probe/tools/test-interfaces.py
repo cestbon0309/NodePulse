@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline checks of actual installer functions against ip/ifconfig/firewall fixtures."""
 import os
+from itertools import permutations
 from pathlib import Path
 import re
 import shutil
@@ -64,25 +65,36 @@ with tempfile.TemporaryDirectory(prefix="npulse-interfaces-") as directory:
     (tools / "ufw").unlink(); (tools / "firewall-cmd").unlink()
     tool("nft", "printf 'table inet filter {\\n chain input {\\n type filter hook input priority 0; policy drop;\\n }\\n}\\n'")
     assert "nft insert rule inet filter input tcp dport 9527 accept" in run(expression="firewall_plan").stdout
-    def rules(family):
-        return f"table {family} filter_{family} {{\n chain input {{\n type filter hook input priority 0; policy drop;\n }}\n}}\n"
+    def rules(family, table=None, chains=("input",), kind="filter", hook="input"):
+        return f"table {family} {table or 'filter_' + family} {{\n" + "".join(f" chain {chain} {{\n type {kind} hook {hook} priority 0; policy drop;\n }}\n" for chain in chains) + "}\n"
     calls = tools / "nft-calls"
-    tool("nft", 'if [ "$1" = list ]; then printf "%s\\n" "$RULESET"; else printf "%s\\n" "$*" >> "$NFT_CALLS"; fi')
+    tool("nft", 'if [ "$1" = list ]; then printf "%s\\n" "$RULESET"; else printf "%s\\n" "$*" >> "$NFT_CALLS"; if [ "$*" = "${NFT_FAIL:-}" ]; then exit 1; fi; fi')
+    def check_nft(bind, ruleset, expected, **settings):
+        calls.write_text("")
+        plan = run(expression=f'BIND={bind}; DRY_RUN=0; OPEN_FIREWALL=yes; open_firewall', RULESET=ruleset, NFT_CALLS=str(calls), **settings).stdout
+        assert calls.read_text().splitlines() == expected, (bind, plan)
+        assert all(command in plan.replace("'", "") for command in expected)
+    create = ["add table inet npulse", "add chain inet npulse input { type filter hook input priority 0; policy accept; }", "add rule inet npulse input tcp dport 9527 accept"]
     for bind, ruleset, expected in [
         ("8.8.4.4", rules("ip6") + rules("ip"), ["insert rule ip filter_ip input tcp dport 9527 accept"]),
         ("2001:db8::7", rules("ip") + rules("ip6"), ["insert rule ip6 filter_ip6 input tcp dport 9527 accept"]),
-        ("8.8.4.4", rules("ip6"), ["add table inet npulse", "add chain inet npulse input { type filter hook input priority 0; policy accept; }", "add rule inet npulse input tcp dport 9527 accept"]),
-        ("2001:db8::7", rules("ip"), ["add table inet npulse", "add chain inet npulse input { type filter hook input priority 0; policy accept; }", "add rule inet npulse input tcp dport 9527 accept"]),
-        *[(bind, rules("ip6") + rules("ip"), ["insert rule ip filter_ip input tcp dport 9527 accept", "insert rule ip6 filter_ip6 input tcp dport 9527 accept"]) for bind in ("0.0.0.0", "::")],
-        *[(bind, rules("ip6") + rules("ip") + rules("inet"), ["insert rule inet filter_inet input tcp dport 9527 accept"]) for bind in ("0.0.0.0", "::", "8.8.4.4", "2001:db8::7")],
-        ("::", rules("ip"), ["insert rule ip filter_ip input tcp dport 9527 accept", "add table ip6 npulse", "add chain ip6 npulse input { type filter hook input priority 0; policy accept; }", "add rule ip6 npulse input tcp dport 9527 accept"]),
-        ("0.0.0.0", rules("ip6"), ["add table ip npulse", "add chain ip npulse input { type filter hook input priority 0; policy accept; }", "add rule ip npulse input tcp dport 9527 accept", "insert rule ip6 filter_ip6 input tcp dport 9527 accept"]),
+        ("8.8.4.4", rules("ip6"), create),
+        ("2001:db8::7", rules("ip"), create),
+        *[(bind, "", create) for bind in ("", "0.0.0.0", "::", "8.8.4.4", "2001:db8::7")],
+        ("::", rules("ip"), ["insert rule ip filter_ip input tcp dport 9527 accept"]),
+        ("0.0.0.0", rules("ip6"), ["insert rule ip6 filter_ip6 input tcp dport 9527 accept"]),
+        ("8.8.4.4", rules("inet", chains=("input", "second")) + rules("inet", table="extra", chains=("guard",)) + rules("ip", kind="nat") + rules("ip", hook="forward"), [f"insert rule {family} {table} {chain} tcp dport 9527 accept" for family, table, chain in [("inet", "filter_inet", "input"), ("inet", "filter_inet", "second"), ("inet", "extra", "guard"), ("ip", "filter_ip", "input")]]),
     ]:
-        calls.write_text("")
-        plan = run(expression=f'BIND={bind}; DRY_RUN=0; OPEN_FIREWALL=yes; open_firewall', RULESET=ruleset, NFT_CALLS=str(calls)).stdout
-        assert calls.read_text().splitlines() == expected, (bind, plan)
-        assert all(command in plan.replace("'", "") for command in expected)
-    print("PASS nft bind-family fixtures: IPv4/IPv6 skip incompatible chains, inet preferred regardless of order; wildcards cover both families and create missing-family chains; printed and executed commands agree")
+        check_nft(bind, ruleset, expected)
+    for families in [("inet", "ip"), ("inet", "ip6"), ("inet", "ip", "ip6"), ("ip", "ip6")]:
+        for order in permutations(families):
+            for bind in ("8.8.4.4", "2001:db8::7", "0.0.0.0", "::", ""):
+                covering = ("inet", "ip6" if ":" in bind else "ip") if bind not in ("", "0.0.0.0", "::") else families
+                expected = [f"insert rule {family} filter_{family} input tcp dport 9527 accept" for family in order if family in covering]
+                check_nft(bind, "".join(rules(family) for family in order), expected)
+    failed = "insert rule inet filter_inet input tcp dport 9527 accept"
+    check_nft("8.8.4.4", rules("inet") + rules("ip"), [failed], NFT_FAIL=failed, ok=False)
+    print("PASS nft bind-family fixtures: every covering inet/ip/ip6 input base chain in every mixed-family order; multiple chains/tables and NAT input hooks; no creation unless none cover; execution failure stops; printed/executed commands agree")
     tool("uci", "exit 0")
     plan = run(expression="firewall_plan", TEST_INIT="procd").stdout
     assert "uci add firewall rule" in plan and 'dest_port=9527' in plan and "/etc/init.d/firewall reload" in plan

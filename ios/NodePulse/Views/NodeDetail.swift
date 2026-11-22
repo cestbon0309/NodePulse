@@ -99,10 +99,14 @@ struct NodeDetail: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack { Text(L10n.text("资源趋势")).font(.headline); Spacer(); Text(L10n.text("最近 %@ 次采样", String(describing: item.history.count))).font(.caption).foregroundStyle(.secondary) }
             Picker(L10n.text("趋势指标"), selection: $metric) { ForEach(["CPU", L10n.text("内存"), L10n.text("网络")], id: \.self) { Text($0) } }.pickerStyle(.segmented)
-            if let selection, let sample = item.history.min(by: { abs($0.date.timeIntervalSince(selection)) < abs($1.date.timeIntervalSince(selection)) }) {
-                Text(metric == L10n.text("网络") ? "↓ \(PulseFormat.rate(sample.rxRate))   ↑ \(PulseFormat.rate(sample.txRate))" : String(format: "%.1f%%", metric == "CPU" ? sample.cpu : sample.memPercent))
-                    .font(.caption.monospacedDigit()).foregroundStyle(.mint)
-            }
+            let sample = HistorySample.displayed(in: item.history, at: selection)
+            HStack {
+                Text(sample.map { metric == L10n.text("网络") ? "↓ \(PulseFormat.rate($0.rxRate))   ↑ \(PulseFormat.rate($0.txRate))" : String(format: "%.1f%%", metric == "CPU" ? $0.cpu : $0.memPercent) } ?? "—")
+                    .foregroundStyle(.mint).contentTransition(.numericText())
+                Spacer(minLength: 8)
+                Text(sample.map { $0.date.formatted(date: .omitted, time: .standard) } ?? "—").foregroundStyle(.secondary)
+            }.font(.caption.monospacedDigit()).lineLimit(1).minimumScaleFactor(0.7).frame(height: 24)
+                .accessibilityIdentifier("chart-readout")
             Chart(Array(item.history.enumerated()), id: \.offset) { _, sample in
                 if metric == L10n.text("网络") {
                     AreaMark(x: .value(L10n.text("时间"), sample.date), y: .value(L10n.text("速率"), sample.rxRate), stacking: .unstacked)
@@ -124,7 +128,7 @@ struct NodeDetail: View {
                 .chartYScale(domain: metric == L10n.text("网络") ? 0...max(1000, item.history.flatMap { [$0.rxRate, $0.txRate] }.max() ?? 1000) : 0...100)
                 .chartXAxis { AxisMarks(values: .automatic(desiredCount: 3)) { _ in AxisValueLabel(format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)); AxisGridLine() } }
                 .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { _ in AxisValueLabel(); AxisGridLine() } }
-                .frame(height: 170)
+                .frame(height: 170).accessibilityIdentifier("resource-chart")
             Text(L10n.text("轻触或拖动图表，查看采样数值")).font(.caption2).foregroundStyle(.tertiary)
         }
     }

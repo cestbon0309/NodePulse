@@ -2,6 +2,17 @@ import XCTest
 @testable import NodePulse
 
 final class NodePulseTests: XCTestCase {
+    func testChartReadoutLatestSelectedAndEmpty() {
+        let start = Date(timeIntervalSince1970: 1000)
+        let history = (0..<3).map { HistorySample(date: start.addingTimeInterval(Double($0) * 5), cpu: Double($0), memPercent: 0, rxRate: 0, txRate: 0) }
+        XCTAssertEqual(HistorySample.displayed(in: history, at: nil), history.last)
+        XCTAssertEqual(HistorySample.displayed(in: history, at: start.addingTimeInterval(6)), history[1])
+        XCTAssertEqual(HistorySample.displayed(in: history, at: start.addingTimeInterval(-100)), history.first)
+        XCTAssertEqual(HistorySample.displayed(in: history, at: start.addingTimeInterval(100)), history.last)
+        XCTAssertNil(HistorySample.displayed(in: [], at: nil))
+        XCTAssertNil(HistorySample.displayed(in: [], at: start))
+    }
+
     @MainActor func testEncryptionBadgeMatchesEndpointTransport() {
         let suite = "Encryption-\(UUID())", defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }

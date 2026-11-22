@@ -7,6 +7,10 @@ struct HistorySample: Hashable {
     var memPercent: Double
     var rxRate: Double
     var txRate: Double
+    static func displayed(in history: [Self], at selection: Date?) -> Self? {
+        guard let selection else { return history.last }
+        return history.min { abs($0.date.timeIntervalSince(selection)) < abs($1.date.timeIntervalSince(selection)) }
+    }
 }
 struct NodeItem: Identifiable {
     var key: String

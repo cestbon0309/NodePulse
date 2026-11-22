@@ -27,6 +27,7 @@ struct NodeDetail: View {
                         RingGauge(title: "内存", value: s.memPercent, size: 86)
                         RingGauge(title: "磁盘", value: s.diskTotal > 0 ? s.diskUsed / s.diskTotal * 100 : 0, size: 86)
                     }.pulsePanel()
+                    NodeAdminSection(store: store, node: item)
                     chart(item).pulsePanel()
                     section("系统", symbol: "cpu") {
                         InfoRow(title: "操作系统", value: s.os)

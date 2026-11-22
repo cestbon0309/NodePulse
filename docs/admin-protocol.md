@@ -5,8 +5,9 @@ the probe's uid; root is required for real power actions. Keep the probe secret
 and the Ed25519 private admin key separate. Anyone with only the probe secret can
 monitor, but cannot start an admin session without an allowlisted signing key.
 C1 uses the direct channel; C2 adds a realtime TCP pipe through the shared relay
-(specified below). HTTP and legacy relay do not support admin. iOS admin UI is a
-later step. Existing direct get/push and monitoring frames are unchanged.
+(specified below). HTTP and legacy relay do not support admin. The iOS client
+supports direct TCP and group TCP endpoints. Existing direct get/push and
+monitoring frames are unchanged.
 
 ## Build and enable
 
@@ -286,3 +287,46 @@ private key needed to issue a valid hello to a real probe.
 Control/accept connects and forwarding are nonblocking. Hostname resolution
 still uses the system's synchronous resolver, as does existing snapshot pushing;
 a slow resolver or filesystem can delay the single probe event loop.
+
+## iOS implementation and live checks
+
+The iOS `AdminSession` uses CryptoKit and Network.framework. For C2 the **phone
+only sends gconnect**; the probe's persistent listener receives `incoming` and
+the probe opens the separate gaccept connection. The phone waits for the relay's
+token-framed `ok` before sending the plaintext hello on its existing socket.
+No phone-side glisten/gaccept or extra socket is needed. The pairing ACK does
+not echo a RID; the subsequent admin ACK must echo and authenticate the hello RID.
+
+Requests are correlated by id, sent in counter order, and cancelled requests
+leave the connection's counters intact. A request timeout closes the session
+and resumes every waiter. PTY notifications use a bounded AsyncStream; output
+overflow closes rather than silently corrupting terminal output. Ping runs
+every 30 seconds. Dismissal/background closes the socket, ending PTYs and
+aborting outstanding uploads at the probe. Explicit upload cancellation sends
+put_abort; if put_begin was cancelled before its handle arrived, closing the
+session provides the cleanup fallback. Committed files are not rolled back.
+
+Admin private keys use WhenUnlockedThisDeviceOnly Keychain storage. Optional
+local device authentication gates sessions and key regeneration, defaults on,
+uses passcode fallback, and skips simulator/devices with no passcode. It is an
+app-side authorization gate, not a Secure Enclave/user-presence key ACL. Remove
+old public keys from probe allowlists when rotating a device's key.
+
+`probe/tools/admin-vector.py` emits the fixed X25519/ACK/KDF/session-frame vector
+hardcoded in AdminTests. Test-only ephemeral private bytes are deterministic;
+production generates fresh keys for every connection. Live XCTest is opt-in:
+
+```sh
+make -C probe host-test
+# In a separate shell with cryptography installed; stop with Ctrl-C afterwards:
+python3 probe/tools/ios-admin-fixtures.py
+# Generate the iOS project, then run on an installed simulator:
+xcodegen generate --spec ios/project.yml
+NPULSE_ADMIN_E2E=1 xcodebuild test -project ios/NodePulse.xcodeproj \
+  -scheme NodePulse -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+```
+
+The fixture enables an explicitly public test signing seed only, binds localhost
+19094/19095, and uses temporary UUID-named test directories under the probe user's
+home. It never sends power requests. `NPULSE_E2E=1` additionally enables the
+existing monitoring tests, which need their separate 19090–19093 fixtures.

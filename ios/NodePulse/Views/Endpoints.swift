@@ -163,6 +163,7 @@ struct SettingsView: View {
                     Picker("刷新间隔", selection: $store.refreshInterval) { ForEach([1.0, 2, 3, 5, 10], id: \.self) { Text("\(Int($0)) 秒").tag($0) } }
                     Toggle("演示模式", isOn: $store.demoMode)
                     NavigationLink("接入点") { EndpointList(store: store) }
+                    NavigationLink("管理密钥") { AdminKeySettings() }
                 }
                 Section("关于") {
                     LabeledContent("版本", value: "0.1.0")

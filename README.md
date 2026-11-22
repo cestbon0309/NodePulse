@@ -15,7 +15,26 @@ C2 支持 `-R -A` 探针通过共享中继保持控制连接并自动重连，�
 Python 客户端使用 `--relay host:port --token T --group S --node ID --key 私钥文件`。
 端到端管理握手之后使用 C1 会话加密，中继仅做有界、非阻塞字节转发；
 握手公开元数据会暴露节点 ID 和管理公钥，但不会暴露终端或文件内容。
-Lite 不包含实时管道功能。HTTP/旧中继和 iOS 管理界面尚不支持此功能。
+Lite 不包含实时管道功能。HTTP/HTTPS 接入点与旧中继不支持远程管理。
+
+### iOS 管理
+
+在「设置 → 管理密钥」生成设备独立的 Ed25519 密钥，将显示的 `-A <公钥>`
+或 `admin_keys=<公钥>` 复制到探针配置后重启探针。私钥保存在本机 Keychain
+（仅设备解锁时可用、不随备份迁移），不会上传到中继。重新生成不会自动撤销旧公钥：
+请先更新每台探针的 allowlist，并移除旧公钥。
+
+直连 TCP / 共享中继 TCP 节点详情中的「管理」提供终端、文件、重启和关机。
+默认要求设备身份验证（Face ID / Touch ID，不可用时回退设备密码；模拟器和没有设备密码时跳过）；
+可在密钥设置关闭。电源操作先确认、再验证身份，只有 root 探针可以执行。
+终端使用 SwiftTerm，提供 Esc/Tab、一次性 Ctrl、方向键和常用符号，退出后可重新连接；
+文件管理从用户 home 开始，支持目录、重命名、递归删除及分块上传/下载。
+上传不覆盖现有文件，取消发送 `put_abort`；会话断开也会清理未完成上传。
+下载完成弹出系统分享面板，可选择「存储到文件」。App 进入后台会关闭管理会话，
+不会提供后台传输或保活终端。终端不自动开放远程剪贴板访问或打开远程链接。
+
+管理会话不能通过 HTTPS 接入点建立。若探针未配置 `-A`，监控仍可使用，
+但管理握手会被静默拒绝，界面提示检查公钥、密钥与探针时间。
 
 协议、完整命令及安全/测试说明见 [docs/admin-protocol.md](docs/admin-protocol.md)。
 Python 客户端 `probe/tools/npulse-admin.py` 提供 `keygen/info/ls/stat/get/put/rm/mkdir/mv/shell/power`。
@@ -132,7 +151,8 @@ QEMU 用户态测试共用宿主的 /proc 与网络，验证的是目标 ELF/系
 
 ## iOS app core
 
-Requires Xcode and XcodeGen, no third-party packages. Generate the project with
+Requires Xcode and XcodeGen; SwiftTerm is pinned to stable 1.18.0 via SPM
+(no build-plugin approval required). Generate the project with
 `cd ios && xcodegen`, then open `NodePulse.xcodeproj`. The generated project is
 ignored; `project.yml` is the source of truth. Minimum iOS 17, Swift 5 mode.
 Simulator builds use local ad-hoc signing (`CODE_SIGN_IDENTITY=-`) so Keychain

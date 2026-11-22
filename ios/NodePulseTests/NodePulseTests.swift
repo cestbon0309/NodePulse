@@ -2,6 +2,13 @@ import XCTest
 @testable import NodePulse
 
 final class NodePulseTests: XCTestCase {
+    func testCompactRateFormatting() {
+        XCTAssertEqual(PulseFormat.compactRate(0), "0B/s")
+        XCTAssertEqual(PulseFormat.compactRate(1536), "1.5K/s")
+        XCTAssertEqual(PulseFormat.compactRate(125 * 1024 * 1024), "125M/s")
+        XCTAssertEqual(PulseFormat.compactRate(-1), "0B/s")
+        XCTAssertEqual(PulseFormat.compactRate(.infinity), "0B/s")
+    }
     func testResponseBinding() throws {
         let rid = "0123456789abcdef0123456789abcdef"
         let crypto = ProbeCrypto(secret: "replay-test")

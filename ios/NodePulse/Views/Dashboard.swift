@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var search = ""
     @State private var sheet: DashboardSheet?
     @State private var errorDismissed = false
+    @AppStorage("classicLayout") private var classicLayout = false
     @Namespace private var zoom
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -17,6 +18,12 @@ struct ContentView: View {
         }
     }
     private var failures: Int { store.endpoints.filter { store.statuses[$0.id]?.error != nil }.count }
+    private var columns: [GridItem] {
+        if classicLayout {
+            return sizeClass == .compact ? Array(repeating: GridItem(.flexible(), spacing: 12), count: 2) : [GridItem(.adaptive(minimum: 180), spacing: 16)]
+        }
+        return sizeClass == .compact ? [GridItem(.flexible())] : [GridItem(.adaptive(minimum: 310), spacing: 20)]
+    }
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -33,11 +40,16 @@ struct ContentView: View {
                     } else {
                         SummaryHeader(nodes: store.nodes)
                         Picker("节点筛选", selection: $filter) { ForEach(["全部", "在线", "离线"], id: \.self) { Text($0) } }.pickerStyle(.segmented)
-                        LazyVGrid(columns: sizeClass == .compact ? [GridItem(.flexible())] : [GridItem(.adaptive(minimum: 310), spacing: 20)], spacing: 18) {
+                        LazyVGrid(columns: columns, spacing: classicLayout ? 12 : 18) {
                             ForEach(Array(visible.enumerated()), id: \.element.key) { index, item in
                                 NavigationLink {
                                     NodeDetail(store: store, nodeKey: item.key).zoomDestination(item.key, namespace: zoom)
-                                } label: { NodeCard(item: item, index: index).zoomSource(item.key, namespace: zoom) }
+                                } label: {
+                                    Group {
+                                        if classicLayout { CompactNodeCard(item: item) }
+                                        else { NodeCard(item: item, index: index) }
+                                    }.zoomSource(item.key, namespace: zoom)
+                                }
                                     .buttonStyle(PressStyle())
                                     .contextMenu {
                                         Button("复制 IP", systemImage: "doc.on.doc") { UIPasteboard.general.string = item.snapshot.ips.joined(separator: "\n") }
@@ -54,6 +66,11 @@ struct ContentView: View {
                 .refreshable { await store.refresh() }
                 .toolbar {
                     ToolbarItemGroup(placement: .topBarTrailing) {
+                        Button { classicLayout.toggle() } label: {
+                            Image(systemName: classicLayout ? "rectangle.grid.1x2" : "square.grid.2x2")
+                                .contentTransition(.symbolEffect(.replace))
+                        }.accessibilityLabel(classicLayout ? "切换到默认布局" : "切换到经典布局")
+                            .accessibilityValue(classicLayout ? "经典" : "默认")
                         Button { sheet = .add } label: { Image(systemName: "plus") }.accessibilityLabel("添加探针")
                         Button { sheet = .settings } label: { Image(systemName: "gearshape") }.accessibilityLabel("设置")
                     }
@@ -67,6 +84,7 @@ struct ContentView: View {
                 }
                 .onChange(of: failures) { _, _ in errorDismissed = false }
                 .animation(reduceMotion ? nil : .smooth(duration: 0.6), value: store.nodes.map { $0.snapshot.cpuUsage })
+                .animation(reduceMotion ? nil : .spring(duration: 0.45, bounce: 0.12), value: classicLayout)
                 .task {
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("-show-add") { sheet = .add }

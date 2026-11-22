@@ -9,6 +9,13 @@ enum PulseFormat {
         return formatter.string(fromByteCount: Int64(max(0, min(value, Double(Int64.max - 1024)))))
     }
     static func rate(_ value: Double) -> String { bytes(value) + "/秒" }
+    static func compactRate(_ value: Double) -> String {
+        var amount = value.isFinite ? max(0, value) : 0
+        let units = ["B", "K", "M", "G", "T"]
+        var unit = 0
+        while amount >= 1024 && unit < units.count - 1 { amount /= 1024; unit += 1 }
+        return String(format: amount >= 10 || unit == 0 ? "%.0f%@/s" : "%.1f%@/s", amount, units[unit])
+    }
     static func uptime(_ seconds: Double) -> String {
         let hours = Int(max(0, seconds) / 3600)
         return hours >= 24 ? "\(hours / 24)天 \(hours % 24)小时" : "\(hours)小时 \(Int(max(0, seconds) / 60) % 60)分钟"

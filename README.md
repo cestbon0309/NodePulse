@@ -54,6 +54,7 @@ sh install.sh --help              # 全部环境变量与选项
 
 `NPULSE_VERSION=vX.Y.Z` 指定版本；`NPULSE_MIRROR=https://可信主机/目录` 覆盖整个资产
 下载目录，该目录直接包含稳定文件名及 SHA256SUMS，而不是 GitHub API 地址。
+默认拒绝 HTTP 镜像；仅可信隔离测试可显式使用 `NPULSE_INSECURE=1`，安装器会警告中间人替换风险。
 卸载后保留的配置不被重新安装覆盖，请先备份，再明确删除后安装。
 测试可用已存在的绝对 `DESTDIR` 目录加 `DRY_RUN=1 NPULSE_INIT=systemd|procd`，
 不会运行 Linux 二进制或调用真实服务管理器，但仍实际下载、校验和生成文件。

@@ -29,6 +29,7 @@ NPULSE_ADMIN=yes|no, NPULSE_ALSO_RELAY=yes|no, NPULSE_PURGE=yes|no。
 NPULSE_INTERVAL 默认 5 秒。NPULSE_VERSION=vX.Y.Z 固定版本，否则使用 latest。
 NPULSE_MIRROR 覆盖下载目录（直接包含二进制、SHA256SUMS），例如：
 https://github.com/cestbon0309/NodePulse/releases/download/v1.0.0
+HTTP 镜像仅允许显式设置 NPULSE_INSECURE=1（存在中间人替换风险）。
 NPULSE_INIT=systemd|procd 可覆盖自动检测；systemd 需 >=247（LoadCredential）。
 NPULSE_ARM_FLOAT=hard|soft 可帮助 ARM ABI 检测；无法检测时需交互或 --arch。
 
@@ -220,7 +221,12 @@ fetch_binary() {
     base=https://github.com/cestbon0309/NodePulse/releases
     if [ -n "$VERSION" ]; then base=$base/download/$VERSION; else base=$base/latest/download; fi
     base=${NPULSE_MIRROR:-$base}; base=${base%/}
-    case "$base" in https://*|http://*) ;; *) fail '下载目录必须为 HTTP(S) URL' ;; esac
+    case "$base" in
+        https://*) ;;
+        http://*) [ "${NPULSE_INSECURE:-0}" = 1 ] || fail '拒绝 HTTP 镜像；仅可信测试可设置 NPULSE_INSECURE=1'
+            printf '警告：NPULSE_INSECURE=1，HTTP 镜像可被中间人替换二进制及校验清单！\n' >&2 ;;
+        *) fail '下载目录必须为 HTTPS URL' ;;
+    esac
     asset=npulse-linux-$ARCH
     if [ "$FLAVOR" = lite ]; then asset=$asset-lite; fi
     WORK=$(mktemp -d "${TMPDIR:-/tmp}/npulse-install.XXXXXX") || fail '无法创建临时目录'

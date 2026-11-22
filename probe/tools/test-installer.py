@@ -56,6 +56,7 @@ def new_root():
 def run(root, *args, ok=True, **settings):
     env = {k: v for k, v in os.environ.items() if not k.startswith("NPULSE_")}
     env.update(DESTDIR=str(root), DRY_RUN="1", NPULSE_INIT="systemd", NPULSE_ARCH="x86_64", NPULSE_MIRROR=BASE)
+    env.update(NPULSE_INSECURE="1")
     env.update(settings)
     result = subprocess.run([*SHELL, str(ROOT / "install.sh"), *args], env=env, text=True, capture_output=True, timeout=30)
     assert (result.returncode == 0) == ok, (args, result.stdout, result.stderr)
@@ -88,7 +89,7 @@ def interactive(root):
     else:
         argv = ["script", "-q", "-e", "-c", command, "/dev/null"]
     env = {k: v for k, v in os.environ.items() if not k.startswith("NPULSE_")}
-    env.update(DESTDIR=str(root), DRY_RUN="1", NPULSE_INIT="systemd", NPULSE_ARCH="x86_64", NPULSE_MIRROR=BASE)
+    env.update(DESTDIR=str(root), DRY_RUN="1", NPULSE_INIT="systemd", NPULSE_ARCH="x86_64", NPULSE_MIRROR=BASE, NPULSE_INSECURE="1")
     prompts = ["模式 [默认", "TCP 监听端口", "节点名称", "输入不回显", "root 级控制权", "构建类型 full/lite"]
     secret = "interactive-secret-MUST-NOT-ECHO"
     responses = ["", "", "", secret, "", ""]
@@ -117,6 +118,7 @@ def interactive(root):
 
 
 try:
+    run(new_root(), "--yes", ok=False, NPULSE_INSECURE="0")
     for mode in range(1, 6):
         root = new_root()
         args = ["install", "--yes", "--mode", str(mode), "--upstream", "relay.example.com:9000"]

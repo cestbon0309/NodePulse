@@ -9,6 +9,7 @@ struct NodeDetail: View {
     @State private var selection: Date?
     @State private var copied = false
     @State private var deleting: NodeItem?
+    @State private var showingEgressIP = false
     @AppStorage("hideIPAddresses") private var hideIPAddresses = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -18,21 +19,39 @@ struct NodeDetail: View {
             if let item {
                 let s = item.snapshot
                 VStack(spacing: 22) {
-                    VStack(spacing: 14) {
-                        OSBadge(os: s.os).scaleEffect(1.2).padding(8)
-                        Text(s.name).font(.largeTitle.bold()).multilineTextAlignment(.center)
+                    VStack(spacing: 9) {
+                        OSBadge(os: s.os).padding(4)
+                        Text(s.name).font(.title.bold()).multilineTextAlignment(.center)
                         Text(s.os).font(.subheadline).foregroundStyle(.secondary)
-                        if item.usesEndToEndEncryption { EndToEndBadge() }
-                        NodeLocation(ip: s.egressIp, locations: store.locations, showIP: true, demo: store.demoMode)
-                        HStack { OnlineStatus(online: item.online); Text(item.connectionLabel).font(.caption).foregroundStyle(.secondary) }
-                        if let ip = s.ips.first {
-                            HStack {
-                                Button { copy(ip) } label: { Label(PulseFormat.ip(ip, hidden: hideIPAddresses), systemImage: "doc.on.doc").font(.caption.monospaced()).padding(10).background(theme.ink.opacity(0.08), in: Capsule()) }
-                                Button(hideIPAddresses ? L10n.text("显示 IP") : L10n.text("隐藏 IP"), systemImage: hideIPAddresses ? "eye.slash" : "eye") { hideIPAddresses.toggle() }
-                                    .labelStyle(.iconOnly).padding(10)
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 7) {
+                                connectionStatus(item)
+                                NodeLocation(ip: s.egressIp, locations: store.locations, demo: store.demoMode)
+                            }
+                            VStack(spacing: 6) {
+                                connectionStatus(item)
+                                NodeLocation(ip: s.egressIp, locations: store.locations, demo: store.demoMode)
                             }
                         }
-                    }.frame(maxWidth: .infinity).padding(.vertical, 10)
+                        let addresses = DetailHeader.addresses(primary: s.ips.first, egress: s.egressIp)
+                        if let primary = addresses.first {
+                            let ip = showingEgressIP && addresses.count > 1 ? addresses[1] : primary
+                            HStack(spacing: 8) {
+                                Button { copy(ip) } label: {
+                                    Label(PulseFormat.ip(ip, hidden: hideIPAddresses), systemImage: "doc.on.doc")
+                                        .font(.caption.monospaced()).lineLimit(1).minimumScaleFactor(0.65)
+                                }.accessibilityIdentifier("header-copy-ip")
+                                if addresses.count > 1 {
+                                    Button { showingEgressIP.toggle() } label: {
+                                        Label(showingEgressIP ? L10n.text("出口") : L10n.text("本机 IP"), systemImage: "arrow.left.arrow.right")
+                                            .font(.caption2).fixedSize()
+                                    }.accessibilityHint(L10n.text("切换本机和出口 IP"))
+                                }
+                                Button(hideIPAddresses ? L10n.text("显示 IP") : L10n.text("隐藏 IP"), systemImage: hideIPAddresses ? "eye.slash" : "eye") { hideIPAddresses.toggle() }
+                                    .labelStyle(.iconOnly).frame(width: 32, height: 44)
+                            }.padding(.leading, 12).padding(.trailing, 4).background(theme.ink.opacity(0.08), in: Capsule())
+                        }
+                    }.frame(maxWidth: .infinity).padding(.vertical, 4)
                     HStack {
                         RingGauge(title: "CPU", value: s.cpuUsage, size: 86)
                         RingGauge(title: L10n.text("内存"), value: s.memPercent, size: 86)
@@ -77,6 +96,14 @@ struct NodeDetail: View {
             }
             .nodeDeletion(store: store, node: $deleting) { dismiss() }
             .overlay(alignment: .bottom) { if copied { Toast().padding(.bottom, 24).transition(.move(edge: .bottom).combined(with: .opacity)) } }
+    }
+    private func connectionStatus(_ item: NodeItem) -> some View {
+        HStack(spacing: 6) {
+            OnlineStatus(online: item.online)
+            Text("·").foregroundStyle(.tertiary)
+            Text(item.connectionLabel).font(.caption).foregroundStyle(.secondary)
+            if item.usesEndToEndEncryption { EndToEndBadge() }
+        }.fixedSize(horizontal: true, vertical: false)
     }
     private func copy(_ text: String) {
         UIPasteboard.general.string = text
@@ -132,5 +159,16 @@ struct NodeDetail: View {
                 .frame(height: 170).accessibilityIdentifier("resource-chart")
             Text(L10n.text("轻触或拖动图表，查看采样数值")).font(.caption2).foregroundStyle(.tertiary)
         }
+    }
+}
+
+@MainActor enum DetailHeader {
+    static func addresses(primary: String?, egress: String?) -> [String] {
+        var result = primary.map { $0.isEmpty ? [] : [$0] } ?? []
+        if let egress, GeolocationStore.publicIP(egress) != nil,
+           !result.contains(where: { $0.caseInsensitiveCompare(egress) == .orderedSame }) {
+            result.append(egress)
+        }
+        return result
     }
 }

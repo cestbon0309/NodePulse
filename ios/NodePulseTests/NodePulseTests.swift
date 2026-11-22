@@ -2,6 +2,15 @@ import XCTest
 @testable import NodePulse
 
 final class NodePulseTests: XCTestCase {
+    @MainActor func testDetailHeaderAddressSelection() {
+        XCTAssertEqual(DetailHeader.addresses(primary: "192.168.1.1", egress: "1.1.1.1"), ["192.168.1.1", "1.1.1.1"])
+        XCTAssertEqual(DetailHeader.addresses(primary: "1.1.1.1", egress: "1.1.1.1"), ["1.1.1.1"])
+        XCTAssertEqual(DetailHeader.addresses(primary: nil, egress: "1.1.1.1"), ["1.1.1.1"])
+        XCTAssertEqual(DetailHeader.addresses(primary: nil, egress: nil), [])
+        XCTAssertEqual(DetailHeader.addresses(primary: "", egress: "invalid"), [])
+        XCTAssertEqual(DetailHeader.addresses(primary: "192.168.1.1", egress: "10.0.0.1"), ["192.168.1.1"])
+        XCTAssertEqual(DetailHeader.addresses(primary: "2606:4700::ABCD", egress: "2606:4700::abcd").count, 1)
+    }
     func testChartReadoutLatestSelectedAndEmpty() {
         let start = Date(timeIntervalSince1970: 1000)
         let history = (0..<3).map { HistorySample(date: start.addingTimeInterval(Double($0) * 5), cpu: Double($0), memPercent: 0, rxRate: 0, txRate: 0) }

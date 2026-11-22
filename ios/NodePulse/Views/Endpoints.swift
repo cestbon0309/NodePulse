@@ -28,7 +28,7 @@ struct EndpointList: View {
             ToolbarItem(placement: .topBarTrailing) { Button { adding = true } label: { Image(systemName: "plus") }.accessibilityLabel("添加接入点") }
             ToolbarItem(placement: .topBarLeading) { Button("完成") { dismiss() } }
         }.sheet(item: $editing) { EndpointForm(store: store, existing: $0) }
-            .sheet(isPresented: $adding) { EndpointForm(store: store) }
+            .sheet(isPresented: $adding) { AddEndpointView(store: store) }
             .alert("无法删除", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button("好") { error = nil } } message: { Text(error ?? "") }
     }
 }

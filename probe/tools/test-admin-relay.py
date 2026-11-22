@@ -80,7 +80,7 @@ def main(root):
     fixture = root / "test-pipe"
     subprocess.run([os.environ.get("CC", "cc"), "-Os", "-std=gnu99", "-Wall", "-Wextra", "-Werror",
                     str(ROOT / "tools/test-pipe.c"), str(ROOT / "vendor/monocypher.c"),
-                    str(ROOT / "vendor/monocypher-ed25519.c"), "-o", str(fixture)], check=True)
+                    str(ROOT / "vendor/monocypher-ed25519.c"), str(ROOT / "vendor/qrcodegen.c"), "-o", str(fixture)], check=True)
     subprocess.run([str(fixture)], check=True)
     p = port(); relay = start(root, "-S", f"127.0.0.1:{p}", "-T", TOKEN)
     wait_for(lambda: m.exchange("127.0.0.1", p, TOKEN, m.group_request(GROUP)))

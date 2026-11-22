@@ -37,7 +37,9 @@ jobs:
       - name: Native Linux integration and real proc metrics
         env:
           NPULSE_ASSERT_LINUX: '1'
-        run: python probe/tools/test-probe.py probe/dist/npulse-linux-x86_64
+        run: |
+          python probe/tools/test-probe.py probe/dist/npulse-linux-x86_64
+          python probe/tools/test-lite.py probe/dist/npulse-linux-x86_64-lite
       - name: Install QEMU user emulation
         run: sudo apt-get update && sudo apt-get install -y qemu-user shellcheck busybox ninja-build libglib2.0-dev python3-venv
       - name: Build QEMU 11.1 MIPS with big-endian getifaddrs fix
@@ -55,6 +57,7 @@ jobs:
           shellcheck -s sh install.sh
           python probe/tools/test-installer.py /bin/dash
           python probe/tools/test-installer.py busybox sh
+          python probe/tools/test-pair-installer.py /bin/dash
       - name: QEMU encrypted get and real proc metrics
         run: |
           for pair in aarch64:aarch64 armv7:arm armv7-soft:arm mips:mips mipsel:mipsel; do

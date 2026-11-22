@@ -83,16 +83,21 @@ def isolated_tools(exclude=()):
 
 
 def interactive(root):
+    tools = root / "tools"; tools.mkdir()
+    firewall = tools / "ufw"
+    firewall.write_text('#!/bin/sh\n[ "$1" = status ] || exit 99\nprintf "Status: active\\n"\n')
+    firewall.chmod(0o755)
     command = "cat " + shlex.quote(str(ROOT / "install.sh")) + " | " + shlex.join(SHELL)
     if sys.platform == "darwin":
         argv = ["script", "-q", "/dev/null", "/bin/sh", "-c", command]
     else:
         argv = ["script", "-q", "-e", "-c", command, "/dev/null"]
     env = {k: v for k, v in os.environ.items() if not k.startswith("NPULSE_")}
-    env.update(DESTDIR=str(root), DRY_RUN="1", NPULSE_INIT="systemd", NPULSE_ARCH="x86_64", NPULSE_MIRROR=BASE, NPULSE_INSECURE="1")
-    prompts = ["模式 [默认", "TCP 监听端口", "节点名称", "输入不回显", "root 级控制权", "构建类型 full/lite"]
+    env.update(DESTDIR=str(root), DRY_RUN="1", NPULSE_INIT="systemd", NPULSE_ARCH="x86_64", NPULSE_MIRROR=BASE, NPULSE_INSECURE="1", NPULSE_BIND="0.0.0.0")
+    env["PATH"] = str(tools) + os.pathsep + env["PATH"]
+    prompts = ["模式 [默认", "TCP 监听端口", "节点名称", "输入不回显", "root 级控制权", "构建类型 full/lite", "是否现在执行", "现在与手机配对"]
     secret = "interactive-secret-MUST-NOT-ECHO"
-    responses = ["", "", "", secret, "", ""]
+    responses = ["", "", "", secret, "", "", "n", "n"]
     proc = subprocess.Popen(argv, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, start_new_session=True)
     transcript, step, deadline = b"", 0, time.monotonic() + 30
@@ -107,8 +112,9 @@ def interactive(root):
                     proc.stdin.write((responses[step] + "\n").encode()); proc.stdin.flush(); step += 1
             elif proc.poll() is not None:
                 break
-        assert proc.wait(timeout=3) == 0, transcript.decode(errors="replace")
         assert step == len(prompts), transcript.decode(errors="replace")
+        assert proc.wait(timeout=3) == 0, transcript.decode(errors="replace")
+        assert b"ufw allow 9000/tcp" in transcript
         assert config(root)["secret"] == secret
         assert transcript.count(secret.encode()) == 1, "secret echoed outside final summary"
     finally:

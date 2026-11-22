@@ -83,7 +83,7 @@ try:
         harness = Path(temp) / "group-test"
         subprocess.run([os.environ.get("CC", "cc"), str(ROOT / "tools/test-group.c"),
                         str(ROOT / "vendor/monocypher.c"),
-                        str(ROOT / "vendor/monocypher-ed25519.c"), "-o", str(harness)], check=True)
+                        str(ROOT / "vendor/monocypher-ed25519.c"), str(ROOT / "vendor/qrcodegen.c"), "-o", str(harness)], check=True)
         subprocess.run([str(harness), str(ROOT / "tools/e2e-vector.json")], check=True)
         vector = json.loads((ROOT / "tools/e2e-vector.json").read_text())
         enc, seed, signing, gid = c.group_keys(vector["S"])

@@ -7,12 +7,91 @@ import json
 import os
 import socket
 import struct
+import sys
 import time
+import urllib.parse
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 from cryptography.hazmat.primitives import serialization
 
 MAX_BLOB = 7168
+
+
+def pair_art(sas):
+    cells = [[0] * 17 for _ in range(9)]
+    x, y = 8, 4
+    for byte in sas:
+        for bit in range(0, 8, 2):
+            x = max(0, min(16, x + (1 if byte & (1 << bit) else -1)))
+            y = max(0, min(8, y + (1 if byte & (2 << bit) else -1)))
+            cells[y][x] = min(14, cells[y][x] + 1)
+    cells[4][8], cells[y][x] = 15, 16
+    table = " .o+=*BOX@%&#/^SE"
+    return "+---[NodePulse]---+\n" + "".join("|" + "".join(table[c] for c in row) + "|\n" for row in cells) + "+-----[PAIR]------+\n"
+
+
+def pair_material(private, peer, psk=None):
+    pub = private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    shared = private.exchange(X25519PublicKey.from_public_bytes(peer))
+    k = hashlib.sha512(b"npulse-pair" + shared + pub + peer + (psk or b"")).digest()
+    sas = hashlib.sha512(b"npulse-pair-sas" + k).digest()[:16]
+    code = f"{int.from_bytes(sas[:4], 'big') % 1000000:06d}"
+    return k, sas, pair_art(sas), code[:3] + " " + code[3:]
+
+
+class PairClient:
+    def __init__(self, host, port, private=None, psk=None, token=None, code=None):
+        self.sock = socket.create_connection((host, port), timeout=10)
+        self.sock.settimeout(35)
+        self.private = private or X25519PrivateKey.generate()
+        self.rx = self.tx = 0
+        try:
+            if token is not None:
+                request = {"op": "pconnect", "code": code, "ts": int(time.time()), "rid": os.urandom(16).hex()}
+                self.sock.sendall(encode(token, request))
+                header = exact(self.sock, 4); n = struct.unpack("!I", header)[0]
+                if not 0 < n <= 4096 or decode(token, header + exact(self.sock, n + 28)).get("ok") is not True:
+                    raise ValueError("relay pairing rejected")
+            pub = self.private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+            self.send({"op": "pair", "v": 1, "commit": hashlib.sha512(b"npulse-pair-commit" + pub).digest()[:32].hex(), "psk": psk is not None})
+            peer = bytes.fromhex(self.receive()["epk"])
+            if len(peer) != 32:
+                raise ValueError("invalid pairing public key")
+            self.send({"epk": pub.hex()})
+            self.k, self.sas, self.art, self.code = pair_material(self.private, peer, psk)
+            self.private = None
+        except BaseException:
+            self.sock.close()
+            raise
+
+    def send(self, obj, encrypted=False):
+        data = json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode()
+        if not 0 < len(data) <= 4096:
+            raise ValueError("pair frame too large")
+        header = struct.pack("!I", len(data))
+        if encrypted:
+            data = ChaCha20Poly1305(self.k[:32]).encrypt(self.tx.to_bytes(8, "little") + bytes(4), data, header)
+            self.tx += 1
+        self.sock.sendall(header + data)
+
+    def receive(self, encrypted=False):
+        header = exact(self.sock, 4)
+        size = struct.unpack("!I", header)[0]
+        if not 0 < size <= 4096:
+            raise ValueError("invalid pair frame")
+        data = exact(self.sock, size + (16 if encrypted else 0))
+        if encrypted:
+            data = ChaCha20Poly1305(self.k[32:]).decrypt(self.rx.to_bytes(8, "little") + bytes(4), data, header)
+            self.rx += 1
+        return json.loads(data)
+
+    def confirm(self, accepted, name="Python", admin_pk=None):
+        self.send({"op": "confirm", "name": name, "admin_pk": admin_pk} if accepted else {"op": "reject"}, True)
+        return self.receive(True)
+
+    def close(self):
+        self.sock.close()
 
 
 def group_keys(secret):
@@ -129,6 +208,52 @@ def validate_response(response, rid):
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ("pair", "pair-relay"):
+        relay = sys.argv[1] == "pair-relay"
+        parser = argparse.ArgumentParser(description="Temporary direct SAS pairing")
+        parser.add_argument("address", nargs="?", help="HOST:PORT or [IPv6]:PORT")
+        parser.add_argument("--url", help="nodepulse://pair URL; still requires matching art and dual approval")
+        parser.add_argument("--token", help="relay token (prefer NPULSE_TOKEN environment variable)")
+        parser.add_argument("--code", help="relay pairing code XXXX-XXXX")
+        parser.add_argument("--admin-pk", help="optional Ed25519 public key to authorize (full probe)")
+        args = parser.parse_args(sys.argv[2:])
+        token, code, psk = args.token or os.environ.get("NPULSE_TOKEN"), args.code, None
+        if args.url:
+            url = urllib.parse.urlparse(args.url)
+            query = urllib.parse.parse_qs(url.query, keep_blank_values=True)
+            if url.scheme != "nodepulse" or url.netloc != "pair" or url.path not in ("", "/") or any(len(v) != 1 for v in query.values()) or query.get("v") != ["1"]:
+                parser.error("invalid pairing URL")
+            q = {k: v[0] for k, v in query.items()}
+            try:
+                text = q["s"]
+                if len(text) != 22 or any(ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-" for ch in text):
+                    raise ValueError("PSK must be 16-byte base64url")
+                psk = base64.urlsafe_b64decode(text + "==")
+                if "r" in q:
+                    if "h" in q or not q.get("t") or not q.get("c"): raise ValueError("invalid relay URL")
+                    relay, token, code, args.address = True, q["t"], q["c"], q["r"]
+                else:
+                    host, port = q["h"], int(q["p"])
+                    args.address = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+            except (KeyError, ValueError): parser.error("invalid pairing URL fields")
+        if not args.address or (relay and (not token or not code)):
+            parser.error("provide HOST:PORT; relay pairing requires --token/NPULSE_TOKEN and --code")
+        host, port = args.address.rsplit(":", 1)
+        if args.admin_pk and (len(args.admin_pk) != 64 or any(c not in "0123456789abcdefABCDEF" for c in args.admin_pk)):
+            parser.error("--admin-pk must be 32-byte hex")
+        print(f"连接{'中转' if relay else '探针'} {args.address}；扫码仅填写连接信息，仍须核对图案。", file=sys.stderr)
+        if input("继续连接？[y/N] ").strip().lower() != "y": raise SystemExit(1)
+        client = PairClient(host.strip("[]"), int(port), psk=psk, token=token if relay else None, code=code)
+        try:
+            print(client.art + "\n" + client.code, file=sys.stderr, flush=True)
+            accepted = input("服务器上的图案和数字是否一致？[y/N] ").strip().lower() == "y"
+            result = client.confirm(accepted, admin_pk=args.admin_pk)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            if not result.get("ok"):
+                raise SystemExit(1)
+        finally:
+            client.close()
+        return
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("host")
     parser.add_argument("port", type=int)

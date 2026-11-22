@@ -1,6 +1,6 @@
 #ifndef NP_PIPE_H
 #define NP_PIPE_H
-#define PIPE_LISTENERS 256
+#define PIPE_LISTENERS (ADMIN ? 256 : 64)
 #define PIPE_COUNT 64
 #define PIPE_SOCKETS (PIPE_LISTENERS + PIPE_COUNT * 2)
 #define PIPE_BUFFER (256 * 1024)
@@ -10,14 +10,15 @@ typedef struct {
   uint8_t *in, *out;
   size_t have, want, sent, outlen;
 } PipeWire;
-enum { RP_FREE, RP_LISTENER, RP_WAIT, RP_ACK, RP_RAW };
+enum { RP_FREE, RP_LISTENER, RP_WAIT, RP_ACK, RP_RAW, RP_PAIR };
 typedef struct {
   PipeWire w;
-  int mode, peer, phone;
+  int mode, peer, phone, draining;
   char gid[65], slot[33], cid[33];
   double last, deadline;
 } RelayPipe;
 static RelayPipe relay_pipes[PIPE_SOCKETS];
+#if ADMIN
 enum { PP_CONNECT = 1, PP_SEND, PP_REPLY, PP_LISTEN, PP_READY };
 typedef struct {
   PipeWire w;
@@ -29,6 +30,7 @@ typedef struct {
 static ProbePipe probe_pipes[PIPE_PROBES];
 static double probe_next;
 static int probe_backoff = 2;
+#endif
 static int pipe_wire_init(PipeWire *w, int fd) {
   memset(w, 0, sizeof(*w)); w->fd = -1; w->want = 4;
   w->in = malloc(5);
@@ -89,6 +91,69 @@ static int relay_free(void) {
   for (int i = 0; i < PIPE_SOCKETS; i++) if (!relay_pipes[i].mode) return i;
   return -1;
 }
+#if PAIR
+static int pair_pipe_request(Json *j, time_t now, int fd) {
+  int listen = eq(j, field(j, 0, "op"), "ppair"), connect = eq(j, field(j, 0, "op"), "pconnect");
+  if (!listen && !connect) return -1;
+  char *rid = string(j, field(j, 0, "rid")); uint8_t random[5], raw[16];
+  int bad = hex_decode(raw, rid, 16) || group_replay("npulse-pair", rid, now); free(rid);
+  if (bad) return 0;
+  int index = relay_free();
+  if (index < 0) return 0;
+  int waiting = -1, pending = 0, active = 0;
+  for (int i = 0; i < PIPE_SOCKETS; i++) {
+    if (relay_pipes[i].mode == RP_PAIR) pending++;
+    if (relay_pipes[i].mode && relay_pipes[i].phone) active++;
+  }
+  char code[9] = {0};
+  if (listen) {
+    int v = field(j, 0, "v");
+    if (v < 0 || j->t[v].type != '1' || j->t[v].end - j->t[v].start != 1 || pending >= 64) return 0;
+    int unique = 0;
+    for (int attempt = 0; attempt < 8 && !unique; attempt++) {
+      if (random_bytes(random, 5)) return 0;
+      uint64_t value = 0; for (int i = 0; i < 5; i++) value = value << 8 | random[i];
+      for (int i = 7; i >= 0; i--, value >>= 5) code[i] = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"[value & 31];
+      unique = 1;
+      for (int i = 0; i < PIPE_SOCKETS; i++) if (relay_pipes[i].mode == RP_PAIR && !strcmp(relay_pipes[i].cid, code)) unique = 0;
+    }
+    if (!unique) return 0;
+  } else {
+    static double tokens = 32, last;
+    double tick = monotime(); if (!last) last = tick;
+    tokens += tick - last; if (tokens > 32) tokens = 32; last = tick;
+    if (tokens < 1 || active >= PIPE_COUNT) return 0;
+    tokens--;
+    char *text = string(j, field(j, 0, "code"));
+    if (!text || strlen(text) > 32) { free(text); return 0; }
+    size_t n = 0;
+    for (const char *s = text; *s; s++) {
+      if (*s == '-') continue;
+      char ch = (char)toupper((unsigned char)*s);
+      if (ch == 'O') ch = '0';
+      if (ch == 'I' || ch == 'L') ch = '1';
+      if (n == 8 || !strchr("0123456789ABCDEFGHJKMNPQRSTVWXYZ", ch)) { n = 0; break; }
+      code[n++] = ch;
+    }
+    free(text); if (n != 8) return 0;
+    for (int i = 0; i < PIPE_SOCKETS; i++) if (relay_pipes[i].mode == RP_PAIR && !strcmp(relay_pipes[i].cid, code) && monotime() < relay_pipes[i].deadline) waiting = i;
+    if (waiting < 0) return 0;
+  }
+  PipeWire fresh;
+  if (pipe_wire_init(&fresh, fd)) return 0;
+  char ack[80]; snprintf(ack, sizeof(ack), "{\"ok\":true,\"code\":\"%.4s-%.4s\"}", code, code + 4);
+  if (pipe_json(&fresh, listen ? ack : "{\"ok\":true}") ||
+      (!listen && pipe_json(&relay_pipes[waiting].w, "{\"ok\":true}"))) {
+    fresh.fd = -1; pipe_wire_clear(&fresh); if (waiting >= 0) relay_drop(waiting); return 0;
+  }
+  RelayPipe *p = &relay_pipes[index]; memset(p, 0, sizeof(*p)); p->w = fresh; p->peer = waiting;
+  p->mode = listen ? RP_PAIR : RP_ACK; p->last = monotime(); p->deadline = p->last + (listen ? 600 : 10);
+  p->phone = !listen; snprintf(p->cid, sizeof(p->cid), "%s", code);
+  if (!listen) { RelayPipe *probe = &relay_pipes[waiting]; probe->peer = index; probe->mode = RP_ACK; probe->deadline = p->deadline; probe->last = p->last; }
+  return 1;
+}
+#endif
+#if ADMIN
 static int pipe_request(Json *j, long long stamp, time_t now, int fd, char **response) {
   char *op = string(j, field(j, 0, "op"));
   int listening = op && !strcmp(op, "glisten"), connecting = op && !strcmp(op, "gconnect"), accepting = op && !strcmp(op, "gaccept");
@@ -206,16 +271,21 @@ static void probe_open(int i, const char *cid) {
   p->phase = PP_CONNECT; p->deadline = monotime() + 10;
   if (probe_next_address(i)) probe_drop(i);
 }
+#endif
 static void pipe_init(void) {
   for (int i = 0; i < PIPE_SOCKETS; i++) { relay_pipes[i].w.fd = -1; relay_pipes[i].peer = -1; }
+#if ADMIN
   for (int i = 0; i < PIPE_PROBES; i++) probe_pipes[i].w.fd = -1;
+#endif
 }
 static void pipe_tick(double now) {
   for (int i = 0; i < PIPE_SOCKETS; i++) {
     RelayPipe *p = &relay_pipes[i];
     if ((p->mode == RP_LISTENER && now - p->last > 90) || (p->mode == RP_RAW && now - p->last > 600) ||
+        ((p->mode == RP_PAIR || p->draining) && now > p->deadline) ||
         ((p->mode == RP_WAIT || p->mode == RP_ACK) && now > p->deadline)) relay_drop(i);
   }
+#if ADMIN
   if (!group_upstream || !admin_key_count) return;
   for (int i = 0; i < PIPE_PROBES; i++) {
     ProbePipe *p = &probe_pipes[i];
@@ -231,13 +301,15 @@ static void pipe_tick(double now) {
     }
   }
   if (probe_pipes[0].w.fd < 0 && now >= probe_next) probe_open(0, NULL);
+#endif
 }
 static int pipe_poll(struct pollfd *pf) {
   for (int i = 0; i < PIPE_SOCKETS; i++) {
     RelayPipe *p = &relay_pipes[i]; short events = pipe_pending(&p->w) ? POLLOUT : 0;
-    if (p->mode == RP_LISTENER || p->mode == RP_WAIT || (p->mode == RP_RAW && pipe_pending(&relay_pipes[p->peer].w) < PIPE_BUFFER)) events |= POLLIN;
-    pf[i] = (struct pollfd){p->w.fd, events, 0};
+    if (p->mode == RP_LISTENER || p->mode == RP_WAIT || p->mode == RP_PAIR || (p->mode == RP_RAW && !p->draining && pipe_pending(&relay_pipes[p->peer].w) < PIPE_BUFFER)) events |= POLLIN;
+    pf[i] = (struct pollfd){p->draining && !pipe_pending(&p->w) ? -1 : p->w.fd, events, 0};
   }
+#if ADMIN
   for (int i = 0; i < PIPE_PROBES; i++) {
     ProbePipe *p = &probe_pipes[i];
     short events = p->phase == PP_CONNECT || pipe_pending(&p->w) ? POLLOUT : 0;
@@ -245,13 +317,17 @@ static int pipe_poll(struct pollfd *pf) {
     pf[PIPE_SOCKETS + i] = (struct pollfd){p->w.fd, events, 0};
   }
   return PIPE_SOCKETS + PIPE_PROBES;
+#else
+  return PIPE_SOCKETS;
+#endif
 }
 static void pipe_io(struct pollfd *pf) {
   for (int i = 0; i < PIPE_SOCKETS; i++) {
     RelayPipe *p = &relay_pipes[i]; short events = pf[i].revents;
     if (!p->mode) continue;
-    if (events & (POLLERR | POLLNVAL | POLLHUP)) { relay_drop(i); continue; }
-    if (p->mode == RP_WAIT && (events & POLLIN)) {
+    if ((events & (POLLERR | POLLNVAL)) || ((events & POLLHUP) && p->mode != RP_RAW)) { relay_drop(i); continue; }
+    if (p->draining && !pipe_pending(&p->w) && !pipe_pending(&relay_pipes[p->peer].w)) { relay_drop(i); continue; }
+    if ((p->mode == RP_WAIT || p->mode == RP_PAIR) && (events & POLLIN)) {
       uint8_t byte; ssize_t n = recv(p->w.fd, &byte, 1, MSG_PEEK);
       if (n >= 0 || (errno != EAGAIN && errno != EINTR)) relay_drop(i);
       continue;
@@ -264,7 +340,7 @@ static void pipe_io(struct pollfd *pf) {
     if (p->mode == RP_ACK && !pipe_pending(&p->w) && !pipe_pending(&relay_pipes[p->peer].w)) {
       p->mode = relay_pipes[p->peer].mode = RP_RAW;
     }
-    if (p->mode == RP_RAW && (events & POLLIN)) {
+    if (p->mode == RP_RAW && !p->draining && (events & (POLLIN | POLLHUP))) {
       RelayPipe *peer = &relay_pipes[p->peer]; uint8_t data[16384];
       size_t room = PIPE_BUFFER - pipe_pending(&peer->w);
       if (!room) continue;
@@ -272,7 +348,8 @@ static void pipe_io(struct pollfd *pf) {
       if (n > 0) {
         if (pipe_append(&peer->w, data, (size_t)n, PIPE_BUFFER)) { relay_drop(i); continue; }
         p->last = peer->last = monotime();
-      } else if (!n || (errno != EAGAIN && errno != EINTR)) relay_drop(i);
+      } else if (!n) { p->draining = peer->draining = 1; p->deadline = peer->deadline = monotime() + 5; }
+      else if (errno != EAGAIN && errno != EINTR) relay_drop(i);
     } else if (p->mode == RP_LISTENER && (events & POLLIN)) {
       char *json = NULL; int result = pipe_read_json(&p->w, &json);
       if (result < 0) { relay_drop(i); continue; }
@@ -284,6 +361,7 @@ static void pipe_io(struct pollfd *pf) {
       else p->last = monotime();
     }
   }
+#if ADMIN
   for (int i = 0; i < PIPE_PROBES; i++) {
     ProbePipe *p = &probe_pipes[i]; short events = pf[PIPE_SOCKETS + i].revents;
     if (p->w.fd < 0 || p->phase == PP_READY) continue;
@@ -325,7 +403,9 @@ static void pipe_io(struct pollfd *pf) {
     } else bad = 1;
     free(json); if (bad) probe_drop(i);
   }
+#endif
 }
+#if ADMIN
 static int probe_take(void) {
   for (int i = 1; i < PIPE_PROBES; i++) if (probe_pipes[i].phase == PP_READY) {
     int fd = probe_pipes[i].w.fd;
@@ -333,8 +413,11 @@ static int probe_take(void) {
   }
   return -1;
 }
+#endif
 static void pipe_shutdown(void) {
   for (int i = 0; i < PIPE_SOCKETS; i++) relay_drop(i);
+#if ADMIN
   for (int i = 0; i < PIPE_PROBES; i++) probe_drop(i);
+#endif
 }
 #endif

@@ -54,7 +54,7 @@ struct ContentView: View {
                                     .buttonStyle(PressStyle())
                                     .contextMenu {
                                         Button("复制 IP", systemImage: "doc.on.doc") { UIPasteboard.general.string = item.snapshot.ips.joined(separator: "\n") }
-                                        NavigationLink("查看详情") { NodeDetail(store: store, nodeKey: item.key) }
+                                        NavigationLink { NodeDetail(store: store, nodeKey: item.key) } label: { Label("查看详情", systemImage: "info.circle") }
                                         Button("删除", systemImage: "trash", role: .destructive) { deleting = item }
                                     }
                             }

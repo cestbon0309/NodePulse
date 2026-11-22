@@ -161,8 +161,9 @@ try:
     query_port = port()
     start("-k", "simple-key", "-H", str(query_port))
     wait_for(lambda: http(query_port, "/api/nodes?key=simple-key")[0] == 200)
-    assert json.loads(http(query_port, "/api/nodes?key=simple-key")[1])["nodes"] == []
-    print("PASS HTTP: Bearer/query auth 200, missing/wrong key and wrong route empty 404, HTTP-only empty nodes")
+    http_nodes = json.loads(http(query_port, "/api/nodes?key=simple-key")[1])["nodes"]
+    assert len(http_nodes) == 1 and http_nodes[0]["relay"] is False and http_nodes[0]["id"]
+    print("PASS HTTP: Bearer/query auth 200, missing/wrong key and wrong route empty 404, HTTP-only local snapshot")
     start("-k", secret, "-u", f"127.0.0.1:{direct}", "-i", "1", "-n", "relay-only")
     relayed = wait_for(lambda: next((n for n in get(direct)["nodes"] if n.get("relay")), None))
     assert relayed["name"] == "relay-only" and abs(relayed["last_seen"] - time.time()) < 5

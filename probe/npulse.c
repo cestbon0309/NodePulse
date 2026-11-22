@@ -186,7 +186,7 @@ static char *nodes_json(const char *rid) {
   }
   add(&b, "\"nodes\":[");
   int comma = 0;
-  if (listen_addr) {
+  if (listen_addr || (http_addr && !(relay_addr || (relay_token && !secret)))) {
     char *s = snapshot(display);
     s[strlen(s) - 1] = 0;
     add(&b, "%s,\"relay\":false}", s);

@@ -19,13 +19,14 @@ NodePulse 安装器（需要 root；POSIX sh / OpenWrt ash）
   --upstream HOST:PORT   模式 3/4 上游（IPv6 用 [地址]:端口）
   --name NAME            节点名称
   --admin-keys HEX,...   启用管理；64 位 Ed25519 公钥，可逗号分隔，最多 32 个
+  --admin-via-pair      使用 full 并发起手机配对；仅在双方明确授权后启用管理
   --also-relay           模式 2/3/4 同时开启 -l，接收旧式探针上报
   --purge               卸载时同时删除配置（默认保留）
   --help
 
 对应环境变量：NPULSE_YES=1, NPULSE_MODE, NPULSE_ARCH, NPULSE_FLAVOR=full|lite,
 NPULSE_PORT, NPULSE_HTTP_PORT, NPULSE_UPSTREAM, NPULSE_NAME, NPULSE_ADMIN_KEYS,
-NPULSE_ADMIN=yes|no, NPULSE_ALSO_RELAY=yes|no, NPULSE_PURGE=yes|no。
+NPULSE_ADMIN=yes|no|pair（pair 等价 --admin-via-pair）, NPULSE_ALSO_RELAY=yes|no, NPULSE_PURGE=yes|no。
 NPULSE_BIND 与 --bind 等价；NPULSE_OPEN_FIREWALL=yes 与 --open-firewall 等价。
 pair 停止服务、临时运行 SAS 配对、保存明确授权的管理公钥后重启服务。
 密钥仅通过环境变量传入：NPULSE_SECRET, NPULSE_TOKEN, NPULSE_GROUP_SECRET。
@@ -59,6 +60,7 @@ UPSTREAM=${NPULSE_UPSTREAM:-}
 NAME=${NPULSE_NAME:-$(uname -n)}
 ADMIN_KEYS=${NPULSE_ADMIN_KEYS:-}
 ADMIN=${NPULSE_ADMIN:-no}
+ADMIN_VIA_PAIR=no
 ALSO_RELAY=${NPULSE_ALSO_RELAY:-no}
 PURGE=${NPULSE_PURGE:-no}
 INIT=${NPULSE_INIT:-}
@@ -82,6 +84,7 @@ while [ "$#" -gt 0 ]; do
         --also-relay) ALSO_RELAY=yes; shift ;;
         --purge) PURGE=yes; shift ;;
         --open-firewall) OPEN_FIREWALL=yes; shift ;;
+        --admin-via-pair) ADMIN=pair; shift ;;
         --mode|--arch|--port|--bind|--http-port|--upstream|--name|--admin-keys)
             [ "$#" -ge 2 ] || fail "$1 缺少参数"
             case "$1" in
@@ -94,7 +97,9 @@ while [ "$#" -gt 0 ]; do
         *) fail "未知参数（使用 --help）" ;;
     esac
 done
-for setting in "$PURGE" "$ALSO_RELAY" "$ADMIN" "$OPEN_FIREWALL"; do case "$setting" in yes|no) ;; *) fail '开关须为 yes 或 no' ;; esac; done
+case "$ADMIN" in yes|no) ;; pair) ADMIN=yes; ADMIN_VIA_PAIR=yes ;; *) fail 'NPULSE_ADMIN 须为 yes、no 或 pair' ;; esac
+if [ "$ADMIN_VIA_PAIR" = yes ] && [ -n "$ADMIN_KEYS" ]; then fail '手机配对授权不能同时指定 --admin-keys / NPULSE_ADMIN_KEYS'; fi
+for setting in "$PURGE" "$ALSO_RELAY" "$OPEN_FIREWALL"; do case "$setting" in yes|no) ;; *) fail '开关须为 yes 或 no' ;; esac; done
 case "$YES:$DRY_RUN" in 0:0|0:1|1:0|1:1) ;; *) fail 'NPULSE_YES 和 DRY_RUN 须为 0 或 1' ;; esac
 if [ "$DRY_RUN" = 1 ]; then
     case "$DESTDIR" in /*) ;; *) fail 'DRY_RUN 必须指定绝对 DESTDIR' ;; esac
@@ -114,7 +119,10 @@ fi
 CONFIG=$DESTDIR/etc/npulse/npulse.conf
 STATE=$DESTDIR/etc/npulse/install.state
 cleanup() {
-    if [ "$PAIR_STOPPED" = 1 ]; then service start || printf '警告：恢复服务失败，请手动启动 npulse。\n' >&2; fi
+    if [ "$PAIR_STOPPED" = 1 ]; then
+        service start || printf '警告：恢复服务失败，请手动启动 npulse。\n' >&2
+        if [ "$ADMIN_VIA_PAIR" = yes ] && [ -z "$ADMIN_KEYS" ]; then printf '管理尚未启用；请稍后运行 sh install.sh pair 完成手机及服务器的管理授权。\n' >&2; fi
+    fi
     if [ "$ECHO_OFF" = 1 ]; then stty echo </dev/tty 2>/dev/null || :; fi
     if [ -n "$WORK" ]; then rm -rf "$WORK"; fi
 }
@@ -477,6 +485,9 @@ summary() {
     if [ "$MODE" = 3 ] || [ "$MODE" = 4 ]; then printf '注意：上报使用的密钥/令牌必须与已有上游配置匹配。\n'; fi
     if [ "$INIT" = procd ]; then printf 'OpenWrt：服务以 root 运行。\n'; fi
     if [ -n "$ADMIN_KEYS" ]; then printf '警告：管理已启用，探针以 root 运行；授权设备可控制整台机器。\n'; fi
+    if [ "$ADMIN_VIA_PAIR" = yes ] && [ -z "$ADMIN_KEYS" ]; then
+        printf '管理尚未启用；请稍后运行 sh install.sh pair，在手机打开「同时授权本机管理」，并在服务器单独确认管理授权。\n'
+    fi
     if [ "$MODE" = 2 ] || { [ "$MODE" = 5 ] && [ -n "$HTTP_PORT" ]; }; then
         route=nodes; if [ "$MODE" = 5 ]; then route=relay; fi
         if [ "$MODE" = 5 ]; then printf 'App 也可使用中继服务器 HTTPS：https://probe.example.com；开放 TCP 443。\n'; fi
@@ -631,10 +642,22 @@ case "$ADMIN" in yes|no) ;; *) fail '管理开关须为 yes 或 no' ;; esac
 if [ "$ADMIN" = yes ]; then
     [ "$MODE" != 5 ] || fail '纯中继不使用 -A；请选择 full 以转发管理管道'
     [ "$LISTEN" = yes ] || [ "$MODE" = 4 ] || fail '管理需要直连 -l 或共享中继 -R'
-    ask '粘贴 Ed25519 公钥（64 位十六进制，多个用逗号分隔）：' "$ADMIN_KEYS"; ADMIN_KEYS=$ANSWER
-    printf '%s\n' "$ADMIN_KEYS" | awk -F, 'NF < 1 || NF > 32 {exit 1} {for(i=1;i<=NF;i++) if(length($i)!=64 || $i ~ /[^0-9a-fA-F]/) exit 1}' || fail '管理公钥格式无效'
-    ADMIN_KEYS=$(printf '%s' "$ADMIN_KEYS" | tr 'A-F' 'a-f')
-else ADMIN_KEYS=; fi
+    if [ "$YES" = 0 ]; then
+        admin_source=1; if [ -n "$ADMIN_KEYS" ]; then admin_source=2; fi
+        ask "管理公钥来源：1) 配对时由手机自动提供（推荐） 2) 手动粘贴 [默认 $admin_source]：" "$admin_source"
+        case "$ANSWER" in 1) ADMIN_VIA_PAIR=yes ;; 2) ADMIN_VIA_PAIR=no ;; *) fail '管理公钥来源须为 1 或 2' ;; esac
+    fi
+    if [ "$ADMIN_VIA_PAIR" = yes ]; then ADMIN_KEYS=
+    else
+        ask '粘贴 Ed25519 公钥（64 位十六进制，多个用逗号分隔）：' "$ADMIN_KEYS"; ADMIN_KEYS=$ANSWER
+        printf '%s\n' "$ADMIN_KEYS" | awk -F, 'NF < 1 || NF > 32 {exit 1} {for(i=1;i<=NF;i++) if(length($i)!=64 || $i ~ /[^0-9a-fA-F]/) exit 1}' || fail '管理公钥格式无效'
+        ADMIN_KEYS=$(printf '%s' "$ADMIN_KEYS" | tr 'A-F' 'a-f')
+    fi
+else ADMIN_KEYS=; ADMIN_VIA_PAIR=no; fi
+if [ "$ADMIN_VIA_PAIR" = yes ]; then
+    FLAVOR=full
+    printf '手机配对授权需要 full，已选择 full；收到手机公钥并在服务器明确授权前，管理保持关闭。\n'
+else
 if [ -z "$FLAVOR" ]; then
     FLAVOR=full
     case "$ARCH" in mips|mipsel) FLAVOR=lite ;; esac
@@ -647,6 +670,7 @@ fi
 printf 'full 支持管理；lite 更小但无管理/实时管道（纯中继要转发管理也必须 full）。\n'
 ask "构建类型 full/lite [默认 $FLAVOR]：" "$FLAVOR"; FLAVOR=$ANSWER
 case "$FLAVOR" in full) ;; lite) [ -z "$ADMIN_KEYS" ] || fail 'lite 不允许启用管理，请选择 full' ;; *) fail '构建类型须为 full 或 lite' ;; esac
+fi
 for value in "$NAME" "$UPSTREAM" "$SECRET" "$TOKEN" "$GROUP"; do safe_value "$value"; done
 safe_value "$ADMIN_KEYS" 2080
 case "$INTERVAL" in ''|*[!0-9]*|0*) fail 'NPULSE_INTERVAL 须为 1–86400' ;; esac
@@ -657,9 +681,13 @@ if [ -n "$HTTP_PORT" ] && [ "$HTTP_PORT" -lt 1024 ]; then PRIVILEGED_PORT=yes; f
 fetch_binary
 replace_binary; write_config; write_unit
 service enable
-if [ "$MODE" = 1 ] || [ "$MODE" = 4 ]; then
+if [ "$LISTEN" = yes ] || [ "$MODE" = 4 ]; then
     if [ "$MODE" = 1 ]; then open_firewall; fi
     pair_default=yes; if [ "$YES" = 1 ]; then pair_default=no; fi
+    if [ "$ADMIN_VIA_PAIR" = yes ]; then
+        pair_default=yes
+        printf '请在手机打开「同时授权本机管理」，核对图案后在服务器单独授权；跳过配对、配对失败或拒绝授权，管理将保持关闭。\n'
+    fi
     ask '现在与手机配对？[Y/n]' "$pair_default"
     case "$ANSWER" in y|Y|yes) pair_installed ;; *) service start ;; esac
 else service start; fi

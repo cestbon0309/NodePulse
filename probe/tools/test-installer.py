@@ -82,22 +82,36 @@ def isolated_tools(exclude=()):
     return path
 
 
-def interactive(root):
+def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_env=False):
     tools = root / "tools"; tools.mkdir()
     firewall = tools / "ufw"
     firewall.write_text('#!/bin/sh\n[ "$1" = status ] || exit 99\nprintf "Status: active\\n"\n')
     firewall.chmod(0o755)
-    command = "cat " + shlex.quote(str(ROOT / "install.sh")) + " | " + shlex.join(SHELL)
+    args = ["--admin-keys", preset_keys] if preset_keys and not keys_via_env else []
+    command = "cat " + shlex.quote(str(ROOT / "install.sh")) + " | " + shlex.join([*SHELL, "-s", "--", *args])
     if sys.platform == "darwin":
         argv = ["script", "-q", "/dev/null", "/bin/sh", "-c", command]
     else:
         argv = ["script", "-q", "-e", "-c", command, "/dev/null"]
     env = {k: v for k, v in os.environ.items() if not k.startswith("NPULSE_")}
     env.update(DESTDIR=str(root), DRY_RUN="1", NPULSE_INIT="systemd", NPULSE_ARCH="x86_64", NPULSE_MIRROR=BASE, NPULSE_INSECURE="1", NPULSE_BIND="0.0.0.0")
+    if keys_via_env: env["NPULSE_ADMIN_KEYS"] = preset_keys
     env["PATH"] = str(tools) + os.pathsep + env["PATH"]
-    prompts = ["模式 [默认", "TCP 监听端口", "节点名称", "输入不回显", "root 级控制权", "构建类型 full/lite", "是否现在执行", "现在与手机配对"]
+    prompts = ["模式 [默认", "TCP 监听端口", "节点名称", "输入不回显", "root 级控制权"]
     secret = "interactive-secret-MUST-NOT-ECHO"
-    responses = ["", "", "", secret, "", "", "n", "n"]
+    responses = ["", "", "", secret, "yes" if admin_source is not None and not preset_keys else ""]
+    manual = admin_source == "2" or (admin_source == "" and bool(preset_keys))
+    if admin_source is not None:
+        prompts += ["管理公钥来源："]
+        responses += [admin_source]
+        if manual:
+            prompts += ["粘贴 Ed25519 公钥"]
+            responses += ["" if preset_keys else "A" * 64]
+    if admin_source is None or manual:
+        prompts += ["构建类型 full/lite"]
+        responses += [""]
+    prompts += ["是否现在执行", "现在与手机配对"]
+    responses += ["n", pair]
     proc = subprocess.Popen(argv, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, start_new_session=True)
     transcript, step, deadline = b"", 0, time.monotonic() + 30
@@ -117,6 +131,16 @@ def interactive(root):
         assert b"ufw allow 9000/tcp" in transcript
         assert config(root)["secret"] == secret
         assert transcript.count(secret.encode()) == 1, "secret echoed outside final summary"
+        if admin_source is not None:
+            unit = (root / "etc/systemd/system/npulse.service").read_text()
+            if preset_keys: assert "[默认 2]".encode() in transcript
+            if manual:
+                assert config(root)["admin_keys"] == (preset_keys.lower() if preset_keys else "a" * 64) and "User=root" in unit
+            else:
+                assert "粘贴 Ed25519 公钥".encode() not in transcript
+                assert "admin_keys" not in config(root) and "DynamicUser=yes" in unit and "User=root" not in unit
+                assert b"flavor=full" in (root / "etc/npulse/install.state").read_bytes()
+                assert "管理将保持关闭".encode() in transcript and b"sh install.sh pair" in transcript
     finally:
         if proc.poll() is None:
             os.killpg(proc.pid, signal.SIGTERM); proc.wait(timeout=5)
@@ -239,6 +263,27 @@ try:
     interactive(root)
     run(root, "uninstall", "--yes", "--purge")
     print("PASS piped installer reads /dev/tty; interactive credentials have no terminal echo and appear only in final summary")
+
+    for source, pair in [("", "n"), ("1", "y"), ("2", "n")]:
+        root = new_root(); interactive(root, source, pair)
+        run(root, "uninstall", "--yes", "--purge")
+    for mode in ("1", "4"):
+        for options, settings in [(["--admin-via-pair"], {}), ([], {"NPULSE_ADMIN": "pair"})]:
+            root = new_root()
+            result = run(root, "--yes", "--mode", mode, "--upstream", "relay.example:9010", "--lite", *options, **settings)
+            assert "[DRY_RUN] 配对" in result.stdout and "sh install.sh pair" in result.stdout
+            assert "admin_keys" not in config(root) and "DynamicUser=yes" in (root / "etc/systemd/system/npulse.service").read_text()
+            assert "flavor=full" in (root / "etc/npulse/install.state").read_text()
+            run(root, "uninstall", "--yes", "--purge")
+    run(new_root(), "--yes", "--admin-via-pair", "--admin-keys", "a" * 64, ok=False)
+    run(new_root(), "--yes", "--mode", "2", "--admin-via-pair", ok=False)
+    print("PASS admin source menu: default/choice 1 never asks for paste, forces full and warns on skipped pairing; choice 2 still pastes; flag/env direct+relay launch pairing without pre-authorizing root; conflicting keys and unsupported modes rejected")
+    for keys_via_env in (False, True):
+        for source in ("", "1"):
+            root = new_root()
+            interactive(root, source, preset_keys="B" * 64 + "," + "c" * 64, keys_via_env=keys_via_env)
+            run(root, "uninstall", "--yes", "--purge")
+    print("PASS preset CLI/env admin keys: Enter defaults to manual and preserves all prefilled keys/root unit; only explicit choice 1 discards keys for pairing/DynamicUser")
 
     if shutil.which("wget"):
         tools = isolated_tools()

@@ -16,12 +16,14 @@ struct NodeItem: Identifiable {
     var online: Bool
     var history: [HistorySample] = []
     var probeInterval: Double = 5
+    var endToEnd = false
     var id: String { key }
 }
 struct EndpointStatus {
     var lastSuccess: Date?
     var latency: Double?
     var error: String?
+    var droppedBlobs = 0
 }
 
 @Observable @MainActor
@@ -49,8 +51,22 @@ final class MonitorStore {
         refreshInterval = interval > 0 ? interval : 3
         demoMode = defaults.bool(forKey: "demoMode")
     }
-    func save(_ endpoint: Endpoint, secret: String) throws {
-        try secrets.set(secret, for: endpoint.id)
+    func save(_ endpoint: Endpoint, secret: String, groupSecret: String? = nil) throws {
+        if endpoint.kind.isGroup && (groupSecret?.isEmpty != false || secret.isEmpty) { throw ProbeError.missingSecret }
+        let oldSecret = try? secrets.get(endpoint.id), oldGroup = try? secrets.getGroup(endpoint.id)
+        do {
+            if endpoint.kind.isGroup, let groupSecret { try secrets.setGroup(groupSecret, for: endpoint.id) }
+            try secrets.set(secret, for: endpoint.id)
+            if !endpoint.kind.isGroup { try secrets.deleteGroup(endpoint.id) }
+        } catch {
+            if let oldSecret { try? secrets.set(oldSecret, for: endpoint.id) } else { try? secrets.delete(endpoint.id) }
+            if let oldGroup { try? secrets.setGroup(oldGroup, for: endpoint.id) } else { try? secrets.deleteGroup(endpoint.id) }
+            throw error
+        }
+        if endpoints.first(where: { $0.id == endpoint.id })?.kind != endpoint.kind ||
+            oldSecret != secret || oldGroup != groupSecret {
+            nodes.removeAll { $0.endpointID == endpoint.id }; statuses[endpoint.id] = nil
+        }
         if let index = endpoints.firstIndex(where: { $0.id == endpoint.id }) { endpoints[index] = endpoint }
         else { endpoints.append(endpoint) }
         generation += 1
@@ -58,11 +74,13 @@ final class MonitorStore {
         persist()
     }
     func delete(_ endpoint: Endpoint) throws {
+        try secrets.deleteGroup(endpoint.id)
         try secrets.delete(endpoint.id)
         endpoints.removeAll { $0.id == endpoint.id }; nodes.removeAll { $0.endpointID == endpoint.id }
         statuses[endpoint.id] = nil; generation += 1; persist()
     }
     func secret(for endpoint: Endpoint) throws -> String { try secrets.get(endpoint.id) }
+    func groupSecret(for endpoint: Endpoint) throws -> String { try secrets.getGroup(endpoint.id) }
     private func persist() { defaults.set(try? JSONEncoder().encode(endpoints), forKey: "endpoints") }
     func start() {
         guard polling == nil else { return }
@@ -76,8 +94,8 @@ final class MonitorStore {
         }
     }
     func stop() { polling?.cancel(); polling = nil; generation += 1 }
-    func testConnection(_ endpoint: Endpoint, secret: String) async -> Result<Int, Error> {
-        do { return .success(try await fetchProbe(endpoint, secret: secret).count) }
+    func testConnection(_ endpoint: Endpoint, secret: String, groupSecret: String? = nil) async -> Result<Int, Error> {
+        do { return .success(try await fetchProbe(endpoint, secret: secret, groupSecret: groupSecret).snapshots.count) }
         catch { return .failure(error) }
     }
     func refresh() async {
@@ -86,13 +104,19 @@ final class MonitorStore {
         defer { refreshing = false }
         if demoMode { demo(); return }
         let current = generation
-        let requests = endpoints.map { endpoint in (endpoint, Result { try secrets.get(endpoint.id) }) }
-        await withTaskGroup(of: (Endpoint, Result<[NodeSnapshot], Error>, Double).self) { group in
+        let requests = endpoints.map { endpoint in (endpoint, Result {
+            let group = endpoint.kind.isGroup ? try secrets.getGroup(endpoint.id) : nil
+            return (try secrets.get(endpoint.id), group)
+        }) }
+        await withTaskGroup(of: (Endpoint, Result<ProbeFetch, Error>, Double).self) { group in
             for (endpoint, secret) in requests {
                 group.addTask {
                     let start = ContinuousClock.now
-                    let result: Result<[NodeSnapshot], Error>
-                    do { result = .success(try await fetchProbe(endpoint, secret: secret.get())) }
+                    let result: Result<ProbeFetch, Error>
+                    do {
+                        let credentials = try secret.get()
+                        result = .success(try await fetchProbe(endpoint, secret: credentials.0, groupSecret: credentials.1))
+                    }
                     catch { result = .failure(error) }
                     let duration = start.duration(to: .now).components
                     return (endpoint, result, Double(duration.seconds) * 1000 + Double(duration.attoseconds) / 1e15)
@@ -100,32 +124,46 @@ final class MonitorStore {
             }
             for await (endpoint, result, latency) in group {
                 guard current == generation, !Task.isCancelled else { continue }
-                apply(endpoint, result: result, latency: latency)
+                switch result {
+                case .success(let fetched):
+                    apply(endpoint, result: .success(fetched.snapshots), latency: latency,
+                          ages: fetched.ages, droppedBlobs: fetched.droppedBlobs)
+                case .failure(let error): apply(endpoint, result: .failure(error), latency: latency)
+                }
             }
         }
     }
-    func apply(_ endpoint: Endpoint, result: Result<[NodeSnapshot], Error>, latency: Double, now: Date = Date()) {
+    func apply(_ endpoint: Endpoint, result: Result<[NodeSnapshot], Error>, latency: Double, now: Date = Date(),
+               ages: [String: Double] = [:], droppedBlobs: Int = 0) {
         switch result {
         case .failure(let error):
             var status = statuses[endpoint.id] ?? EndpointStatus()
             status.error = error.localizedDescription; statuses[endpoint.id] = status
             for index in nodes.indices where nodes[index].endpointID == endpoint.id { nodes[index].online = false }
         case .success(let snapshots):
-            statuses[endpoint.id] = EndpointStatus(lastSuccess: now, latency: latency, error: nil)
+            statuses[endpoint.id] = EndpointStatus(lastSuccess: now, latency: latency, error: nil, droppedBlobs: droppedBlobs)
             let upstreamTS = snapshots.first(where: { $0.relay != true })?.ts ?? now.timeIntervalSince1970
             for snapshot in snapshots {
                 let key = "\(endpoint.id)/\(snapshot.id)"
                 let index = nodes.firstIndex { $0.key == key }
                 let old = index.map { nodes[$0] }
-                let timestamp = snapshot.relay == true ? (snapshot.lastSeen ?? snapshot.ts) : snapshot.ts
-                let previousTimestamp = old.map { $0.snapshot.relay == true ? ($0.snapshot.lastSeen ?? $0.snapshot.ts) : $0.snapshot.ts } ?? timestamp
+                let timestamp = !endpoint.kind.isGroup && snapshot.relay == true ? (snapshot.lastSeen ?? snapshot.ts) : snapshot.ts
+                let previousTimestamp = old.map { !endpoint.kind.isGroup && $0.snapshot.relay == true ? ($0.snapshot.lastSeen ?? $0.snapshot.ts) : $0.snapshot.ts } ?? timestamp
                 let delta = (timestamp ?? 0) - (previousTimestamp ?? timestamp ?? 0)
-                let cadence = delta > 0 ? delta : (old?.probeInterval ?? 5)
-                let stale = snapshot.relay == true &&
-                    upstreamTS - (snapshot.lastSeen ?? snapshot.ts ?? 0) > max(30, 4 * cadence)
+                let cadence = delta > 0 && (!endpoint.kind.isGroup || delta <= 600) ? delta : (old?.probeInterval ?? 5)
+                let stale: Bool
+                if endpoint.kind.isGroup {
+                    let stamp = snapshot.ts ?? 0
+                    stale = (ages[snapshot.id] ?? .infinity) > max(30, 4 * cadence) ||
+                        !stamp.isFinite || abs(now.timeIntervalSince1970 - stamp) > 600
+                } else {
+                    stale = snapshot.relay == true &&
+                        upstreamTS - (snapshot.lastSeen ?? snapshot.ts ?? 0) > max(30, 4 * cadence)
+                }
                 var item = NodeItem(key: key, endpointID: endpoint.id, endpointName: endpoint.name,
                                     snapshot: snapshot, online: !stale, history: old?.history ?? [])
                 item.probeInterval = cadence
+                item.endToEnd = endpoint.kind.isGroup
                 item.history.append(HistorySample(date: now, cpu: snapshot.cpuUsage, memPercent: snapshot.memPercent,
                                                   rxRate: snapshot.netRxRate, txRate: snapshot.netTxRate))
                 item.history = Array(item.history.suffix(120))

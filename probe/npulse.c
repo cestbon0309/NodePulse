@@ -1,4 +1,13 @@
 #define _GNU_SOURCE
+#ifndef ADMIN
+#define ADMIN 1
+#endif
+#if ADMIN
+#define _FILE_OFFSET_BITS 64
+#define ADMIN_FLAGS "A:"
+#else
+#define ADMIN_FLAGS ""
+#endif
 #include "json.h"
 #include "metrics.h"
 #include "vendor/monocypher-ed25519.h"
@@ -10,6 +19,8 @@
 #include <signal.h>
 #include <sys/socket.h>
 #define MAX_FRAME (256 * 1024)
+static int random_bytes(void *p, size_t n);
+#include "group.h"
 #define CLIENTS 32
 #define RELAY_NODES 64
 typedef char RelayFrameBudget[(RELAY_NODES * (MAX_NODE_JSON + 64) + MAX_NODE_JSON + 128 < MAX_FRAME) ? 1 : -1];
@@ -45,7 +56,7 @@ static int random_bytes(void *p, size_t n) {
   close(f);
   return 0;
 }
-static int endpoint(const char *s, const char *def, int server) {
+static int endpoint_addresses(const char *s, const char *def, int server, struct addrinfo **addresses) {
   char host[256], port[16];
   const char *p = strrchr(s, ':');
   if (*s == '[') {
@@ -72,18 +83,27 @@ static int endpoint(const char *s, const char *def, int server) {
   struct addrinfo hints = {0}, *res = NULL;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_family = AF_UNSPEC;
-  hints.ai_flags = server ? AI_PASSIVE : 0;
+  hints.ai_flags = server > 0 ? AI_PASSIVE : 0;
   if (getaddrinfo(*host ? host : NULL, port, &hints, &res))
     return -1;
+  *addresses = res;
+  return 0;
+}
+static int endpoint(const char *s, const char *def, int server) {
+  struct addrinfo *res = NULL;
+  if (endpoint_addresses(s, def, server, &res)) return -1;
   int fd = -1;
   for (struct addrinfo *a = res; a; a = a->ai_next) {
     fd = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
     if (fd < 0)
       continue;
+#if ADMIN
+    fcntl(fd, F_SETFD, FD_CLOEXEC);
+#endif
     fcntl(fd, F_SETFL, O_NONBLOCK);
     int one = 1;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-    if (server) {
+    if (server > 0) {
       if (!bind(fd, a->ai_addr, a->ai_addrlen) && !listen(fd, 32))
         break;
     } else {
@@ -105,7 +125,7 @@ static int endpoint(const char *s, const char *def, int server) {
   freeaddrinfo(res);
   return fd;
 }
-static uint8_t *frame(const char *s, size_t *size) {
+static uint8_t *frame(const char *s, size_t *size, const uint8_t transport_key[32]) {
   size_t n = strlen(s);
   if (!n || n > MAX_FRAME)
     return NULL;
@@ -119,12 +139,43 @@ static uint8_t *frame(const char *s, size_t *size) {
     return NULL;
   }
   crypto_aead_ctx ctx;
-  crypto_aead_init_ietf(&ctx, key, p + 4);
+  crypto_aead_init_ietf(&ctx, transport_key, p + 4);
   crypto_aead_write(&ctx, p + 16, p + 16 + n, p, 4, (const uint8_t *)s, n);
   crypto_wipe(&ctx, sizeof(ctx));
   *size = n + 32;
   return p;
 }
+typedef struct Admin Admin;
+static char *unframe(const uint8_t *p, size_t total, const uint8_t transport_key[32]) {
+  if (total < 32) return NULL;
+  uint32_t be; memcpy(&be, p, 4); size_t n = ntohl(be);
+  if (!n || n > MAX_FRAME || total != n + 32) return NULL;
+  char *plain = malloc(n + 1);
+  if (!plain) return NULL;
+  crypto_aead_ctx ctx; crypto_aead_init_ietf(&ctx, transport_key, p + 4);
+  int bad = crypto_aead_read(&ctx, (uint8_t *)plain, p + n + 16, p, 4, p + 16, n);
+  crypto_wipe(&ctx, sizeof(ctx));
+  if (bad || memchr(plain, 0, n)) { crypto_wipe(plain, n); free(plain); return NULL; }
+  plain[n] = 0;
+  return plain;
+}
+#if ADMIN
+#include "admin.h"
+#include "pipe.h"
+#define ADMIN_POLLS (CLIENTS * 4 + PIPE_SOCKETS + PIPE_PROBES)
+#else
+#define ADMIN_POLLS 0
+#endif
+typedef struct {
+  int fd, http, relay;
+  uint8_t *in, *out;
+  size_t have, want, sent, outlen, body;
+  double deadline;
+#if ADMIN
+  Admin *admin;
+  int taken, pipe_hello;
+#endif
+} Client;
 static char *nodes_json(const char *rid) {
   Buffer b = buffer();
   add(&b, "{\"ok\":true,");
@@ -135,7 +186,7 @@ static char *nodes_json(const char *rid) {
   }
   add(&b, "\"nodes\":[");
   int comma = 0;
-  if (listen_addr) {
+  if (listen_addr || (http_addr && !(relay_addr || (relay_token && !secret)))) {
     char *s = snapshot(display);
     s[strlen(s) - 1] = 0;
     add(&b, "%s,\"relay\":false}", s);
@@ -157,25 +208,13 @@ static char *nodes_json(const char *rid) {
   add(&b, "]}");
   return b.s;
 }
-static char *request(uint8_t *p, size_t total) {
-  uint32_t be;
-  memcpy(&be, p, 4);
-  size_t n = ntohl(be);
-  if (total != n + 32)
-    return NULL;
-  char *plain = malloc(n + 1);
-  if (!plain)
-    return NULL;
-  crypto_aead_ctx ctx;
-  crypto_aead_init_ietf(&ctx, key, p + 4);
-  int bad =
-      crypto_aead_read(&ctx, (uint8_t *)plain, p + n + 16, p, 4, p + 16, n);
-  crypto_wipe(&ctx, sizeof(ctx));
-  if (bad) {
-    free(plain);
-    return NULL;
-  }
-  plain[n] = 0;
+static char *request(uint8_t *p, size_t total, int relay, Client *client) {
+#if !ADMIN
+  (void)client;
+#endif
+  char *plain = unframe(p, total, relay ? relay_key : key);
+  if (!plain) return NULL;
+  size_t n = strlen(plain);
   Json j;
   char *response = NULL;
   if (memchr(plain, 0, n) || parse(&j, plain))
@@ -196,6 +235,22 @@ static char *request(uint8_t *p, size_t total) {
   memcpy(nonces[nonce_pos], p + 4, 12);
   nonce_seen[nonce_pos] = now;
   nonce_pos = (nonce_pos + 1) % 256;
+  if (relay) {
+#if ADMIN
+    if (client) {
+      int result = pipe_request(&j, stamp, now, client->fd, &response);
+      if (result >= 0) { client->taken = result; goto done; }
+    }
+#endif
+    response = group_request(&j, stamp, now);
+    goto done;
+  }
+#if ADMIN
+  if (eq(&j, op, "admin")) {
+    if (client) response = admin_hello(&j, stamp, now, &client->admin, secret);
+    goto done;
+  }
+#endif
   if (eq(&j, op, "get")) {
     int token = field(&j, 0, "rid");
     char *rid = token >= 0 ? string(&j, token) : NULL;
@@ -307,31 +362,22 @@ static char *http_response(char *s) {
             "close\r\n\r\n");
   return b.s;
 }
-typedef struct {
-  int fd, http;
-  uint8_t *in, *out;
-  size_t have, want, sent, outlen;
-  double deadline;
-} Client;
 static void discard(Client *c) {
+#if ADMIN
+  if (c->admin) admin_free(c->admin);
+#endif
   close(c->fd);
   free(c->in);
   free(c->out);
   memset(c, 0, sizeof(*c));
   c->fd = -1;
 }
-static void push(void) {
-  int fd = endpoint(upstream, "127.0.0.1", 0);
+static void send_push(const char *address, const char *json, const uint8_t transport_key[32]) {
+  int fd = endpoint(address, "127.0.0.1", 0);
   if (fd < 0)
     return;
-  char *s = snapshot(display);
-  Buffer b = buffer();
-  add(&b, "{\"op\":\"push\",\"ts\":%lld,\"node\":%s}", (long long)time(NULL),
-      s);
-  free(s);
   size_t len = 0;
-  uint8_t *p = frame(b.s, &len);
-  free(b.s);
+  uint8_t *p = frame(json, &len, transport_key);
   double deadline = monotime() + 1;
   size_t off = 0;
   while (p && off < len && monotime() < deadline) {
@@ -347,8 +393,69 @@ static void push(void) {
   free(p);
   close(fd);
 }
+static void push(void) {
+  char *s = snapshot(display);
+  if (upstream) {
+    Buffer b = buffer();
+    add(&b, "{\"op\":\"push\",\"ts\":%lld,\"node\":%s}", (long long)time(NULL), s);
+    send_push(upstream, b.s, key);
+    free(b.s);
+  }
+  if (group_upstream) {
+    char *json = group_push_json(s);
+    if (json) { send_push(group_upstream, json, relay_key); free(json); }
+  }
+  free(s);
+}
+static int relay_http_header(Client *c) {
+  char *end = strstr((char *)c->in, "\r\n\r\n");
+  if (!end) return c->have == c->want ? -1 : 0;
+  c->body = (size_t)(end - (char *)c->in) + 4;
+  if (c->body > 8192) return -1;
+  char *copy = strndup((char *)c->in, c->body);
+  if (!copy) return -1;
+  char *save, *line = strtok_r(copy, "\r\n", &save);
+  int route = line && (!strcmp(line, "POST /api/relay HTTP/1.1") || !strcmp(line, "POST /api/relay HTTP/1.0"));
+  size_t length = 0;
+  int lengths = 0, content_type = 0;
+  while ((line = strtok_r(NULL, "\r\n", &save))) {
+    if (!strncasecmp(line, "Content-Length:", 15)) {
+      char *value = line + 15;
+      while (*value == ' ' || *value == '\t') value++;
+      char *tail;
+      unsigned long n = strtoul(value, &tail, 10);
+      if (!isdigit((unsigned char)*value) || *tail || n < 33 || n > MAX_FRAME + 32) route = 0;
+      length = (size_t)n;
+      lengths++;
+    } else if (!strncasecmp(line, "Transfer-Encoding:", 18)) route = 0;
+    else if (!strncasecmp(line, "Content-Type:", 13)) {
+      char *value = line + 13;
+      while (*value == ' ' || *value == '\t') value++;
+      content_type = !strcasecmp(value, "application/octet-stream");
+    }
+  }
+  free(copy);
+  if (!route || lengths != 1 || !content_type || c->have > c->body + length) return -1;
+  c->want = c->body + length;
+  uint8_t *p = realloc(c->in, c->want + 1);
+  if (!p) return -1;
+  c->in = p;
+  return 1;
+}
+static void http_not_found(Client *c) {
+  c->out = (uint8_t *)strdup("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+  if (c->out) c->outlen = strlen((char *)c->out);
+  else discard(c);
+}
 static void option(const char *k, const char *v) {
-  if (!strcmp(k, "secret") || !strcmp(k, "k"))
+#if ADMIN
+  if (!strcmp(k, "admin_keys") || !strcmp(k, "A")) { admin_keys_text = strdup(v); return; }
+#endif
+  if (!strcmp(k, "relay_listen") || !strcmp(k, "S")) relay_addr = strdup(v);
+  else if (!strcmp(k, "token") || !strcmp(k, "T")) relay_token = strdup(v);
+  else if (!strcmp(k, "group_secret") || !strcmp(k, "G")) group_secret = strdup(v);
+  else if (!strcmp(k, "relay_upstream") || !strcmp(k, "R")) group_upstream = strdup(v);
+  else if (!strcmp(k, "secret") || !strcmp(k, "k"))
     secret = strdup(v);
   else if (!strcmp(k, "listen") || !strcmp(k, "l"))
     listen_addr = strdup(v);
@@ -403,12 +510,19 @@ static void config(const char *path) {
   fclose(f);
 }
 static void usage(void) {
-  puts("npulse 0.1.0\nUsage: npulse -k SECRET [-l [addr:]port] [-H "
+  puts("npulse 0.1.0\nUsage: npulse [-k SECRET] [-l [addr:]port] [-H "
        "[addr:]port]\n              [-u host:port] [-i seconds] [-n NAME] [-c "
        "config] [-h]\nDirect listen defaults to 0.0.0.0; HTTP defaults to "
        "127.0.0.1.\nIPv6 endpoints use [address]:port. Config keys: secret, "
        "listen, http,\nupstream, interval, name (key=value). CLI overrides "
        "config.");
+  puts("Shared E2E relay: -S [addr:]port -T TOKEN [-H [addr:]port]\n"
+       "Publish E2E snapshots: -R host:port -T TOKEN [-G SECRET (default -k)]\n"
+       "HTTP-only relay: -H [addr:]port -T TOKEN (without -k).\n"
+       "Config keys: relay_listen, token, group_secret, relay_upstream (or S/T/G/R).");
+#if ADMIN
+  puts("Admin (disabled by default): -A ED25519_PUBKEY[,PUBKEY...] (requires -l or -R).\nConfig key: admin_keys. Session idle timeout: 600 seconds.");
+#endif
 }
 int main(int argc, char **argv) {
   int opt;
@@ -417,11 +531,11 @@ int main(int argc, char **argv) {
       usage();
       return 0;
     }
-  while ((opt = getopt(argc, argv, "k:l:H:u:i:n:c:h")) != -1)
+  while ((opt = getopt(argc, argv, "k:l:H:u:i:n:c:S:T:G:R:" ADMIN_FLAGS "h")) != -1)
     if (opt == 'c')
       config(optarg);
   optind = 1;
-  while ((opt = getopt(argc, argv, "k:l:H:u:i:n:c:h")) != -1) {
+  while ((opt = getopt(argc, argv, "k:l:H:u:i:n:c:S:T:G:R:" ADMIN_FLAGS "h")) != -1) {
     if (opt == 'c')
       continue;
     if (opt == '?')
@@ -429,28 +543,49 @@ int main(int argc, char **argv) {
     char k[2] = {(char)opt, 0};
     option(k, optarg);
   }
-  if (optind != argc || !secret || !*secret ||
-      (!listen_addr && !http_addr && !upstream)) {
+  int relay_http = relay_addr || (relay_token && !secret);
+  int collect = listen_addr || upstream || group_upstream || (http_addr && !relay_http);
+  if (!group_secret) group_secret = secret;
+  if (optind != argc || (!listen_addr && !http_addr && !upstream && !relay_addr && !group_upstream) ||
+      ((listen_addr || upstream || (http_addr && !relay_http)) && (!secret || !*secret)) ||
+      ((relay_addr || relay_http || group_upstream) && (!relay_token || !*relay_token)) ||
+      (group_upstream && (!group_secret || !*group_secret))) {
     usage();
     return 2;
   }
   uint8_t hash[64];
-  crypto_sha512(hash, (const uint8_t *)secret, strlen(secret));
-  memcpy(key, hash, 32);
+  if (secret) {
+    crypto_sha512(hash, (const uint8_t *)secret, strlen(secret));
+    memcpy(key, hash, 32);
+  }
+  if (relay_token) {
+    crypto_sha512(hash, (const uint8_t *)relay_token, strlen(relay_token));
+    memcpy(relay_key, hash, 32);
+  }
+  if (group_upstream) group_init();
+#if ADMIN
+  if (admin_init()) { fprintf(stderr, "invalid admin_keys or missing -l/-R\n"); return 2; }
+  signal(SIGCHLD, admin_sigchld);
+#endif
   crypto_wipe(hash, sizeof(hash));
-  metrics_init(display);
-  if (!display)
-    display = hostname_buf;
-  sample();
+  if (collect) {
+    metrics_init(display);
+    if (!display) display = hostname_buf;
+    sample();
+  }
+#if ADMIN
+  pipe_init();
+#endif
   signal(SIGPIPE, SIG_IGN);
   signal(SIGINT, stop);
   signal(SIGTERM, stop);
-  int listeners[2] = {-1, -1};
+  int listeners[3] = {-1, -1, -1};
   if (listen_addr)
     listeners[0] = endpoint(listen_addr, "0.0.0.0", 1);
   if (http_addr)
     listeners[1] = endpoint(http_addr, "127.0.0.1", 1);
-  if ((listen_addr && listeners[0] < 0) || (http_addr && listeners[1] < 0)) {
+  if (relay_addr) listeners[2] = endpoint(relay_addr, "0.0.0.0", 1);
+  if ((listen_addr && listeners[0] < 0) || (http_addr && listeners[1] < 0) || (relay_addr && listeners[2] < 0)) {
     fprintf(stderr, "cannot listen\n");
     return 1;
   }
@@ -460,23 +595,57 @@ int main(int argc, char **argv) {
     clients[i].fd = -1;
   double next_sample = monotime() + 1, next_push = monotime();
   while (running) {
-    struct pollfd pf[CLIENTS + 2];
-    for (int i = 0; i < 2; i++)
+#if ADMIN
+    pipe_tick(monotime());
+#endif
+    struct pollfd pf[CLIENTS + 3 + ADMIN_POLLS];
+    int count = CLIENTS + 3;
+#if ADMIN
+    int pty_base[CLIENTS];
+#endif
+    for (int i = 0; i < 3; i++)
       pf[i] = (struct pollfd){listeners[i], POLLIN, 0};
-    for (int i = 0; i < CLIENTS; i++)
-      pf[i + 2] =
+    for (int i = 0; i < CLIENTS; i++) {
+      pf[i + 3] =
           (struct pollfd){clients[i].fd, clients[i].out ? POLLOUT : POLLIN, 0};
-    poll(pf, CLIENTS + 2, 100);
+#if ADMIN
+      Admin *a = clients[i].admin;
+      pty_base[i] = count;
+      if (a && !clients[i].out) {
+        pf[i + 3].events = admin_events(a);
+        admin_poll(a, pf + count);
+        count += 4;
+      }
+#endif
+    }
+#if ADMIN
+    int pipe_base = count;
+    count += pipe_poll(pf + count);
+#endif
+    poll(pf, (nfds_t)count, 100);
     double now = monotime();
-    if (now >= next_sample) {
+#if ADMIN
+    admin_tick(now);
+    pipe_io(pf + pipe_base);
+    int accepted;
+    while ((accepted = probe_take()) >= 0) {
+      Client *c = NULL;
+      for (int i = 0; i < CLIENTS; i++) if (clients[i].fd < 0) { c = &clients[i]; break; }
+      if (!c) { close(accepted); continue; }
+      c->fd = accepted; c->pipe_hello = 1; c->want = 4;
+      c->in = calloc(5, 1); c->deadline = monotime() + 5;
+      if (!c->in) discard(c);
+    }
+#endif
+    if (collect && now >= next_sample) {
       sample();
       next_sample = now + 1;
     }
-    if (upstream && now >= next_push) {
+    if ((upstream || group_upstream) && now >= next_push) {
       push();
       next_push = now + interval;
     }
-    for (int i = 0; i < 2; i++)
+    for (int i = 0; i < 3; i++)
       if (pf[i].revents & POLLIN) {
         int fd = accept(listeners[i], NULL, NULL);
         if (fd >= 0) {
@@ -490,10 +659,14 @@ int main(int argc, char **argv) {
             close(fd);
           else {
             fcntl(fd, F_SETFL, O_NONBLOCK);
+#if ADMIN
+            fcntl(fd, F_SETFD, FD_CLOEXEC);
+#endif
             Client *c = &clients[slot];
             c->fd = fd;
-            c->http = i;
-            c->want = i ? 8192 : 4;
+            c->http = i == 1;
+            c->relay = i == 2 || (i == 1 && relay_http);
+            c->want = c->http ? 8192 : 4;
             c->in = calloc(c->want + 1, 1);
             c->deadline = monotime() + 5;
             if (!c->in)
@@ -505,24 +678,37 @@ int main(int argc, char **argv) {
       Client *c = &clients[i];
       if (c->fd < 0)
         continue;
+#if ADMIN
+      if (c->admin && !c->out) {
+        if (admin_io(c->admin, c->fd, pf[i + 3].revents, pf + pty_base[i])) discard(c);
+        continue;
+      }
+#endif
       if (monotime() > c->deadline ||
-          (pf[i + 2].revents & (POLLERR | POLLNVAL))) {
+          (pf[i + 3].revents & (POLLERR | POLLNVAL))) {
         discard(c);
         continue;
       }
       if (c->out) {
-        if (pf[i + 2].revents & POLLOUT) {
+        if (pf[i + 3].revents & POLLOUT) {
           ssize_t n = send(c->fd, c->out + c->sent, c->outlen - c->sent, 0);
           if (n > 0) {
             c->sent += (size_t)n;
-            if (c->sent == c->outlen)
-              discard(c);
+            if (c->sent == c->outlen) {
+#if ADMIN
+              if (c->admin) {
+                free(c->out); c->out = NULL;
+                free(c->in); c->in = NULL;
+              } else
+#endif
+                discard(c);
+            }
           } else if (n == 0 || (errno != EAGAIN && errno != EINTR))
             discard(c);
         }
         continue;
       }
-      if (!(pf[i + 2].revents & (POLLIN | POLLHUP)))
+      if (!(pf[i + 3].revents & (POLLIN | POLLHUP)))
         continue;
       ssize_t n = recv(c->fd, c->in + c->have, c->want - c->have, 0);
       if (n <= 0) {
@@ -541,6 +727,9 @@ int main(int argc, char **argv) {
           continue;
         }
         c->want = len + 32;
+#if ADMIN
+        if (c->pipe_hello) c->want = len + 4;
+#endif
         uint8_t *p = realloc(c->in, c->want + 1);
         if (!p) {
           discard(c);
@@ -549,11 +738,42 @@ int main(int argc, char **argv) {
         c->in = p;
         continue;
       }
-      int ready = c->http ? strstr((char *)c->in, "\r\n\r\n") != NULL
+      if (c->http && c->relay && !c->body) {
+        int result = relay_http_header(c);
+        if (result < 0) { http_not_found(c); continue; }
+        if (!result) continue;
+      }
+      int ready = c->http && !c->relay ? strstr((char *)c->in, "\r\n\r\n") != NULL
                           : c->have == c->want;
       if (ready) {
-        char *s =
-            c->http ? http_response((char *)c->in) : request(c->in, c->have);
+        if (c->http && c->relay) {
+          char *json = request(c->in + c->body, c->have - c->body, 1, NULL);
+          if (!json) { discard(c); continue; }
+          size_t len = 0;
+          uint8_t *body = frame(json, &len, relay_key);
+          free(json);
+          if (!body) { discard(c); continue; }
+          Buffer header = buffer();
+          add(&header, "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n", len);
+          c->outlen = header.n + len;
+          c->out = malloc(c->outlen);
+          if (c->out) { memcpy(c->out, header.s, header.n); memcpy(c->out + header.n, body, len); }
+          free(header.s); free(body);
+          if (!c->out) discard(c);
+          continue;
+        }
+        char *s = NULL;
+#if ADMIN
+        if (c->pipe_hello) {
+          Json j; long long stamp;
+          if (!memchr(c->in + 4, 0, c->have - 4) && !parse(&j, (char *)c->in + 4) && !admin_number(&j, "ts", &stamp))
+            s = admin_hello(&j, stamp, time(NULL), &c->admin, group_secret);
+        } else
+#endif
+          s = c->http ? http_response((char *)c->in) : request(c->in, c->have, c->relay, c);
+#if ADMIN
+        if (c->taken) { c->fd = -1; discard(c); continue; }
+#endif
         if (!s) {
           discard(c);
           continue;
@@ -562,7 +782,14 @@ int main(int argc, char **argv) {
           c->out = (uint8_t *)s;
           c->outlen = strlen(s);
         } else {
-          c->out = frame(s, &c->outlen);
+#if ADMIN
+          if (c->pipe_hello) {
+            size_t len = strlen(s); uint32_t be = htonl((uint32_t)len);
+            c->out = malloc(len + 4); c->outlen = len + 4;
+            if (c->out) { memcpy(c->out, &be, 4); memcpy(c->out + 4, s, len); }
+          } else
+#endif
+          c->out = frame(s, &c->outlen, c->relay ? relay_key : key);
           free(s);
           if (!c->out)
             discard(c);
@@ -574,8 +801,12 @@ int main(int argc, char **argv) {
   for (int i = 0; i < CLIENTS; i++)
     if (clients[i].fd >= 0)
       discard(&clients[i]);
-  for (int i = 0; i < 2; i++)
+  for (int i = 0; i < 3; i++)
     if (listeners[i] >= 0)
       close(listeners[i]);
+#if ADMIN
+  pipe_shutdown();
+  admin_shutdown();
+#endif
   return 0;
 }

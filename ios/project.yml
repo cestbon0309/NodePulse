@@ -8,21 +8,31 @@ settings:
     CODE_SIGNING_ALLOWED: YES
     CODE_SIGN_IDENTITY: "-"
     CODE_SIGNING_REQUIRED: YES
+packages:
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm.git
+    exactVersion: 1.18.0
 targets:
   NodePulse:
     type: application
     platform: iOS
     sources: [NodePulse]
+    dependencies:
+      - package: SwiftTerm
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cestbon.nodepulse
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: 连接局域网中的监控探针，查看节点状态。
+        INFOPLIST_KEY_NSFaceIDUsageDescription: 验证身份后管理探针、打开终端或执行电源操作。
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
   NodePulseTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [NodePulseTests]
+    sources:
+      - NodePulseTests
+      - path: ../probe/tools/e2e-vector.json
+        buildPhase: resources
     dependencies:
       - target: NodePulse
     settings:
@@ -37,3 +47,4 @@ schemes:
       targets: [NodePulseTests]
       environmentVariables:
         NPULSE_E2E: "${NPULSE_E2E}"
+        NPULSE_ADMIN_E2E: "${NPULSE_ADMIN_E2E}"

@@ -13,6 +13,7 @@ struct CompactNodeCard: View {
                         .accessibilityLabel(item.online ? "在线" : "离线")
                 }
                 Text(snapshot.os).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                if item.endToEnd { EndToEndBadge() }
             }
             VStack(spacing: 9) {
                 metric("CPU", value: snapshot.cpuUsage)

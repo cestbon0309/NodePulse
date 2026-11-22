@@ -18,6 +18,7 @@ struct NodeDetail: View {
                         OSBadge(os: s.os).scaleEffect(1.2).padding(8)
                         Text(s.name).font(.largeTitle.bold()).multilineTextAlignment(.center)
                         Text(s.os).font(.subheadline).foregroundStyle(.secondary)
+                        if item.endToEnd { EndToEndBadge() }
                         HStack { OnlineStatus(online: item.online); Text("经由 \(item.endpointName)").font(.caption).foregroundStyle(.secondary) }
                         if let ip = s.ips.first { Button { copy(ip) } label: { Label(ip, systemImage: "doc.on.doc").font(.caption.monospaced()).padding(10).background(.mint.opacity(0.08), in: Capsule()) } }
                     }.frame(maxWidth: .infinity).padding(.vertical, 10)
@@ -26,6 +27,7 @@ struct NodeDetail: View {
                         RingGauge(title: "内存", value: s.memPercent, size: 86)
                         RingGauge(title: "磁盘", value: s.diskTotal > 0 ? s.diskUsed / s.diskTotal * 100 : 0, size: 86)
                     }.pulsePanel()
+                    NodeAdminSection(store: store, node: item)
                     chart(item).pulsePanel()
                     section("系统", symbol: "cpu") {
                         InfoRow(title: "操作系统", value: s.os)

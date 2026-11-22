@@ -5,12 +5,18 @@ protocol SecretStorage {
     func set(_ secret: String, for id: UUID) throws
     func get(_ id: UUID) throws -> String
     func delete(_ id: UUID) throws
+    func setGroup(_ secret: String, for id: UUID) throws
+    func getGroup(_ id: UUID) throws -> String
+    func deleteGroup(_ id: UUID) throws
 }
 
 struct SecretStore: SecretStorage {
+    private var group = false
+    init() {}
+    private init(group: Bool) { self.group = group }
     private func query(_ id: UUID) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
-         kSecAttrService as String: "nodepulse", kSecAttrAccount as String: id.uuidString]
+         kSecAttrService as String: "nodepulse", kSecAttrAccount as String: id.uuidString + (group ? ".group" : "")]
     }
     func set(_ secret: String, for id: UUID) throws {
         let attributes: [String: Any] = [kSecValueData as String: Data(secret.utf8)]
@@ -37,4 +43,7 @@ struct SecretStore: SecretStorage {
         let status = SecItemDelete(query(id) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw ProbeError.keychain(status) }
     }
+    func setGroup(_ secret: String, for id: UUID) throws { try SecretStore(group: true).set(secret, for: id) }
+    func getGroup(_ id: UUID) throws -> String { try SecretStore(group: true).get(id) }
+    func deleteGroup(_ id: UUID) throws { try SecretStore(group: true).delete(id) }
 }

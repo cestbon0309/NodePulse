@@ -1,5 +1,107 @@
 # NodePulse
 
+## 一键安装
+
+在 **root shell** 中执行（普通用户先 `sudo -i`；OpenWrt 默认即 root）：
+
+```sh
+curl -fsSL https://github.com/cestbon0309/NodePulse/releases/latest/download/install.sh | sh
+# 没有 curl：
+wget -qO- https://github.com/cestbon0309/NodePulse/releases/latest/download/install.sh | sh
+# Release 下载不可用时可使用源码入口（仍从 Release 下载并校验二进制）：
+curl -fsSL https://raw.githubusercontent.com/cestbon0309/NodePulse/main/install.sh | sh
+```
+
+交互输入从 `/dev/tty` 读取，管道不会吞掉菜单输入。无终端时必须用 `--yes`。
+首个包含此安装器的 `v*` Release 发布后，上述 latest 安装器地址才可用；不通过
+GitHub API，也不需要 token。下载前请信任所执行的脚本；二进制安装前校验
+同一 Release 的 `SHA256SUMS`（包括 14 个 full/lite 二进制与 install.sh）。
+校验清单保证传输完整性，不代替发布者签名；自定义镜像能替换文件及清单，必须可信。
+
+菜单支持直连、HTTP+Nginx、旧式上报、端到端共享中继上报、纯共享中继。
+模式 2/3/4 可选择「同时作为旧式中继」以增加 `-l`；模式 1 本身即可接收旧式上报。
+纯共享中继可以额外开启回环 HTTP `/api/relay`。HTTP 模式打印域名/证书待替换的
+Nginx 示例，不自动安装 Nginx/certbot，不修改防火墙；摘要说明应开放的端口。
+上报到已有服务时，务必填写匹配的令牌/密钥；留空默认生成新的 32 字符随机值。
+
+安装到 `/usr/local/bin/npulse`（OpenWrt 为 `/usr/bin/npulse`），配置位于
+`/etc/npulse/npulse.conf`，目录 0700、文件 0600。systemd 需 247+，使用
+LoadCredential 将配置提供给 DynamicUser，默认硬化且 Restart=always；管理启用后
+必须使用 full，服务改为 root 并解除文件/能力限制，**授权设备拥有整机控制权**。
+OpenWrt procd 使用 respawn，以 root 运行。MIPS/MIPSEL 或目标磁盘空闲不足 16MiB
+时默认 lite；lite 也不能转发 C2 管理管道，纯中继若需远程管理请选 full。
+ARM 浮点 ABI 无法自动检测时会询问；无交互时须指定 `--arch` 或 NPULSE_ARM_FLOAT。
+
+非交互示例（仅在本机可信环境中设置真实密钥；摘要会显示密钥，不要公开日志）：
+
+```sh
+curl -fsSL https://github.com/cestbon0309/NodePulse/releases/latest/download/install.sh -o install.sh
+NPULSE_SECRET='替换为安全密钥' sh install.sh --yes --mode 1 --port 9000 --lite
+# 共享中继上报；管理密钥来自 App「设置 → 管理密钥」：
+NPULSE_TOKEN='与中继一致的令牌' NPULSE_GROUP_SECRET='本组共享密钥' \
+  sh install.sh --yes --mode 4 --upstream relay.example.com:9000 --full \
+  --admin-keys '替换为64位Ed25519公钥'
+# 新机器部署纯中继（没有组密钥）；可通过 Nginx 转发回环 HTTP：
+NPULSE_TOKEN='安全令牌' sh install.sh --yes --mode 5 --full --http-port 9001
+
+sh install.sh status
+sh install.sh upgrade --yes       # 保持配置、权限、full/lite 和架构，替换并重启
+NPULSE_VERSION=v1.0.0 sh install.sh upgrade --yes
+sh install.sh uninstall           # 删除配置前询问；--yes 默认仍保留配置
+sh install.sh uninstall --yes --purge
+sh install.sh --help              # 全部环境变量与选项
+```
+
+`NPULSE_VERSION=vX.Y.Z` 指定版本；`NPULSE_MIRROR=https://可信主机/目录` 覆盖整个资产
+下载目录，该目录直接包含稳定文件名及 SHA256SUMS，而不是 GitHub API 地址。
+默认拒绝 HTTP 镜像；仅可信隔离测试可显式使用 `NPULSE_INSECURE=1`，安装器会警告中间人替换风险。
+卸载后保留的配置不被重新安装覆盖，请先备份，再明确删除后安装。
+测试可用已存在的绝对 `DESTDIR` 目录加 `DRY_RUN=1 NPULSE_INIT=systemd|procd`，
+不会运行 Linux 二进制或调用真实服务管理器，但仍实际下载、校验和生成文件。
+
+Tag `v*` 工作流会构建全部七架构的 full/lite，并附加稳定名称
+`npulse-linux-<arch>` / `npulse-linux-<arch>-lite`、`SHA256SUMS` 和 `install.sh`。
+
+## 远程管理（C1 直连 / C2 共享中继实时管道）
+
+默认构建包含管理功能，但**默认关闭**。只有显式配置 `-A 公钥[,公钥...]`
+（配置键 `admin_keys`，需要 `-l` 或 `-R`）才允许独立 Ed25519 管理密钥开启会话。
+持有普通探针密钥只能监控；管理会话使用临时 X25519 + 独立双向 AEAD 密钥。
+支持文件管理、交互 PTY 和重启/关机；权限等同探针运行用户，真实电源操作需要 root。
+现有 DynamicUser systemd 示例刻意保留低权限，不能用于 root 文件/电源管理；
+不要为了管理功能直接取消系统加固，而应单独评估部署用户和授权范围。
+
+`probe/build.sh` 为每种架构生成完整版及 `-lite` 版；`make ADMIN=0` 完全排除管理代码，
+适合体积优先的设备。Lite 保留原有监控及端到端共享中继。完整版新增系统功能会更大。
+C2 支持 `-R -A` 探针通过共享中继保持控制连接并自动重连，不需要开放探针入站端口。
+Python 客户端使用 `--relay host:port --token T --group S --node ID --key 私钥文件`。
+端到端管理握手之后使用 C1 会话加密，中继仅做有界、非阻塞字节转发；
+握手公开元数据会暴露节点 ID 和管理公钥，但不会暴露终端或文件内容。
+Lite 不包含实时管道功能。HTTP/HTTPS 接入点与旧中继不支持远程管理。
+
+### iOS 管理
+
+在「设置 → 管理密钥」生成设备独立的 Ed25519 密钥，将显示的 `-A <公钥>`
+或 `admin_keys=<公钥>` 复制到探针配置后重启探针。私钥保存在本机 Keychain
+（仅设备解锁时可用、不随备份迁移），不会上传到中继。重新生成不会自动撤销旧公钥：
+请先更新每台探针的 allowlist，并移除旧公钥。
+
+直连 TCP / 共享中继 TCP 节点详情中的「管理」提供终端、文件、重启和关机。
+默认要求设备身份验证（Face ID / Touch ID，不可用时回退设备密码；模拟器和没有设备密码时跳过）；
+可在密钥设置关闭。电源操作先确认、再验证身份，只有 root 探针可以执行。
+终端使用 SwiftTerm，提供 Esc/Tab、一次性 Ctrl、方向键和常用符号，退出后可重新连接；
+文件管理从用户 home 开始，支持目录、重命名、递归删除及分块上传/下载。
+上传不覆盖现有文件，取消发送 `put_abort`；会话断开也会清理未完成上传。
+下载完成弹出系统分享面板，可选择「存储到文件」。App 进入后台会关闭管理会话，
+不会提供后台传输或保活终端。终端不自动开放远程剪贴板访问或打开远程链接。
+
+管理会话不能通过 HTTPS 接入点建立。若探针未配置 `-A`，监控仍可使用，
+但管理握手会被静默拒绝，界面提示检查公钥、密钥与探针时间。
+
+协议、完整命令及安全/测试说明见 [docs/admin-protocol.md](docs/admin-protocol.md)。
+Python 客户端 `probe/tools/npulse-admin.py` 提供 `keygen/info/ls/stat/get/put/rm/mkdir/mv/shell/power`。
+**power 命令会真实重启或关机；不要在生产机器上作为测试运行。**
+
 ## Linux / OpenWrt 部署
 
 以下命令在仓库根目录执行。先运行 `probe/build.sh`，或下载 CI / Release 的静态二进制；
@@ -106,12 +208,14 @@ OpenWrt 使用同样的配置键，编辑后运行 `/etc/init.d/npulse restart`�
 `.github/workflows/probe.yml` 使用 Zig 0.17.1，运行真实 Linux 原生集成测试及
 aarch64、armv7（硬/软浮点）、mips、mipsel 的 QEMU 加密 get 测试，并输出指标断言和快照。
 QEMU 用户态测试共用宿主的 /proc 与网络，验证的是目标 ELF/系统调用/协议，不替代真实设备测试。
+大端 MIPS 使用校验固定源码的 QEMU 11.1，避免旧版模拟器的 musl `getifaddrs`/netlink 挂起问题。
 工作流上传 `npulse-linux` artifact；推送 `v*` 标签才会创建/更新 Release 并附加验证后的二进制。
 `.github/workflows/ios.yml` 动态选择 iOS 17+ iPhone 模拟器，使用 ad-hoc 签名运行 XCTest（含真实 Keychain）。
 
 ## iOS app core
 
-Requires Xcode and XcodeGen, no third-party packages. Generate the project with
+Requires Xcode and XcodeGen; SwiftTerm is pinned to stable 1.18.0 via SPM
+(no build-plugin approval required). Generate the project with
 `cd ios && xcodegen`, then open `NodePulse.xcodeproj`. The generated project is
 ignored; `project.yml` is the source of truth. Minimum iOS 17, Swift 5 mode.
 Simulator builds use local ad-hoc signing (`CODE_SIGN_IDENTITY=-`) so Keychain
@@ -153,7 +257,7 @@ unused algorithms are removed by LTO and section garbage collection.
 ```
 cd probe
 make CC=musl-gcc                  # native Linux static build
-./build.sh                       # Zig cross-builds all seven variants
+./build.sh                       # Zig cross-builds seven architectures, full + lite
 make host-test                   # macOS network/crypto test binary npulse-host
 ```
 
@@ -165,6 +269,99 @@ O32 ABI (`musleabi` in current Zig). All use static musl, `-Os`, LTO,
 function/data sections, linker garbage collection and stripping. Build failures
 and warnings are errors. `make` supports `CC`, `CFLAGS`, and `LDFLAGS` overrides.
 
+## 共享中继（端到端加密）
+
+共享中继只保存、转发不透明密文，不需要组密钥，也不采集自身指标。
+每个组使用独立的高熵组密钥；同组成员互信，可以解密或发布本组节点。
+`TOKEN` 只控制中继访问，不提供节点身份隔离，也不能代替组密钥。
+中继可见组公钥 `gid`、匿名槽位及其数量、密文大小与通信时间；无法读取或
+伪造节点内容，但可拒绝服务、隐藏节点或重放旧密文。接收端须检查密文内已认证的
+快照 `ts`，并结合 `age` 提示陈旧状态；`age` 本身由中继提供，并非端到端可信。
+协议没有前向保密，也没有口令拉伸，请使用随机长密钥并限制 TOKEN 的分发。
+
+### 部署纯中继
+
+```sh
+sudo install -m 0755 probe/dist/npulse-linux-x86_64 /usr/local/bin/npulse
+sudo install -m 0600 probe/deploy/npulse-relay.conf /etc/npulse-relay.conf
+sudo install -m 0644 probe/deploy/npulse-relay.service /etc/systemd/system/
+sudoedit /etc/npulse-relay.conf  # 替换 token；不要放入组密钥
+sudo systemctl daemon-reload
+sudo systemctl enable --now npulse-relay
+sudo ufw allow 9010/tcp  # 探针 gpush 的加密 TCP 端口；仅 HTTPS 访问时可不开放
+```
+
+等价命令：`npulse -S 0.0.0.0:9010 -T TOKEN -H 127.0.0.1:9011`。
+HTTP 端口不应对公网开放。Nginx 示例中的精确匹配 `location = /api/relay`
+代理到 9011，按已有证书配置部署并开放 `443/tcp`。
+仅 HTTP 中继可运行 `npulse -H 127.0.0.1:9011 -T TOKEN`（不带 `-k`）。
+`-S` 存在时，`-H` 提供中继 API；普通探针的 `-H` 仍提供 `/api/nodes`。
+纯中继的启动和循环都跳过指标初始化及 `/proc` 采样。
+
+### 发布节点与读取分组
+
+在每台受监控主机上运行（同组使用同一 GROUP_SECRET）：
+
+```sh
+npulse -R relay.example.com:9010 -T TOKEN -G GROUP_SECRET -i 5 -n router
+# 可同时保留本机直连、旧式中继或 HTTP；省略 -G 时采用 -k 的值：
+npulse -k GROUP_SECRET -R relay.example.com:9010 -T TOKEN -l 9000 -n server
+```
+
+发布端只需允许出站 TCP 9010，无需开放入站端口（启用 `-l` 时另行开放 9000）。
+对应配置键为 `relay_upstream`、`token`、`group_secret`、`interval`、`name`。
+
+```sh
+python3 -m pip install cryptography
+python3 probe/tools/npulse-cli.py relay.example.com 9010 -T TOKEN -G GROUP_SECRET gget
+python3 probe/tools/npulse-cli.py relay.example.com 9010 -T TOKEN -G GROUP_SECRET gget --raw
+python3 probe/tools/npulse-cli.py relay.example.com 9010 -T TOKEN -G GROUP_SECRET gpush --node snapshot.json
+```
+
+默认 `gget` 解密并检查快照 id 的槽位派生，输出节点、`age` 和槽位；`--raw`
+只输出不透明槽位。iOS 可选择「中继服务器（TCP）」或「中继服务器（HTTPS）」；
+分别填写中继令牌和组密钥，二者作为独立钥匙串项目保存。HTTPS 使用 `/api/relay`。
+组密钥生成按钮生成 32 字符随机密钥，并复制到仅本机、两分钟后过期的剪贴板。
+节点的「端到端」徽章表示来自分组中继；接入点列表会报告忽略的无效密文数量。
+新鲜度主要依据 `age > max(30秒, 4×观察到的采样间隔)`；同时将快照时间与手机时间
+相差超过十分钟的节点标为离线，防范中继伪造 age 后重放很旧的数据。
+
+### 协议与边界
+
+所有字符串按 UTF-8 编码。`enc_key = SHA512("npulse-e2e-enc:" || S)[0:32]`；
+Ed25519 种子为 `SHA512("npulse-e2e-sign:" || S)[0:32]`，使用 RFC 8032，
+`gid` 为其 32 字节公钥的小写十六进制。
+`slot = hex(SHA512("npulse-e2e-slot:" || enc_key || node_id)[0:16])`。
+`blob = base64(nonce12 || ChaChaPoly(enc_key, snapshot, AD=gid+":"+slot).ciphertext || tag16)`。
+中继外层沿用现有帧，密钥为 `SHA512(TOKEN)[0:32]`，密文上限 262144 字节，
+整帧多 32 字节；无 magic。每个连接一问一答。
+
+`gpush` 字段为 `op,ts,rid,gid,slot,blob,sig`，签名消息为
+`"npulse-gpush\n{gid}\n{slot}\n{ts}\n{rid}\n{blob}"`；
+`gget` 字段为 `op,ts,rid,gid,sig`，签名消息为
+`"npulse-gget\n{gid}\n{ts}\n{rid}"`，均无末尾换行。
+`rid` 为随机 16 字节的小写 hex，`sig` 为 64 字节签名的 128 字符小写 hex。
+响应回显 `rid`；get 额外返回 `blobs:[{slot,blob,age}]`，push 仅返回 `ok:true,rid`。
+时间戳必须在 ±120 秒内；维护最近 256 个外层 nonce 和最近 256 个已验证的
+`(gid,rid)`，缓存窗口 240 秒。签名、格式、容量、令牌或认证失败均静默关闭。
+
+最多 256 组，每组 32 个槽位，十分钟后过期并按需清理，容量满时拒绝新增，
+已有槽位仍可更新。单个 base64 blob 上限 **7168 字节**。
+已有快照上限为 3840 字节（16 个 IP 及有界字符串），封装成 blob 最多
+`4×ceil((3840+28)/3) = 5160` 字节，留有 2008 字节余量。
+编译期同时断言快照封装预算和 `32×(7168+128)+256 < 262144` 的响应预算。
+纯中继不会解密 blob；通过验证的恶意组成员仍能在本组发布任意密文。
+
+HTTP 使用 `POST /api/relay`，Content-Type 为 `application/octet-stream`，
+Content-Length 必填且不超过 262176；body 为一整帧，成功返回 200 和响应帧。
+支持 HTTP/1.0、1.1，不接受 chunked、重复 Content-Length 或其他路由；
+HTTP 格式/路由错误返回空 404，外层加密或签名错误仍静默关闭。
+
+固定跨语言向量：`probe/tools/e2e-vector.json`（测试用组密钥、TOKEN、种子、派生密钥、
+gid、slot、固定 nonce/blob 和 push/get 消息签名）。向量由独立 Node crypto 生成，
+Python cryptography 与 C Monocypher 测试逐字节核对，供 CryptoKit 测试直接作为资源复用。
+运行 `python3 probe/tools/test-probe.py probe/npulse-host` 会连同分组集成测试一起执行。
+
 ## Run
 
 ```
@@ -173,14 +370,17 @@ npulse -k 'shared-secret' -u upstream.example:9000 -i 5 -n satellite
 npulse -c /etc/npulse.conf
 ```
 
-`-k` is required. `-l [addr:]port` is the encrypted direct listener (default
+`-k` is required for normal direct/HTTP/upstream modes, not for pure shared
+relays or `-R` with an explicit `-G`. `-l [addr:]port` is the encrypted direct listener (default
 address `0.0.0.0`). `-H [addr:]port` is plain HTTP (default `127.0.0.1`), intended
 **only behind a TLS reverse proxy**. `-u host:port` pushes upstream every `-i`
 seconds (default 5); all three modes may be combined. IPv6 endpoints use
 `[address]:port`. `-n` defaults to hostname. `-h` prints usage. At least one
 listener or upstream is required. Config is unquoted `key=value`, with blank
 lines and `#` comment lines; keys are `secret`, `listen`, `http`, `upstream`,
-`interval`, `name`. CLI values override configuration regardless of order.
+`interval`, `name`, `relay_listen` (`-S`), `token` (`-T`), `group_secret` (`-G`),
+`relay_upstream` (`-R`); single-letter flag names are also accepted as keys.
+CLI values override configuration regardless of order.
 Protect the config file and command-line secret from other local users.
 
 Direct requests are IETF ChaCha20-Poly1305 frames:

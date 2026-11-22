@@ -3,3 +3,5 @@
 /probe/npulse-host
 __pycache__/
 .venv/
+/ios/*.xcodeproj/
+/ios/build/

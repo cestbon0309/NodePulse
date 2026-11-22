@@ -1,5 +1,33 @@
 # NodePulse
 
+## iOS app core
+
+Requires Xcode and XcodeGen, no third-party packages. Generate the project with
+`cd ios && xcodegen`, then open `NodePulse.xcodeproj`. The generated project is
+ignored; `project.yml` is the source of truth. Minimum iOS 17, Swift 5 mode.
+Simulator builds disable signing. Run tests with:
+
+```
+cd ios
+xcodegen
+xcodebuild test -scheme NodePulse -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5'
+```
+
+For the live client test, run the host probe with `-k integration-secret
+-l 127.0.0.1:19090 -H 127.0.0.1:19091` and set `NPULSE_E2E=1` for both
+`xcodegen` and `xcodebuild test`. Unsigned simulator apps cannot access Keychain
+on this Xcode/runtime (`-34018`); the Security integration test explicitly skips
+in that case. Store CRUD uses an injected in-memory secret store in tests;
+production always defaults to Keychain. Sign the app to verify real Keychain CRUD.
+
+Endpoints and preferences are stored in UserDefaults; secrets only in Keychain
+(service `nodepulse`, account endpoint UUID). Direct uses CryptoKit IETF
+ChaChaPoly framing. HTTP permits insecure transport only to localhost/127.0.0.1
+for development. Redirects are rejected to avoid forwarding bearer secrets.
+The placeholder list supports demo mode; endpoint forms come in the UI step.
+The probe does not transmit its configured interval, so relay freshness uses a
+5-second initial estimate, then the observed snapshot timestamp cadence.
+
 `probe/npulse` is a small, single-process Linux monitoring probe. Version 0.1.0.
 No threads or runtime libraries beyond libc; cryptography is vendored Monocypher
 4.0.2 from <https://monocypher.org/download/monocypher-4.0.2.tar.gz>.

@@ -39,15 +39,23 @@ jobs:
           NPULSE_ASSERT_LINUX: '1'
         run: python probe/tools/test-probe.py probe/dist/npulse-linux-x86_64
       - name: Install QEMU user emulation
-        run: sudo apt-get update && sudo apt-get install -y qemu-user shellcheck busybox
+        run: sudo apt-get update && sudo apt-get install -y qemu-user shellcheck busybox ninja-build libglib2.0-dev python3-venv
+      - name: Build QEMU 11.1 MIPS with big-endian getifaddrs fix
+        run: |
+          curl -fsSL https://download.qemu.org/qemu-11.1.0.tar.xz -o "$RUNNER_TEMP/qemu.tar.xz"
+          echo "6ee1d1a61f68212476b27108c26da5f449dc09b626d42f8279ba0dc2e08fa858  $RUNNER_TEMP/qemu.tar.xz" | sha256sum -c -
+          mkdir "$RUNNER_TEMP/qemu-source" "$RUNNER_TEMP/qemu-build"
+          tar -xf "$RUNNER_TEMP/qemu.tar.xz" --strip-components=1 -C "$RUNNER_TEMP/qemu-source"
+          cd "$RUNNER_TEMP/qemu-build"
+          ../qemu-source/configure --target-list=mips-linux-user --disable-system --disable-docs --disable-tools --disable-guest-agent --disable-plugins
+          ninja -j2 qemu-mips
+          echo "$RUNNER_TEMP/qemu-build" >> "$GITHUB_PATH"
       - name: POSIX and BusyBox installer lifecycle
         run: |
           shellcheck -s sh install.sh
           python probe/tools/test-installer.py /bin/dash
           python probe/tools/test-installer.py busybox sh
       - name: QEMU encrypted get and real proc metrics
-        env:
-          QEMU_STRACE: '1'
         run: |
           for pair in aarch64:aarch64 armv7:arm armv7-soft:arm mips:mips mipsel:mipsel; do
             arch=${pair%%:*}

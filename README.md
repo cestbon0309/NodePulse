@@ -208,6 +208,7 @@ OpenWrt 使用同样的配置键，编辑后运行 `/etc/init.d/npulse restart`�
 `.github/workflows/probe.yml` 使用 Zig 0.17.1，运行真实 Linux 原生集成测试及
 aarch64、armv7（硬/软浮点）、mips、mipsel 的 QEMU 加密 get 测试，并输出指标断言和快照。
 QEMU 用户态测试共用宿主的 /proc 与网络，验证的是目标 ELF/系统调用/协议，不替代真实设备测试。
+大端 MIPS 使用校验固定源码的 QEMU 11.1，避免旧版模拟器的 musl `getifaddrs`/netlink 挂起问题。
 工作流上传 `npulse-linux` artifact；推送 `v*` 标签才会创建/更新 Release 并附加验证后的二进制。
 `.github/workflows/ios.yml` 动态选择 iOS 17+ iPhone 模拟器，使用 ad-hoc 签名运行 XCTest（含真实 Keychain）。
 

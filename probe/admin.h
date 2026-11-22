@@ -53,7 +53,7 @@ struct Admin {
 static void admin_sigchld(int sig) { (void)sig; }
 static int admin_init(void) {
   if (!admin_keys_text) return 0;
-  if (!listen_addr || !*admin_keys_text) return -1;
+  if ((!listen_addr && !group_upstream) || !*admin_keys_text) return -1;
   const char *p = admin_keys_text;
   do {
     size_t n = strcspn(p, ",");
@@ -145,13 +145,14 @@ static uint8_t *admin_unbase64(const char *s, size_t *size, size_t max) {
 bad:
   free(out); return NULL;
 }
-static char *admin_hello(Json *j, long long stamp, time_t now, Admin **session) {
+static char *admin_hello(Json *j, long long stamp, time_t now, Admin **session, const char *identity_secret) {
   char *node = string(j, field(j, 0, "node")), *rid = string(j, field(j, 0, "rid"));
   char *epk = string(j, field(j, 0, "epk")), *apk = string(j, field(j, 0, "apk"));
   char *sig = string(j, field(j, 0, "sig")), *result = NULL;
   uint8_t pub[32], eph[32], signature[64], rid_bytes[16], sk[32] = {0}, shared[32] = {0}, k[64] = {0};
   long long version;
-  if (!admin_key_count || admin_number(j, "v", &version) || version != 1 || !node || strcmp(node, node_id) ||
+  if (!admin_key_count || !eq(j, field(j, 0, "op"), "admin") || stamp < (long long)now - 120 || stamp > (long long)now + 120 ||
+      admin_number(j, "v", &version) || version != 1 || !node || strcmp(node, node_id) ||
       hex_decode(pub, apk, 32) || hex_decode(eph, epk, 32) || hex_decode(signature, sig, 64) || hex_decode(rid_bytes, rid, 16)) goto done;
   int allowed = 0, vacant = -1;
   for (int i = 0; i < admin_key_count; i++) allowed |= crypto_verify32(pub, admin_keys[i]) == 0;
@@ -188,7 +189,7 @@ static char *admin_hello(Json *j, long long stamp, time_t now, Admin **session) 
   snprintf(a->who, sizeof(a->who), "%s", apk);
   char epk_p[65], mac_hex[65]; uint8_t id_key[32], mac[64];
   hex_encode(epk_p, probe_pub, 32);
-  group_hash(id_key, "npulse-admin-id:", (const uint8_t *)secret, strlen(secret));
+  group_hash(id_key, "npulse-admin-id:", (const uint8_t *)identity_secret, strlen(identity_secret));
   message = buffer();
   add(&message, "npulse-admin-ack\n%s\n%s\n%s", rid, epk, epk_p);
   crypto_sha512_hmac(mac, id_key, 32, (const uint8_t *)message.s, message.n);

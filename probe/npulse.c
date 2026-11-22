@@ -56,7 +56,7 @@ static int random_bytes(void *p, size_t n) {
   close(f);
   return 0;
 }
-static int endpoint(const char *s, const char *def, int server) {
+static int endpoint_addresses(const char *s, const char *def, int server, struct addrinfo **addresses) {
   char host[256], port[16];
   const char *p = strrchr(s, ':');
   if (*s == '[') {
@@ -83,9 +83,15 @@ static int endpoint(const char *s, const char *def, int server) {
   struct addrinfo hints = {0}, *res = NULL;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_family = AF_UNSPEC;
-  hints.ai_flags = server ? AI_PASSIVE : 0;
+  hints.ai_flags = server > 0 ? AI_PASSIVE : 0;
   if (getaddrinfo(*host ? host : NULL, port, &hints, &res))
     return -1;
+  *addresses = res;
+  return 0;
+}
+static int endpoint(const char *s, const char *def, int server) {
+  struct addrinfo *res = NULL;
+  if (endpoint_addresses(s, def, server, &res)) return -1;
   int fd = -1;
   for (struct addrinfo *a = res; a; a = a->ai_next) {
     fd = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
@@ -97,7 +103,7 @@ static int endpoint(const char *s, const char *def, int server) {
     fcntl(fd, F_SETFL, O_NONBLOCK);
     int one = 1;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-    if (server) {
+    if (server > 0) {
       if (!bind(fd, a->ai_addr, a->ai_addrlen) && !listen(fd, 32))
         break;
     } else {
@@ -140,9 +146,36 @@ static uint8_t *frame(const char *s, size_t *size, const uint8_t transport_key[3
   return p;
 }
 typedef struct Admin Admin;
+static char *unframe(const uint8_t *p, size_t total, const uint8_t transport_key[32]) {
+  if (total < 32) return NULL;
+  uint32_t be; memcpy(&be, p, 4); size_t n = ntohl(be);
+  if (!n || n > MAX_FRAME || total != n + 32) return NULL;
+  char *plain = malloc(n + 1);
+  if (!plain) return NULL;
+  crypto_aead_ctx ctx; crypto_aead_init_ietf(&ctx, transport_key, p + 4);
+  int bad = crypto_aead_read(&ctx, (uint8_t *)plain, p + n + 16, p, 4, p + 16, n);
+  crypto_wipe(&ctx, sizeof(ctx));
+  if (bad || memchr(plain, 0, n)) { crypto_wipe(plain, n); free(plain); return NULL; }
+  plain[n] = 0;
+  return plain;
+}
 #if ADMIN
 #include "admin.h"
+#include "pipe.h"
+#define ADMIN_POLLS (CLIENTS * 4 + PIPE_SOCKETS + PIPE_PROBES)
+#else
+#define ADMIN_POLLS 0
 #endif
+typedef struct {
+  int fd, http, relay;
+  uint8_t *in, *out;
+  size_t have, want, sent, outlen, body;
+  double deadline;
+#if ADMIN
+  Admin *admin;
+  int taken, pipe_hello;
+#endif
+} Client;
 static char *nodes_json(const char *rid) {
   Buffer b = buffer();
   add(&b, "{\"ok\":true,");
@@ -175,29 +208,13 @@ static char *nodes_json(const char *rid) {
   add(&b, "]}");
   return b.s;
 }
-static char *request(uint8_t *p, size_t total, int relay, Admin **session) {
+static char *request(uint8_t *p, size_t total, int relay, Client *client) {
 #if !ADMIN
-  (void)session;
+  (void)client;
 #endif
-  if (total < 32) return NULL;
-  uint32_t be;
-  memcpy(&be, p, 4);
-  size_t n = ntohl(be);
-  if (!n || n > MAX_FRAME || total != n + 32)
-    return NULL;
-  char *plain = malloc(n + 1);
-  if (!plain)
-    return NULL;
-  crypto_aead_ctx ctx;
-  crypto_aead_init_ietf(&ctx, relay ? relay_key : key, p + 4);
-  int bad =
-      crypto_aead_read(&ctx, (uint8_t *)plain, p + n + 16, p, 4, p + 16, n);
-  crypto_wipe(&ctx, sizeof(ctx));
-  if (bad) {
-    free(plain);
-    return NULL;
-  }
-  plain[n] = 0;
+  char *plain = unframe(p, total, relay ? relay_key : key);
+  if (!plain) return NULL;
+  size_t n = strlen(plain);
   Json j;
   char *response = NULL;
   if (memchr(plain, 0, n) || parse(&j, plain))
@@ -219,12 +236,18 @@ static char *request(uint8_t *p, size_t total, int relay, Admin **session) {
   nonce_seen[nonce_pos] = now;
   nonce_pos = (nonce_pos + 1) % 256;
   if (relay) {
+#if ADMIN
+    if (client) {
+      int result = pipe_request(&j, stamp, now, client->fd, &response);
+      if (result >= 0) { client->taken = result; goto done; }
+    }
+#endif
     response = group_request(&j, stamp, now);
     goto done;
   }
 #if ADMIN
   if (eq(&j, op, "admin")) {
-    if (session) response = admin_hello(&j, stamp, now, session);
+    if (client) response = admin_hello(&j, stamp, now, &client->admin, secret);
     goto done;
   }
 #endif
@@ -339,15 +362,6 @@ static char *http_response(char *s) {
             "close\r\n\r\n");
   return b.s;
 }
-typedef struct {
-  int fd, http, relay;
-  uint8_t *in, *out;
-  size_t have, want, sent, outlen, body;
-  double deadline;
-#if ADMIN
-  Admin *admin;
-#endif
-} Client;
 static void discard(Client *c) {
 #if ADMIN
   if (c->admin) admin_free(c->admin);
@@ -507,7 +521,7 @@ static void usage(void) {
        "HTTP-only relay: -H [addr:]port -T TOKEN (without -k).\n"
        "Config keys: relay_listen, token, group_secret, relay_upstream (or S/T/G/R).");
 #if ADMIN
-  puts("Direct admin (disabled by default): -A ED25519_PUBKEY[,PUBKEY...] (requires -l).\nConfig key: admin_keys. Session idle timeout: 600 seconds.");
+  puts("Admin (disabled by default): -A ED25519_PUBKEY[,PUBKEY...] (requires -l or -R).\nConfig key: admin_keys. Session idle timeout: 600 seconds.");
 #endif
 }
 int main(int argc, char **argv) {
@@ -550,7 +564,7 @@ int main(int argc, char **argv) {
   }
   if (group_upstream) group_init();
 #if ADMIN
-  if (admin_init()) { fprintf(stderr, "invalid admin_keys or missing -l\n"); return 2; }
+  if (admin_init()) { fprintf(stderr, "invalid admin_keys or missing -l/-R\n"); return 2; }
   signal(SIGCHLD, admin_sigchld);
 #endif
   crypto_wipe(hash, sizeof(hash));
@@ -559,6 +573,9 @@ int main(int argc, char **argv) {
     if (!display) display = hostname_buf;
     sample();
   }
+#if ADMIN
+  pipe_init();
+#endif
   signal(SIGPIPE, SIG_IGN);
   signal(SIGINT, stop);
   signal(SIGTERM, stop);
@@ -578,7 +595,10 @@ int main(int argc, char **argv) {
     clients[i].fd = -1;
   double next_sample = monotime() + 1, next_push = monotime();
   while (running) {
-    struct pollfd pf[CLIENTS + 3 + (ADMIN ? CLIENTS * 4 : 0)];
+#if ADMIN
+    pipe_tick(monotime());
+#endif
+    struct pollfd pf[CLIENTS + 3 + ADMIN_POLLS];
     int count = CLIENTS + 3;
 #if ADMIN
     int pty_base[CLIENTS];
@@ -598,10 +618,24 @@ int main(int argc, char **argv) {
       }
 #endif
     }
+#if ADMIN
+    int pipe_base = count;
+    count += pipe_poll(pf + count);
+#endif
     poll(pf, (nfds_t)count, 100);
     double now = monotime();
 #if ADMIN
     admin_tick(now);
+    pipe_io(pf + pipe_base);
+    int accepted;
+    while ((accepted = probe_take()) >= 0) {
+      Client *c = NULL;
+      for (int i = 0; i < CLIENTS; i++) if (clients[i].fd < 0) { c = &clients[i]; break; }
+      if (!c) { close(accepted); continue; }
+      c->fd = accepted; c->pipe_hello = 1; c->want = 4;
+      c->in = calloc(5, 1); c->deadline = monotime() + 5;
+      if (!c->in) discard(c);
+    }
 #endif
     if (collect && now >= next_sample) {
       sample();
@@ -693,6 +727,9 @@ int main(int argc, char **argv) {
           continue;
         }
         c->want = len + 32;
+#if ADMIN
+        if (c->pipe_hello) c->want = len + 4;
+#endif
         uint8_t *p = realloc(c->in, c->want + 1);
         if (!p) {
           discard(c);
@@ -725,12 +762,18 @@ int main(int argc, char **argv) {
           if (!c->out) discard(c);
           continue;
         }
-        Admin **session = NULL;
+        char *s = NULL;
 #if ADMIN
-        if (!c->http && !c->relay) session = &c->admin;
+        if (c->pipe_hello) {
+          Json j; long long stamp;
+          if (!memchr(c->in + 4, 0, c->have - 4) && !parse(&j, (char *)c->in + 4) && !admin_number(&j, "ts", &stamp))
+            s = admin_hello(&j, stamp, time(NULL), &c->admin, group_secret);
+        } else
 #endif
-        char *s =
-            c->http ? http_response((char *)c->in) : request(c->in, c->have, c->relay, session);
+          s = c->http ? http_response((char *)c->in) : request(c->in, c->have, c->relay, c);
+#if ADMIN
+        if (c->taken) { c->fd = -1; discard(c); continue; }
+#endif
         if (!s) {
           discard(c);
           continue;
@@ -739,6 +782,13 @@ int main(int argc, char **argv) {
           c->out = (uint8_t *)s;
           c->outlen = strlen(s);
         } else {
+#if ADMIN
+          if (c->pipe_hello) {
+            size_t len = strlen(s); uint32_t be = htonl((uint32_t)len);
+            c->out = malloc(len + 4); c->outlen = len + 4;
+            if (c->out) { memcpy(c->out, &be, 4); memcpy(c->out + 4, s, len); }
+          } else
+#endif
           c->out = frame(s, &c->outlen, c->relay ? relay_key : key);
           free(s);
           if (!c->out)
@@ -755,6 +805,7 @@ int main(int argc, char **argv) {
     if (listeners[i] >= 0)
       close(listeners[i]);
 #if ADMIN
+  pipe_shutdown();
   admin_shutdown();
 #endif
   return 0;

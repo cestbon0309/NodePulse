@@ -103,6 +103,16 @@ static void group_expire(time_t now) {
     if (!live) groups[i].gid[0] = 0;
   }
 }
+static int group_replay(const char *gid, const char *rid, time_t now) {
+  for (int i = 0; i < 256; i++)
+    if (group_rids[i].seen && now - group_rids[i].seen <= 240 &&
+        !strcmp(group_rids[i].gid, gid) && !strcmp(group_rids[i].rid, rid)) return -1;
+  snprintf(group_rids[group_rid_pos].gid, 65, "%s", gid);
+  snprintf(group_rids[group_rid_pos].rid, 33, "%s", rid);
+  group_rids[group_rid_pos].seen = now;
+  group_rid_pos = (group_rid_pos + 1) % 256;
+  return 0;
+}
 static char *group_request(Json *j, long long stamp, time_t now) {
   char *gid = string(j, field(j, 0, "gid"));
   char *rid = string(j, field(j, 0, "rid"));
@@ -125,13 +135,7 @@ static char *group_request(Json *j, long long stamp, time_t now) {
   int bad = crypto_ed25519_check(signature, pub, (const uint8_t *)message.s, message.n);
   free(message.s);
   if (bad) goto done;
-  for (int i = 0; i < 256; i++)
-    if (group_rids[i].seen && now - group_rids[i].seen <= 240 &&
-        !strcmp(group_rids[i].gid, gid) && !strcmp(group_rids[i].rid, rid)) goto done;
-  snprintf(group_rids[group_rid_pos].gid, 65, "%s", gid);
-  snprintf(group_rids[group_rid_pos].rid, 33, "%s", rid);
-  group_rids[group_rid_pos].seen = now;
-  group_rid_pos = (group_rid_pos + 1) % 256;
+  if (group_replay(gid, rid, now)) goto done;
   group_expire(now);
   Group *g = NULL, *empty = NULL;
   for (int i = 0; i < GROUPS; i++) {

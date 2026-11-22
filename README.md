@@ -1,9 +1,9 @@
 # NodePulse
 
-## 远程管理（C1：仅加密直连）
+## 远程管理（C1 直连 / C2 共享中继实时管道）
 
 默认构建包含管理功能，但**默认关闭**。只有显式配置 `-A 公钥[,公钥...]`
-（配置键 `admin_keys`，需要 `-l`）才允许独立 Ed25519 管理密钥开启会话。
+（配置键 `admin_keys`，需要 `-l` 或 `-R`）才允许独立 Ed25519 管理密钥开启会话。
 持有普通探针密钥只能监控；管理会话使用临时 X25519 + 独立双向 AEAD 密钥。
 支持文件管理、交互 PTY 和重启/关机；权限等同探针运行用户，真实电源操作需要 root。
 现有 DynamicUser systemd 示例刻意保留低权限，不能用于 root 文件/电源管理；
@@ -11,7 +11,11 @@
 
 `probe/build.sh` 为每种架构生成完整版及 `-lite` 版；`make ADMIN=0` 完全排除管理代码，
 适合体积优先的设备。Lite 保留原有监控及端到端共享中继。完整版新增系统功能会更大。
-C1 不支持经 HTTP/中继管理，iOS 管理界面也尚未实现。
+C2 支持 `-R -A` 探针通过共享中继保持控制连接并自动重连，不需要开放探针入站端口。
+Python 客户端使用 `--relay host:port --token T --group S --node ID --key 私钥文件`。
+端到端管理握手之后使用 C1 会话加密，中继仅做有界、非阻塞字节转发；
+握手公开元数据会暴露节点 ID 和管理公钥，但不会暴露终端或文件内容。
+Lite 不包含实时管道功能。HTTP/旧中继和 iOS 管理界面尚不支持此功能。
 
 协议、完整命令及安全/测试说明见 [docs/admin-protocol.md](docs/admin-protocol.md)。
 Python 客户端 `probe/tools/npulse-admin.py` 提供 `keygen/info/ls/stat/get/put/rm/mkdir/mv/shell/power`。

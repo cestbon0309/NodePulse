@@ -67,11 +67,39 @@ def hello(node, signing, ephemeral, rid=None, timestamp=None):
     return obj
 
 
+def relay_request(op, group, node, cid=None):
+    enc = hashlib.sha512(b"npulse-e2e-enc:" + group.encode()).digest()[:32]
+    seed = hashlib.sha512(b"npulse-e2e-sign:" + group.encode()).digest()[:32]
+    signing = Ed25519PrivateKey.from_private_bytes(seed)
+    gid = public(signing).hex()
+    slot = hashlib.sha512(b"npulse-e2e-slot:" + enc + node.encode()).digest()[:16].hex()
+    obj = {"op": op, "ts": int(time.time()), "rid": os.urandom(16).hex(), "gid": gid, "slot": slot}
+    fields = [f"npulse-{op}", gid, slot] + ([cid] if cid is not None else []) + [str(obj["ts"]), obj["rid"]]
+    obj["sig"] = signing.sign("\n".join(fields).encode()).hex()
+    if cid is not None:
+        obj["cid"] = cid
+    return obj
+
+
+def plain_encode(obj):
+    data = json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode()
+    return struct.pack("!I", len(data)) + data
+
+
+def plain_receive(sock):
+    size, = struct.unpack("!I", read_exact(sock, 4))
+    if not 0 < size <= 256 * 1024:
+        raise ValueError("invalid plaintext handshake length")
+    return json.loads(read_exact(sock, size))
+
+
 class AdminClient:
-    def __init__(self, host, port, secret, signing, node=None, timeout=8):
+    def __init__(self, host, port, secret, signing, node=None, timeout=8, relay=None, token=None, group=None):
         self.sock = None
         self.events = deque()
         self.next_id, self.tx_seq, self.rx_seq = 1, 0, 0
+        if relay and (not node or not token or not group):
+            raise ValueError("relay requires token, group secret and node id")
         if node is None:
             with socket.create_connection((host, port), timeout) as sock:
                 rid = os.urandom(16).hex()
@@ -83,13 +111,20 @@ class AdminClient:
                 if len(own) != 1:
                     raise ValueError("direct endpoint must have exactly one self snapshot")
                 node = own[0]["id"]
-        self.sock = socket.create_connection((host, port), timeout)
+        self.sock = socket.create_connection(relay or (host, port), timeout)
         try:
+            if relay:
+                self.sock.sendall(outer_encode(token, relay_request("gconnect", group, node)))
+                self.sock.settimeout(max(timeout, 35))
+                connected = outer_receive(self.sock, token)
+                self.sock.settimeout(timeout)
+                if connected.get("ok") is not True:
+                    raise OSError(connected.get("err", "relay connection failed"))
             ephemeral = X25519PrivateKey.generate()
             request = hello(node, signing, ephemeral)
-            self.sock.sendall(outer_encode(secret, request))
-            ack = outer_receive(self.sock, secret)
-            self.verify_ack(secret, request, ack)
+            self.sock.sendall(plain_encode(request) if relay else outer_encode(secret, request))
+            ack = plain_receive(self.sock) if relay else outer_receive(self.sock, secret)
+            self.verify_ack(group if relay else secret, request, ack)
             probe_pub = bytes.fromhex(ack["epk"])
             shared = ephemeral.exchange(X25519PublicKey.from_public_bytes(probe_pub))
             keys = hashlib.sha512(b"npulse-admin-sess" + shared + public(ephemeral) + probe_pub).digest()
@@ -257,6 +292,9 @@ def main():
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=9000)
     parser.add_argument("--secret", help="existing direct probe secret")
+    parser.add_argument("--relay", help="shared relay TCP host:port (IPv6: [address]:port)")
+    parser.add_argument("--token", help="relay access token")
+    parser.add_argument("--group", help="end-to-end group secret")
     parser.add_argument("--key", type=Path, help="private key file created by keygen")
     parser.add_argument("--node", help="expected node id (otherwise discover over authenticated direct get)")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -280,10 +318,22 @@ def main():
             dest.write("\n")
         print("Admin public key (-A):", public(signing).hex())
         return 0
-    if not args.secret or not args.key:
-        parser.error("--secret and --key are required")
+    relay = None
+    if args.relay:
+        try:
+            host, port = args.relay.rsplit(":", 1)
+            relay = (host.strip("[]"), int(port))
+            if not relay[0] or not 1 <= relay[1] <= 65535:
+                raise ValueError()
+        except ValueError:
+            parser.error("--relay must be host:port or [IPv6]:port")
+        if not args.token or not args.group or not args.node:
+            parser.error("--relay requires --token, --group and --node")
+    if not args.key or (not relay and not args.secret):
+        parser.error("--key and either --secret or relay credentials are required")
     signing = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(json.loads(args.key.read_text())["seed"]))
-    with AdminClient(args.host, args.port, args.secret, signing, node=args.node) as client:
+    with AdminClient(args.host, args.port, args.secret, signing, node=args.node,
+                     relay=relay, token=args.token, group=args.group) as client:
         if args.command == "shell":
             return interactive(client)
         if args.command == "put":

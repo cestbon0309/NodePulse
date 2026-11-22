@@ -2,22 +2,27 @@ import SwiftUI
 import Charts
 
 struct EndToEndBadge: View {
+    @Environment(\.pulseTheme) private var theme
     var body: some View {
-        Label("端到端", systemImage: "lock.shield")
+        Label(L10n.text("端到端"), systemImage: "lock.shield")
             .font(.system(size: 10, weight: .medium)).fixedSize()
             .padding(.horizontal, 7).padding(.vertical, 4)
-            .foregroundStyle(Color("AccentColor"))
-            .background(Color("AccentColor").opacity(0.1), in: Capsule())
+            .foregroundStyle(theme.ink)
+            .background(theme.ink.opacity(0.1), in: Capsule())
     }
 }
 enum PulseFormat {
+    static func ip(_ address: String, hidden: Bool) -> String {
+        guard hidden, !address.isEmpty else { return address }
+        return "•.•.•.•"
+    }
     static func bytes(_ value: Double) -> String {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .binary
         formatter.allowsNonnumericFormatting = false
         return formatter.string(fromByteCount: Int64(max(0, min(value, Double(Int64.max - 1024)))))
     }
-    static func rate(_ value: Double) -> String { bytes(value) + "/秒" }
+    static func rate(_ value: Double) -> String { bytes(value) + L10n.text("/秒") }
     static func compactRate(_ value: Double) -> String {
         var amount = value.isFinite ? max(0, value) : 0
         let units = ["B", "K", "M", "G", "T"]
@@ -27,15 +32,14 @@ enum PulseFormat {
     }
     static func uptime(_ seconds: Double) -> String {
         let hours = Int(max(0, seconds) / 3600)
-        return hours >= 24 ? "\(hours / 24)天 \(hours % 24)小时" : "\(hours)小时 \(Int(max(0, seconds) / 60) % 60)分钟"
+        return hours >= 24 ? L10n.text("%@天 %@小时", String(describing: hours / 24), String(describing: hours % 24)) : L10n.text("%@小时 %@分钟", String(describing: hours), String(describing: Int(max(0, seconds) / 60) % 60))
     }
-    static func ago(_ timestamp: Double?) -> String { "\(max(0, Int((Date().timeIntervalSince1970 - (timestamp ?? Date().timeIntervalSince1970)) / 60))) 分钟前" }
-    static func color(_ value: Double) -> Color { value < 60 ? .mint : value < 85 ? .orange : .red }
+    static func ago(_ timestamp: Double?) -> String { L10n.text("%@ 分钟前", String(describing: max(0, Int((Date().timeIntervalSince1970 - (timestamp ?? Date().timeIntervalSince1970)) / 60)))) }
 }
 
 extension View {
     func pulsePanel() -> some View {
-        padding(20).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 26))
+        modifier(PulsePanel())
     }
     @ViewBuilder func zoomSource(_ id: String, namespace: Namespace.ID) -> some View {
         if #available(iOS 18, *) { matchedTransitionSource(id: id, in: namespace) } else { self }
@@ -46,6 +50,7 @@ extension View {
 }
 
 struct RingGauge: View {
+    @Environment(\.pulseTheme) private var theme
     var title: String
     var value: Double
     var size: CGFloat = 72
@@ -53,9 +58,9 @@ struct RingGauge: View {
     var body: some View {
         VStack(spacing: 8) {
             ZStack {
-                Circle().stroke(PulseFormat.color(value).opacity(0.12), lineWidth: 7)
+                Circle().stroke(theme.gauge(value).opacity(0.12), lineWidth: 7)
                 Circle().trim(from: 0, to: max(0, min(value / 100, 1)))
-                    .stroke(PulseFormat.color(value).gradient, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                    .stroke(theme.gauge(value).gradient, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 Text("\(value, specifier: "%.0f")").font(.system(size: size * 0.26, weight: .semibold, design: .rounded))
                     .contentTransition(.numericText())
@@ -68,16 +73,17 @@ struct RingGauge: View {
 }
 
 struct Sparkline: View {
+    @Environment(\.pulseTheme) private var theme
     var history: [HistorySample]
     var body: some View {
         Chart(Array(history.enumerated()), id: \.offset) { _, sample in
-            AreaMark(x: .value("时间", sample.date), y: .value("CPU", sample.cpu))
-                .foregroundStyle(LinearGradient(colors: [.mint.opacity(0.22), .mint.opacity(0.01)], startPoint: .top, endPoint: .bottom))
+            AreaMark(x: .value(L10n.text("时间"), sample.date), y: .value("CPU", sample.cpu))
+                .foregroundStyle(LinearGradient(colors: [theme.ink.opacity(0.22), theme.ink.opacity(0.01)], startPoint: .top, endPoint: .bottom))
                 .interpolationMethod(.catmullRom)
-            LineMark(x: .value("时间", sample.date), y: .value("CPU", sample.cpu))
-                .foregroundStyle(.mint).lineStyle(StrokeStyle(lineWidth: 2)).interpolationMethod(.catmullRom)
+            LineMark(x: .value(L10n.text("时间"), sample.date), y: .value("CPU", sample.cpu))
+                .foregroundStyle(theme.ink).lineStyle(StrokeStyle(lineWidth: 2)).interpolationMethod(.catmullRom)
         }.chartYScale(domain: 0...100).chartXAxis(.hidden).chartYAxis(.hidden)
-            .frame(height: 38).accessibilityLabel("CPU 使用率趋势")
+            .frame(height: 38).accessibilityLabel(L10n.text("CPU 使用率趋势"))
     }
 }
 
@@ -98,21 +104,23 @@ struct InfoRow: View {
     var title: String
     var value: String
     var body: some View {
-        HStack(alignment: .top, spacing: 20) {
-            Text(title).foregroundStyle(.secondary).frame(width: 76, alignment: .leading)
-            Text(value.isEmpty ? "—" : value).frame(maxWidth: .infinity, alignment: .trailing).textSelection(.enabled)
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            Text(title).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8).frame(width: 76, alignment: .leading)
+            Text(value.isEmpty ? "—" : value).lineLimit(1).minimumScaleFactor(0.8).truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .trailing).textSelection(.enabled)
         }.font(.subheadline).padding(.vertical, 6)
     }
 }
 
 struct Toast: View {
     var body: some View {
-        Label("已复制", systemImage: "checkmark.circle.fill").font(.subheadline.weight(.medium))
+        Label(L10n.text("已复制"), systemImage: "checkmark.circle.fill").font(.subheadline.weight(.medium))
             .padding(.horizontal, 24).padding(.vertical, 13).background(.regularMaterial, in: Capsule()).shadow(radius: 12, y: 4)
     }
 }
 
 struct OSBadge: View {
+    @Environment(\.pulseTheme) private var theme
     var os: String
     private var symbol: String {
         let text = os.lowercased()
@@ -124,21 +132,22 @@ struct OSBadge: View {
         return "server.rack"
     }
     var body: some View {
-        Image(systemName: symbol).font(.title3).foregroundStyle(.mint)
-            .frame(width: 44, height: 44).background(.mint.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
+        Image(systemName: symbol).font(.title3).foregroundStyle(theme.ink)
+            .frame(width: 44, height: 44).background(theme.ink.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
     }
 }
 
 struct OnlineStatus: View {
+    @Environment(\.pulseTheme) private var theme
     var online: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
     var body: some View {
         HStack(spacing: 6) {
-            Circle().fill(online ? .mint : .gray).frame(width: 7, height: 7)
-                .overlay { if online { Circle().stroke(.mint.opacity(0.35)).scaleEffect(pulse ? 1.9 : 1).opacity(pulse ? 0 : 1) } }
-            Text(online ? "在线" : "离线").font(.caption)
-        }.foregroundStyle(online ? .mint : .secondary)
+            Circle().fill(online ? theme.accent : .gray).frame(width: 7, height: 7)
+                .overlay { if online { Circle().stroke(theme.accent.opacity(0.35)).scaleEffect(pulse ? 1.9 : 1).opacity(pulse ? 0 : 1) } }
+            Text(online ? L10n.text("在线") : L10n.text("离线")).font(.caption)
+        }.foregroundStyle(online ? theme.accent : .secondary)
             .onAppear { if online && !reduceMotion { withAnimation(.easeOut(duration: 1.8).repeatForever(autoreverses: false)) { pulse = true } } }
     }
 }

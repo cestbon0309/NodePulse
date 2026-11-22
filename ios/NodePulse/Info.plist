@@ -30,6 +30,6 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>NSCameraUsageDescription</key>
-	<string>扫描探针终端的配对二维码，填写连接信息；仍需核对安全图案和数字。</string>
+	<string>Scan the probe terminal QR code to fill connection details. Always verify the security pattern and digits.</string>
 </dict>
 </plist>

@@ -3,6 +3,7 @@ import SwiftUI
 import VisionKit
 
 struct PairInviteSheet: View {
+    @Environment(\.pulseTheme) private var theme
     let invite: PairInvite
     let connect: (Bool) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -11,15 +12,15 @@ struct PairInviteSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Label("已扫码 · 尚未连接", systemImage: "qrcode").foregroundStyle(.mint)
-                    LabeledContent(invite.isRelay ? "中转服务器" : "探针", value: invite.address)
-                    if let code = invite.code { LabeledContent("配对码", value: code) }
-                    if invite.isRelay { Text("链接已包含中转密码；组密钥只会在双方确认后加密传输。").font(.caption).foregroundStyle(.secondary) }
-                } header: { Text("确认连接信息") } footer: { Text("只连接你信任的地址。扫码不代表已验证身份，接下来仍须对照服务器终端上的图案和六位数字。") }
-                Section { Toggle("同时授权本机管理", isOn: $admin).tint(.mint) } footer: { Text("授权可控制文件、终端与电源，可能拥有 root 权限。仅完整构建支持。") }
-                Button("连接并核对图案") { connect(admin) }.frame(maxWidth: .infinity).tint(.mint)
-            }.navigationTitle("扫码配对").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
+                    Label(L10n.text("已扫码 · 尚未连接"), systemImage: "qrcode").foregroundStyle(theme.ink)
+                    LabeledContent(invite.isRelay ? L10n.text("中转服务器") : L10n.text("探针"), value: invite.address)
+                    if let code = invite.code { LabeledContent(L10n.text("配对码"), value: code) }
+                    if invite.isRelay { Text(L10n.text("链接已包含中转密码；组密钥只会在双方确认后加密传输。")).font(.caption).foregroundStyle(.secondary) }
+                } header: { Text(L10n.text("确认连接信息")) } footer: { Text(L10n.text("只连接你信任的地址。扫码不代表已验证身份，接下来仍须对照服务器终端上的图案和六位数字。")) }
+                Section { Toggle(L10n.text("同时授权本机管理"), isOn: $admin).tint(theme.accent) } footer: { Text(L10n.text("授权可控制文件、终端与电源，可能拥有 root 权限。仅完整构建支持。")) }
+                Button(L10n.text("连接并核对图案")) { connect(admin) }.frame(maxWidth: .infinity).tint(theme.accent)
+            }.navigationTitle(L10n.text("扫码配对")).navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("取消")) { dismiss() } } }
         }.presentationDetents([.large])
     }
 }
@@ -35,10 +36,10 @@ struct PairScanner: View {
                 if authorized == true && error == nil {
                     ScannerCamera(result: result, failure: { error = $0 }).ignoresSafeArea(edges: .bottom)
                 } else if authorized == false || error != nil {
-                    ContentUnavailableView("相机不可用", systemImage: "camera", description: Text(error ?? "请在系统设置中允许相机访问。模拟器可返回粘贴服务器上的配对链接。"))
-                } else { ProgressView("正在请求相机权限…") }
-            }.navigationTitle("扫描服务器二维码").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
+                    ContentUnavailableView(L10n.text("相机不可用"), systemImage: "camera", description: Text(error ?? L10n.text("请在系统设置中允许相机访问。模拟器可返回粘贴服务器上的配对链接。")))
+                } else { ProgressView(L10n.text("正在请求相机权限…")) }
+            }.navigationTitle(L10n.text("扫描服务器二维码")).navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("取消")) { dismiss() } } }
                 .task {
                     switch AVCaptureDevice.authorizationStatus(for: .video) {
                     case .authorized: authorized = true
@@ -60,7 +61,7 @@ private struct ScannerCamera: UIViewControllerRepresentable {
                 recognizesMultipleItems: false, isHighFrameRateTrackingEnabled: false, isPinchToZoomEnabled: true, isGuidanceEnabled: true, isHighlightingEnabled: true)
             scanner.delegate = context.coordinator
             do { try scanner.startScanning() }
-            catch { DispatchQueue.main.async { failure("无法启动扫码，可返回粘贴配对链接。") } }
+            catch { DispatchQueue.main.async { failure(L10n.text("无法启动扫码，可返回粘贴配对链接。")) } }
             return scanner
         }
         return FallbackCamera(result: context.coordinator.accept, failure: failure)
@@ -95,11 +96,11 @@ private final class FallbackCamera: UIViewController, AVCaptureMetadataOutputObj
     override func viewDidLoad() {
         super.viewDidLoad(); view.backgroundColor = .black
         guard let device = AVCaptureDevice.default(for: .video), let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else {
-            DispatchQueue.main.async { self.failure("此设备没有可用相机，可返回粘贴配对链接。") }; return
+            DispatchQueue.main.async { self.failure(L10n.text("此设备没有可用相机，可返回粘贴配对链接。")) }; return
         }
         session.addInput(input)
         let output = AVCaptureMetadataOutput()
-        guard session.canAddOutput(output) else { DispatchQueue.main.async { self.failure("相机初始化失败，请使用配对链接。") }; return }
+        guard session.canAddOutput(output) else { DispatchQueue.main.async { self.failure(L10n.text("相机初始化失败，请使用配对链接。")) }; return }
         session.addOutput(output); output.setMetadataObjectsDelegate(self, queue: .main); output.metadataObjectTypes = [.qr]
         let preview = AVCaptureVideoPreviewLayer(session: session); preview.videoGravity = .resizeAspectFill; view.layer.addSublayer(preview); self.preview = preview
         queue.async { self.session.startRunning() }

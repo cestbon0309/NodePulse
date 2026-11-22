@@ -1,484 +1,132 @@
+<div align="center">
+
+**简体中文** · [English](README.en.md)
+
+<img src="docs/assets/icon.png" width="96" alt="NodePulse 图标">
+
 # NodePulse
 
-## 一键安装
+**轻量探针，掌握每一次脉动。**
 
-直连安装先询问是否有公网 IP（云服务器的外部/弹性 IP 也算），网卡扫描仅作提示，不据此判断。
-选择有公网 IP 后，通过多个 HTTPS 服务查询（先 IPv4，IPv6 回退），校验后可确认或改填；查询失败则手动填写。
-没有公网 IP 时解释直连限制并默认建议共享中转（模式 3），也可继续直连；组密钥在本机生成。
-云外部 IP 不在本机网卡上时，监听 `0.0.0.0`（IPv6 为 `::`），公网 IP 单独用于配对二维码和 App 地址；
-地址确实在本机网卡上时才可绑定它。公网地址保存在 `/etc/npulse/public-ip`，后续 `pair` 会复用；升级保留、卸载清理配置时删除。
-自动安装可使用 `--public-ip ADDR` / `NPULSE_PUBLIC_IP=ADDR`，或 `--public-ip auto` 自动查询（失败即报错）；
-未指定时不访问公网查询服务，保留通配监听。`--bind ADDR` 仍可显式覆盖监听地址。
-只有显式 `--open-firewall` 才会自动执行本机防火墙命令；云安全组也必须另行放行对应 TCP 端口，安装器会打印 GCP 示例。
-nftables 会放行所有覆盖绑定地址族的入站基础链（IPv4 为 `inet` + `ip`，IPv6 为 `inet` + `ip6`，通配绑定为全部），避免其他链的丢弃策略继续阻断；没有匹配链时才新建。
+面向 Linux / OpenWrt 的微型 C 探针，与装进口袋的 iOS 监控及管理台。
 
-安装后可立即与手机配对，或运行 `sh install.sh pair`（自动停止/恢复服务）。
-交互启用远程管理时，未预先指定公钥则默认选择「配对时由手机自动提供」，无需复制公钥；
-也可选择「手动粘贴」沿用原流程。已有 `--admin-keys` / `NPULSE_ADMIN_KEYS` 时默认使用手动来源，
-留空确认会保留已提供的公钥，只有明确选择来源 1 才改为手机配对。手机配对授权强制使用 full，安装后默认发起配对，
-跳过前会警告管理保持关闭。手机须打开「同时授权本机管理」，服务器须另外确认 root 管理授权。
-只有配对成功返回授权公钥后才写入 `admin_keys` 并将 systemd 服务改为 root；
-跳过、失败或拒绝管理授权都不会启用管理，systemd 仍使用 DynamicUser，可稍后运行 `sh install.sh pair`。
-自动化可使用 `--admin-via-pair` 或 `NPULSE_ADMIN=pair`（即使 `--yes` 也会发起配对，
-仍需手机和服务器人工确认）；`--admin-keys HEX,...` 保持原有直接配置方式，两种方式不能同时使用。
-App 在配对前不能识别 full/lite，「同时授权本机管理」目前默认关闭，请主动打开。
-App 添加接入点提供「扫码配对」「直连配对」「中转配对」及「手动输入密钥」。
-扫码只填写地址和一次性参数，**仍须核对两端图案与六位数字，服务器输入 y、手机点「一致」**。
-终端二维码/链接包含敏感参数，请勿分享。中转配对目前仅支持 TCP。
-协议、超时、编译开关与命令行参考见 [配对协议](docs/pairing-protocol.md)。
+[![iOS](https://img.shields.io/badge/iOS-17%2B-313943)](ios/)
+[![SwiftUI](https://img.shields.io/badge/UI-SwiftUI-627e78)](ios/)
+[![C probe](https://img.shields.io/badge/C_lite-%3C_200_KB-627e78)](probe/)
+[![License](https://img.shields.io/badge/license-GPL--2.0--only-313943)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/cestbon0309/NodePulse?color=627e78)](https://github.com/cestbon0309/NodePulse/releases/latest)
 
-配对回归（C/Python 向量、PTY 双确认、直连/中转/PSK、终端二维码）可运行
-`python3 probe/tools/test-pair.py FULL_HOST_HARNESS LITE_HOST_HARNESS`；
-宿主 harness 由 `probe/tools/test-pair.c` 与 Makefile 中的 vendor 源码编译，分别加 `-DADMIN=1/0`。
-测试依赖 `pip install cryptography opencv-python-headless qrcode pillow`；
-OpenCV 无法解码个别掩码时，使用独立 Python byte-mode ECC-M 编码逐模块核对。
+[亮点](#features) · [界面](#screenshots) · [架构](#architecture) · [部署](#deploy) · [配对](#pairing) · [安装 App](#ios) · [构建](#build) · [安全](#security)
 
-在 **root shell** 中执行（普通用户先 `sudo -i`；OpenWrt 默认即 root）：
+<img src="docs/assets/hero.png" width="1200" alt="NodePulse 灰阶仪表盘、节点详情与真实 SAS 配对界面">
+
+</div>
+
+<a id="features"></a>
+## 小体积，完整掌控
+
+| <img src="docs/assets/deploy.svg" width="20" alt=""> 轻装部署 | <img src="docs/assets/monitor.svg" width="20" alt=""> 清晰观察 | <img src="docs/assets/security.svg" width="20" alt=""> 安全操作 |
+|---|---|---|
+| **纯 C / 静态 musl**：7 种 Linux 架构；所有发布 lite 小于 200,000 字节 | **实时资源趋势**：CPU、内存、磁盘、网络、温度与在线状态 | **远程管理**：交互终端、文件传输、重启 / 关机；独立管理公钥 |
+| **一进程多角色**：直连与共享中继共存；systemd / OpenWrt procd | **双布局与双主题**：经典 / 紧凑，默认 / 灰阶，明暗模式 | **双端 SAS 核对**：直连、中继及扫码配对；二维码不绕过确认 |
+| **NAT 友好**：节点只需主动连出；中继不持有组密钥 | **中英双语与位置**：跟随系统语言，出口 IP 位置持久缓存 | **隐私开关**：隐藏 IP 统一为 `•.•.•.•`，复制仍取真实地址 |
+
+<a id="screenshots"></a>
+## 界面一览
+
+| 经典仪表盘 · 灰阶 | 紧凑仪表盘 |
+|:---:|:---:|
+| <img src="docs/assets/dashboard-zh.png" width="245" alt="中文灰阶仪表盘"> | <img src="docs/assets/compact-zh.png" width="245" alt="中文紧凑仪表盘与位置"> |
+| 节点详情 · 灰阶 | 双端 SAS 配对 |
+| <img src="docs/assets/detail-zh.png" width="245" alt="紧凑状态行与单个 IP 胶囊"> | <img src="docs/assets/pairing-zh.png" width="245" alt="真实握手生成的 SAS 图案与数字"> |
+| 终端 | 文件 |
+| <img src="docs/assets/terminal-zh.png" width="245" alt="加密交互终端"> | <img src="docs/assets/files-zh.png" width="245" alt="远程文件管理"> |
+| 共享中继节点 | 灰阶 · 浅色 |
+| <img src="docs/assets/relay-zh.png" width="245" alt="共享中继节点"> | <img src="docs/assets/grayscale-light.png" width="245" alt="灰阶浅色仪表盘"> |
+
+仪表盘 / 详情为模拟器演示数据；配对、终端与文件画面来自本机隔离协议测试环境，非生产主机。示例位置不代表真实设备位置。
+
+<a id="architecture"></a>
+## 两条路径，同一掌控
+
+![直连与不透明共享中继架构](docs/assets/architecture.svg)
+
+直连适合公网设备；共享中继适合 NAT、家宽和路由器。组密钥只在可信组成员与 App 上，中继仅转发不透明密文。一个进程可同时 `-l` 监控与 `-S` 转发，本机管理走直连，下游管理走端到端中继管道。
+
+<a id="deploy"></a>
+## 快速部署
+
+在 **Linux / OpenWrt 的 root shell** 执行。以下命令安装最新发行版；本文描述当前源码，新功能随下一版发行。
 
 ```sh
 curl -fsSL https://github.com/cestbon0309/NodePulse/releases/latest/download/install.sh | sh
-# 没有 curl：
+# 或
 wget -qO- https://github.com/cestbon0309/NodePulse/releases/latest/download/install.sh | sh
-# Release 下载不可用时可使用源码入口（仍从 Release 下载并校验二进制）：
-curl -fsSL https://raw.githubusercontent.com/cestbon0309/NodePulse/main/install.sh | sh
 ```
 
-交互输入从 `/dev/tty` 读取，管道不会吞掉菜单输入。无终端时必须用 `--yes`。
-首个包含此安装器的 `v*` Release 发布后，上述 latest 安装器地址才可用；不通过
-GitHub API，也不需要 token。下载前请信任所执行的脚本；二进制安装前校验
-同一 Release 的 `SHA256SUMS`（包括 14 个 full/lite 二进制与 install.sh）。
-校验清单保证传输完整性，不代替发布者签名；自定义镜像能替换文件及清单，必须可信。
+首个问题是 `1 中文 / 2 English`，默认按 `LC_ALL` / `LANG` 选择；然后按网络环境选模式：
 
-模式重新编号为：1 直连、2 HTTP+Nginx、3 端到端共享中继上报、4 纯共享中继。
-旧式 `-u` / `upstream=` 上报和直连端口接收、合并子节点的功能已移除，改用 `-R/-S` 共享中继。
-已有 `upstream=` 配置升级会拒绝替换二进制或重启；请先备份配置，按共享中继方式重新安装。
-直连模式可选择「同时作为共享中继」，默认 no；启用后默认使用直连端口 + 1（必须不同）。
-非交互使用 `--also-relay PORT` 或 `NPULSE_ALSO_RELAY=PORT`；`NPULSE_TOKEN` 提供中转密码，
-未提供时安全生成。同一份配置包含 `listen`、`relay_listen` 和独立的 `secret` / `token`，
-由一个服务进程同时提供直连和共享中继。防火墙及云安全组须开放两个端口，安装器分别提示。
-摘要中的「中转地址」「中转密码」供下游模式 3 使用；本机管理走直连，下游管理走中继管道。
-纯共享中继可以额外开启回环 HTTP `/api/relay`。HTTP 模式打印域名/证书待替换的
-Nginx 示例，不自动安装 Nginx/certbot，不修改防火墙；摘要说明应开放的端口。
-上报到已有服务时，务必填写匹配的令牌/密钥；留空默认生成新的 32 字符随机值。
-密钥来源菜单回车选择保留已有值或安全生成，不需要关闭回显；选择 2 才手动输入。
-`NPULSE_SECRET` / `NPULSE_TOKEN` / `NPULSE_GROUP_SECRET` 已提供时直接使用，不再询问。
-手动输入优先通过 `stty` 隐藏；OpenWrt 缺少 `stty` 或关闭回显失败时会先警告
-「输入将会显示在屏幕上」，然后继续读取，请避开旁观和录屏。摘要仍会显示密钥。
+| 模式 | 适合谁 | 需要放行 |
+|---|---|---|
+| **1 直连**（公网推荐） | 公网服务器；可同时作共享中继 | 直连 TCP，默认 9000；启用中继时再开放其端口 |
+| **2 HTTP + Nginx** | 已有域名、证书及 HTTPS 代理 | 公网 443；HTTP 后端仅回环 |
+| **3 共享中继上报** | NAT / 家宽 / 路由器 | 仅向中继主动连出，无需入站 |
+| **4 纯共享中继** | 只转发密文的公网主机 | 中继 TCP 端口 |
 
-安装器需要 POSIX `awk`（不使用 GNU 扩展）及基础 BusyBox applet：
-`cat chmod cp dirname grep id mkdir mv rm tr uname wc`，缺少时会指出命令名。
-临时下载/配对必须有 `mktemp -d`，缺少或无法创建目录时安全退出，不使用可预测临时路径。
-安全随机数需要 `/dev/urandom` 与 `od` 或 `hexdump`；SHA256 校验依次使用
-`sha256sum`、`shasum -a 256`、`openssl dgst -sha256`，都没有时拒绝安装。
-下载使用 curl 或 wget，不依赖独立 `timeout` 命令；wget 不支持超时选项时仍可下载。
-wget 自动查询公网 IP 需要 `-T` 和 `dd`（限制响应长度，不依赖 `head -c`），
-不满足时改为手动输入公网 IP；网卡工具 `ip` / `ifconfig` 也只是可选提示。
-
-安装到 `/usr/local/bin/npulse`（OpenWrt 为 `/usr/bin/npulse`），配置位于
-`/etc/npulse/npulse.conf`，目录 0700、文件 0600。systemd 需 247+，使用
-LoadCredential 将配置提供给 DynamicUser，默认硬化且 Restart=always；管理启用后
-必须使用 full，服务改为 root 并解除文件/能力限制，**授权设备拥有整机控制权**。
-OpenWrt procd 使用 respawn，以 root 运行。所有架构、磁盘容量和安装模式（包括 OpenWrt、
-MIPS/MIPSEL 和纯中继）均默认完整版 full；交互安装总会询问版本，回车采用默认值，
-非交互安装也默认 full。可用 `--full` / `--lite` 或 `NPULSE_FLAVOR=full|lite` 明确选择。
-full 约 175–270 KB，支持管理、实时管道、配对和二维码；lite 约 120–195 KB（随架构变化），
-省空间但不支持管理和实时管道，配对需临时下载 full。lite 禁止启用管理；纯中继转发管理也必须 full。
-ARM 浮点 ABI 无法自动检测时会询问；无交互时须指定 `--arch` 或 NPULSE_ARM_FLOAT。
-
-非交互示例（仅在本机可信环境中设置真实密钥；摘要会显示密钥，不要公开日志）：
+模式 1 的「同时作为共享中继？」默认 **no**；yes 后默认直连端口 + 1，端口必须不同。节点名默认主机名，可用 `--name` 修改。默认 **full**；体积优先时显式 `--lite`（无管理 / 管道，配对临时下载校验 full）。
 
 ```sh
-curl -fsSL https://github.com/cestbon0309/NodePulse/releases/latest/download/install.sh -o install.sh
-NPULSE_SECRET='替换为安全密钥' sh install.sh --yes --mode 1 --port 9000 --lite
-# 共享中继上报；管理密钥来自 App「设置 → 管理密钥」：
-NPULSE_TOKEN='与中继一致的令牌' NPULSE_GROUP_SECRET='本组共享密钥' \
-  sh install.sh --yes --mode 3 --upstream relay.example.com:9000 --full \
-  --admin-keys '替换为64位Ed25519公钥'
-# 新机器部署纯中继（没有组密钥）；可通过 Nginx 转发回环 HTTP：
-NPULSE_TOKEN='安全令牌' sh install.sh --yes --mode 4 --full --http-port 9001
-# 直连和共享中继由同一进程提供：
-NPULSE_SECRET='直连密钥' NPULSE_TOKEN='中转密码' \
-  sh install.sh --yes --mode 1 --public-ip auto --also-relay 9001
-
-sh install.sh status
-sh install.sh upgrade --yes       # 保持配置、权限、full/lite 和架构，替换并重启
-NPULSE_VERSION=v1.0.0 sh install.sh upgrade --yes
-sh install.sh uninstall           # 删除配置前询问；--yes 默认仍保留配置
-sh install.sh uninstall --yes --purge
-sh install.sh --help              # 全部环境变量与选项
+# 已下载 install.sh：同一进程提供直连 9000 + 中继 9001
+sh install.sh --yes --lang zh --mode 1 --public-ip auto --also-relay 9001
+# NAT 下游：令牌与中继一致，同组使用相同高熵组密钥
+NPULSE_TOKEN='替换为中继令牌' NPULSE_GROUP_SECRET='替换为随机组密钥' \
+  sh install.sh --yes --lang zh --mode 3 --upstream relay.example:9001
 ```
 
-`NPULSE_VERSION=vX.Y.Z` 指定版本；`NPULSE_MIRROR=https://可信主机/目录` 覆盖整个资产
-下载目录，该目录直接包含稳定文件名及 SHA256SUMS，而不是 GitHub API 地址。
-默认拒绝 HTTP 镜像；仅可信隔离测试可显式使用 `NPULSE_INSECURE=1`，安装器会警告中间人替换风险。
-卸载后保留的配置不被重新安装覆盖，请先备份，再明确删除后安装。
-测试可用已存在的绝对 `DESTDIR` 目录加 `DRY_RUN=1 NPULSE_INIT=systemd|procd`，
-不会运行 Linux 二进制或调用真实服务管理器，但仍实际下载、校验和生成文件。
+摘要列出安装类型、配置、端口、中转地址 / 密码及下一步。**摘要含密钥，不要公开。** 本机防火墙与云安全组都须放行；自动执行防火墙变更须明确 `--open-firewall`。云公网地址不在本机网卡上也能配对，监听与广告地址分开保存。
 
-Tag `v*` 工作流会构建全部七架构的 full/lite，并附加稳定名称
-`npulse-linux-<arch>` / `npulse-linux-<arch>-lite`、`SHA256SUMS` 和 `install.sh`。
+完整选项、BusyBox 依赖、升级 / 卸载及授权见 [安装器参考](docs/installer.md)。旧式 `upstream=` / `u=` 已移除，升级会在改动服务前拒绝，并提示改用共享中继。
 
-## 远程管理（C1 直连 / C2 共享中继实时管道）
+<a id="pairing"></a>
+## 配对：扫码只是开始
 
-默认构建包含管理功能，但**默认关闭**。只有显式配置 `-A 公钥[,公钥...]`
-（配置键 `admin_keys`，需要 `-l` 或 `-R`）才允许独立 Ed25519 管理密钥开启会话。
-持有普通探针密钥只能监控；管理会话使用临时 X25519 + 独立双向 AEAD 密钥。
-支持文件管理、交互 PTY 和重启/关机；权限等同探针运行用户，真实电源操作需要 root。
-现有 DynamicUser systemd 示例刻意保留低权限，不能用于 root 文件/电源管理；
-不要为了管理功能直接取消系统加固，而应单独评估部署用户和授权范围。
+1. 服务器运行 `sh install.sh pair`（自动停止 / 恢复服务），或安装末尾直接配对。
+2. App **添加接入点**：公网节点选「直连配对」；NAT 节点选「中转配对」，填写中继地址、令牌与一次性代码。也可扫描终端二维码或粘贴 `nodepulse://pair` 链接。
+3. **核对两端图案与六位数字（SAS）**。只有完全一致时，服务器输入 `y`，手机点「一致」。不一致立即取消；二维码和预共享参数不能替代确认。
+4. 需要管理时，手机打开「同时授权本机管理」，服务器 **另外确认 root 授权**。未完成则只开监控。也可用 `--admin-via-pair`，或预置 `--admin-keys`。
 
-`probe/build.sh` 为每种架构生成完整版及 `-lite` 版；`make ADMIN=0` 完全排除管理代码，
-适合体积优先的设备。Lite 保留原有监控及端到端共享中继，默认 `PAIR=0`，不含配对与 QR，
-直接执行 `npulse -P` 会提示改用 `install.sh pair`。完整版默认 `PAIR=1 QR=1`；可用
-`make ADMIN=0 PAIR=1` 自行构建含配对的 lite（会增大体积，不属于发布的 lite 变体）。
-安装时配对及 `install.sh pair` 会为 lite 临时下载同架构完整版，按相同版本、镜像安全规则和
-`SHA256SUMS` 校验后运行，结束、失败或中断均删除；不会替换 lite 服务二进制。
-lite 安装忽略配对返回的管理公钥并提示「lite 版不支持管理」，不会启用管理或改变服务权限。
-C2 支持 `-R -A` 探针通过共享中继保持控制连接并自动重连，不需要开放探针入站端口。
-Python 客户端使用 `--relay host:port --token T --group S --node ID --key 私钥文件`。
-端到端管理握手之后使用 C1 会话加密，中继仅做有界、非阻塞字节转发；
-握手公开元数据会暴露节点 ID 和管理公钥，但不会暴露终端或文件内容。
-Lite 不包含实时管道功能。HTTP/HTTPS 接入点与旧中继不支持远程管理。
+二维码 / 链接含敏感临时参数，不要分享；中继配对走 TCP。详见 [配对协议](docs/pairing-protocol.md) 与 [管理协议](docs/admin-protocol.md)。
 
-### iOS 管理
+<a id="ios"></a>
+## 安装 iOS App
 
-在「设置 → 管理密钥」生成设备独立的 Ed25519 密钥，将显示的 `-A <公钥>`
-或 `admin_keys=<公钥>` 复制到探针配置后重启探针。私钥保存在本机 Keychain
-（仅设备解锁时可用、不随备份迁移），不会上传到中继。重新生成不会自动撤销旧公钥：
-请先更新每台探针的 allowlist，并移除旧公钥。
+从 [最新 Release](https://github.com/cestbon0309/NodePulse/releases/latest) 下载 `NodePulse-<tag>.ipa`，对照 `SHA256SUMS` 校验。这是 **未签名 arm64 真机包**，不是 App Store 包；需经 AltStore / Sideloadly 等自行签名，或用自己的 Xcode 开发者身份安装。要求 iOS 17+；按系统提示开启开发者模式并信任签名，有效期取决于 Apple 开发者账户。
 
-直连 TCP / 共享中继 TCP 节点详情中的「管理」提供终端、文件、重启和关机。
-默认要求设备身份验证（Face ID / Touch ID，不可用时回退设备密码；模拟器和没有设备密码时跳过）；
-可在密钥设置关闭。电源操作先确认、再验证身份，只有 root 探针可以执行。
-终端使用 SwiftTerm，提供 Esc/Tab、一次性 Ctrl、方向键和常用符号，退出后可重新连接；
-文件管理从用户 home 开始，支持目录、重命名、递归删除及分块上传/下载。
-上传不覆盖现有文件，取消发送 `put_abort`；会话断开也会清理未完成上传。
-下载完成弹出系统分享面板，可选择「存储到文件」。App 进入后台会关闭管理会话，
-不会提供后台传输或保活终端。终端不自动开放远程剪贴板访问或打开远程链接。
-
-管理会话不能通过 HTTPS 接入点建立。若探针未配置 `-A`，监控仍可使用，
-但管理握手会被静默拒绝，界面提示检查公钥、密钥与探针时间。
-
-协议、完整命令及安全/测试说明见 [docs/admin-protocol.md](docs/admin-protocol.md)。
-Python 客户端 `probe/tools/npulse-admin.py` 提供 `keygen/info/ls/stat/get/put/rm/mkdir/mv/shell/power`。
-**power 命令会真实重启或关机；不要在生产机器上作为测试运行。**
-
-## Linux / OpenWrt 部署
-
-以下命令在仓库根目录执行。先运行 `probe/build.sh`，或下载 CI / Release 的静态二进制；
-按目标机器架构选择文件（OpenWrt 的 mips / mipsel 还需核对字节序及 CPU 指令集）。
-示例端口为 TCP 9000（加密直连）、9001（本机 HTTP）、443（公网 HTTPS）。
-
-### 安装服务
-
-Linux（systemd 247+，通过服务凭据把 root-only 配置交给动态用户，不需要 root 常驻）：
+<a id="build"></a>
+## 从源码构建
 
 ```sh
-sudo install -m 0755 probe/dist/npulse-linux-x86_64 /usr/local/bin/npulse
-sudo install -m 0600 probe/deploy/npulse.conf /etc/npulse.conf
-SECRET=$(openssl rand -hex 32)
-sudo sed -i "s/CHANGE-ME/$SECRET/" /etc/npulse.conf
-sudo install -m 0644 probe/deploy/npulse.service /etc/systemd/system/npulse.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now npulse
-sudo systemctl status npulse
-```
-
-在 iOS 接入点中填入 `/etc/npulse.conf` 的 `secret`，不要公开此文件或提交真实密钥。
-修改配置后执行 `sudo systemctl restart npulse`，查看日志用 `sudo journalctl -u npulse -f`。
-DynamicUser 不能读到部分受限指标时会保留默认值；不要为此盲目授予 root 权限。
-
-OpenWrt（把选好的二进制和 `probe/deploy/` 中两个文件复制到路由器后执行，以下以 mipsel 为例）：
-
-```sh
-install -m 0755 npulse-linux-mipsel /usr/bin/npulse
-cp npulse.conf /etc/npulse.conf
-chmod 600 /etc/npulse.conf
-SECRET=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
-sed -i "s/CHANGE-ME/$SECRET/" /etc/npulse.conf
-cp npulse.init /etc/init.d/npulse
-chmod 755 /etc/init.d/npulse
-/etc/init.d/npulse enable
-/etc/init.d/npulse start
-```
-
-配置变更后执行 `/etc/init.d/npulse restart`，日志用 `logread -e npulse`。
-
-### 直连
-
-默认配置 `listen=0.0.0.0:9000` 即可；iOS 选择「直连 TCP」，填写机器地址、9000 和密钥。
-仅放行 TCP 9000（可进一步限制来源 IP），不要开放 HTTP 9001。使用 UFW 的 Linux：
-
-```sh
-sudo ufw allow 9000/tcp
-```
-
-OpenWrt 默认 LAN 可访问；确需从 WAN 直连时，显式添加规则（公网风险请自行评估）：
-
-```sh
-uci set firewall.npulse=rule
-uci set firewall.npulse.name='NodePulse'
-uci set firewall.npulse.src='wan'
-uci set firewall.npulse.proto='tcp'
-uci set firewall.npulse.dest_port='9000'
-uci set firewall.npulse.target='ACCEPT'
-uci commit firewall
-/etc/init.d/firewall reload
-```
-
-### HTTP + Nginx
-
-让 HTTP 只监听本机，并保留本机直连监听：**自身节点仅在启用 listen 时出现在列表**。
-以下替换默认 listen 配置，勿让探针明文 HTTP 暴露公网：
-
-```sh
-sudo sed -i 's/^listen=.*/listen=127.0.0.1:9000/; s/^# http=.*/http=127.0.0.1:9001/' /etc/npulse.conf
-sudo systemctl restart npulse
-sudo apt-get install -y nginx certbot
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo systemctl stop nginx
-sudo certbot certonly --standalone -d probe.example.com
-sudo install -m 0644 probe/deploy/nginx-probe.conf /etc/nginx/conf.d/npulse.conf
-sudo nginx -t
-sudo systemctl start nginx
-```
-
-先把域名解析到服务器，并把命令和配置里的 `probe.example.com` 都换成自己的域名。
-80 端口用于上述 standalone 证书验证；续期需配置停止/启动 Nginx 的 certbot hooks，
-或改用 webroot / DNS 验证。公网只需 443（及证书验证所需 80），不要开放 9000/9001；
-若之前已放行 9000，请删除该防火墙规则。iOS 选择 HTTPS，填 `https://probe.example.com`。
-Nginx 保留 Authorization，其他路径返回 404；避免在 URL 中放密钥，以免进入访问日志。
-
-### CI / 发布
-
-`.github/workflows/probe.yml` 使用 Zig 0.17.1，运行真实 Linux 原生集成测试及
-aarch64、armv7（硬/软浮点）、mips、mipsel 的 QEMU 加密 get 测试，并输出指标断言和快照。
-QEMU 用户态测试共用宿主的 /proc 与网络，验证的是目标 ELF/系统调用/协议，不替代真实设备测试。
-大端 MIPS 使用校验固定源码的 QEMU 11.1，避免旧版模拟器的 musl `getifaddrs`/netlink 挂起问题。
-工作流上传 `npulse-linux` artifact；推送 `v*` 标签才会创建/更新 Release 并附加验证后的二进制。
-`.github/workflows/ios.yml` 动态选择 iOS 17+ iPhone 模拟器，使用 ad-hoc 签名运行 XCTest（含真实 Keychain）。
-
-## iOS app core
-
-Requires Xcode and XcodeGen; SwiftTerm is pinned to stable 1.18.0 via SPM
-(no build-plugin approval required). Generate the project with
-`cd ios && xcodegen`, then open `NodePulse.xcodeproj`. The generated project is
-ignored; `project.yml` is the source of truth. Minimum iOS 17, Swift 5 mode.
-Simulator builds use local ad-hoc signing (`CODE_SIGN_IDENTITY=-`) so Keychain
-works without a development team. Run tests with:
-
-```
-cd ios
-xcodegen
-xcodebuild test -scheme NodePulse -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5'
-```
-
-For the live client test, run the host probe with `-k integration-secret
--l 127.0.0.1:19090 -H 127.0.0.1:19091` and set `NPULSE_E2E=1` for both
-`xcodegen` and `xcodebuild test`. The Security integration test verifies the
-real simulator Keychain. Store CRUD also uses an injected in-memory secret
-store for isolated tests; production always defaults to Keychain.
-
-Endpoints and preferences are stored in UserDefaults; secrets only in Keychain
-(service `nodepulse`, account endpoint UUID). Direct uses CryptoKit IETF
-ChaChaPoly framing. HTTP permits insecure transport only to localhost/127.0.0.1
-for development. Redirects are rejected to avoid forwarding bearer secrets.
-The Chinese adaptive dashboard includes detail charts, endpoint management,
-settings and demo mode. Debug launch arguments: `-demo YES`, `-empty YES`,
-`-show-add YES`, and `-live YES` (localhost:19090 / integration-secret).
-The icon source is `design/icon.svg`. Render it with `rsvg-convert -w 1024 -h 1024 design/icon.svg -o design/icon.png`
-(install `librsvg` first), then copy the PNG into the AppIcon asset catalog.
-The probe does not transmit its configured interval, so relay freshness uses a
-5-second initial estimate, then the observed snapshot timestamp cadence.
-
-`probe/npulse` is a small, single-process Linux monitoring probe. Version 0.1.0.
-No threads or runtime libraries beyond libc; cryptography is vendored Monocypher
-4.0.2 from <https://monocypher.org/download/monocypher-4.0.2.tar.gz>.
-Only its four source/header files are retained; each carries the upstream
-BSD-2-Clause/CC0 dual-license notice. SHA-512 uses the optional Ed25519 module;
-unused algorithms are removed by LTO and section garbage collection.
-
-## Build
-
-```
 cd probe
-make CC=musl-gcc                  # native Linux static build
-./build.sh                       # Zig cross-builds seven architectures, full + lite
-make host-test                   # macOS network/crypto test binary npulse-host
+make CC=musl-gcc       # Linux 静态构建
+./build.sh            # Zig：七架构 full + lite → dist/
+make host-test        # macOS / Linux 协议测试，不是 macOS 监控
+cd ../ios
+xcodegen generate
+open NodePulse.xcodeproj
+./tools/build-unsigned-ipa.sh dev  # 未签名真机 Release IPA
 ```
 
-The build script requires `zig` (`brew install zig` on macOS). Outputs are
-`probe/dist/npulse-linux-{x86_64,i386,aarch64,armv7,armv7-soft,mips,mipsel}`.
-ARM builds target ARMv7 Cortex-A7; `armv7` uses hard-float and `armv7-soft`
-uses the soft-float ABI. MIPS builds target MIPS32 with soft float and musl's
-O32 ABI (`musleabi` in current Zig). All use static musl, `-Os`, LTO,
-function/data sections, linker garbage collection and stripping. Build failures
-and warnings are errors. `make` supports `CC`, `CFLAGS`, and `LDFLAGS` overrides.
+需要 C / musl 工具链，交叉编译需 Zig；iOS 需 macOS、Xcode 与 XcodeGen。架构：`x86_64`、`i386`、`aarch64`、`armv7`（硬浮点）、`armv7-soft`、`mips`、`mipsel`（注意字节序 / ABI）。Xcode 选模拟器运行单元测试；`ios/tools/check-localization.py` 审计双语覆盖。探针回归：`python3 probe/tools/test-probe.py probe/npulse-host`（需 Python cryptography）。
 
-## 共享中继（端到端加密）
+<a id="security"></a>
+## 安全模型与边界
 
-共享中继只保存、转发不透明密文，不需要组密钥，也不采集自身指标。
-每个组使用独立的高熵组密钥；同组成员互信，可以解密或发布本组节点。
-`TOKEN` 只控制中继访问，不提供节点身份隔离，也不能代替组密钥。
-中继可见组公钥 `gid`、匿名槽位及其数量、密文大小与通信时间；无法读取或
-伪造节点内容，但可拒绝服务、隐藏节点或重放旧密文。接收端须检查密文内已认证的
-快照 `ts`，并结合 `age` 提示陈旧状态；`age` 本身由中继提供，并非端到端可信。
-协议没有前向保密，也没有口令拉伸，请使用随机长密钥并限制 TOKEN 的分发。
+- **默认仅监控**：管理须独立 Ed25519 allowlist，权限等同探针用户。安装器启用管理后改为 root，拥有整机控制权；普通 systemd 使用 DynamicUser，procd 使用 root。
+- **直连 / 共享 TCP**：ChaCha20-Poly1305；管理用临时 X25519 握手与独立方向密钥。监控 / 组协议无前向保密和口令拉伸，务必用随机长密钥。
+- **中继不可信**：可见路由元数据、大小和时序，可拒绝服务 / 重放；客户端验证签名、槽位与快照时间。同组成员互信，令牌不能代替组密钥。
+- **HTTPS 接入点**：TLS 在 Nginx 终止，不显示 TCP 的 E2E 徽章，也不支持管理；HTTP 后端不可公开暴露。共享组负载仍有独立端到端加密。
+- **位置不是安全凭据**：full 探针以小型明文 HTTP 请求发现出口 IP，可配置或关闭；App 经 HTTPS 查询第三方位置并按 IP / 语言缓存，该服务会收到查询 IP。失败不影响监控；隐藏 IP 不隐藏位置。详见 [出口发现与位置](docs/egress-location.md)。
 
-### 部署纯中继
+## 许可证
 
-```sh
-sudo install -m 0755 probe/dist/npulse-linux-x86_64 /usr/local/bin/npulse
-sudo install -m 0600 probe/deploy/npulse-relay.conf /etc/npulse-relay.conf
-sudo install -m 0644 probe/deploy/npulse-relay.service /etc/systemd/system/
-sudoedit /etc/npulse-relay.conf  # 替换 token；不要放入组密钥
-sudo systemctl daemon-reload
-sudo systemctl enable --now npulse-relay
-sudo ufw allow 9010/tcp  # 探针 gpush 的加密 TCP 端口；仅 HTTPS 访问时可不开放
-```
-
-等价命令：`npulse -S 0.0.0.0:9010 -T TOKEN -H 127.0.0.1:9011`。
-HTTP 端口不应对公网开放。Nginx 示例中的精确匹配 `location = /api/relay`
-代理到 9011，按已有证书配置部署并开放 `443/tcp`。
-仅 HTTP 中继可运行 `npulse -H 127.0.0.1:9011 -T TOKEN`（不带 `-k`）。
-`-S` 存在时，`-H` 提供中继 API；普通探针的 `-H` 仍提供 `/api/nodes`。
-纯中继的启动和循环都跳过指标初始化及 `/proc` 采样。
-
-### 发布节点与读取分组
-
-在每台受监控主机上运行（同组使用同一 GROUP_SECRET）：
-
-```sh
-npulse -R relay.example.com:9010 -T TOKEN -G GROUP_SECRET -i 5 -n router
-# 可同时保留本机直连或 HTTP；省略 -G 时采用 -k 的值：
-npulse -k GROUP_SECRET -R relay.example.com:9010 -T TOKEN -l 9000 -n server
-```
-
-发布端只需允许出站 TCP 9010，无需开放入站端口（启用 `-l` 时另行开放 9000）。
-对应配置键为 `relay_upstream`、`token`、`group_secret`、`interval`、`name`。
-
-```sh
-python3 -m pip install cryptography
-python3 probe/tools/npulse-cli.py relay.example.com 9010 -T TOKEN -G GROUP_SECRET gget
-python3 probe/tools/npulse-cli.py relay.example.com 9010 -T TOKEN -G GROUP_SECRET gget --raw
-python3 probe/tools/npulse-cli.py relay.example.com 9010 -T TOKEN -G GROUP_SECRET gpush --node snapshot.json
-```
-
-默认 `gget` 解密并检查快照 id 的槽位派生，输出节点、`age` 和槽位；`--raw`
-只输出不透明槽位。iOS 可选择「中继服务器（TCP）」或「中继服务器（HTTPS）」；
-分别填写中继令牌和组密钥，二者作为独立钥匙串项目保存。HTTPS 使用 `/api/relay`。
-组密钥生成按钮生成 32 字符随机密钥，并复制到仅本机、两分钟后过期的剪贴板。
-节点的「端到端」徽章表示来自分组中继；接入点列表会报告忽略的无效密文数量。
-新鲜度主要依据 `age > max(30秒, 4×观察到的采样间隔)`；同时将快照时间与手机时间
-相差超过十分钟的节点标为离线，防范中继伪造 age 后重放很旧的数据。
-
-### 协议与边界
-
-所有字符串按 UTF-8 编码。`enc_key = SHA512("npulse-e2e-enc:" || S)[0:32]`；
-Ed25519 种子为 `SHA512("npulse-e2e-sign:" || S)[0:32]`，使用 RFC 8032，
-`gid` 为其 32 字节公钥的小写十六进制。
-`slot = hex(SHA512("npulse-e2e-slot:" || enc_key || node_id)[0:16])`。
-`blob = base64(nonce12 || ChaChaPoly(enc_key, snapshot, AD=gid+":"+slot).ciphertext || tag16)`。
-中继外层沿用现有帧，密钥为 `SHA512(TOKEN)[0:32]`，密文上限 262144 字节，
-整帧多 32 字节；无 magic。每个连接一问一答。
-
-`gpush` 字段为 `op,ts,rid,gid,slot,blob,sig`，签名消息为
-`"npulse-gpush\n{gid}\n{slot}\n{ts}\n{rid}\n{blob}"`；
-`gget` 字段为 `op,ts,rid,gid,sig`，签名消息为
-`"npulse-gget\n{gid}\n{ts}\n{rid}"`，均无末尾换行。
-`rid` 为随机 16 字节的小写 hex，`sig` 为 64 字节签名的 128 字符小写 hex。
-响应回显 `rid`；get 额外返回 `blobs:[{slot,blob,age}]`，push 仅返回 `ok:true,rid`。
-时间戳必须在 ±120 秒内；维护最近 256 个外层 nonce 和最近 256 个已验证的
-`(gid,rid)`，缓存窗口 240 秒。签名、格式、容量、令牌或认证失败均静默关闭。
-
-最多 256 组，每组 32 个槽位，十分钟后过期并按需清理，容量满时拒绝新增，
-已有槽位仍可更新。单个 base64 blob 上限 **7168 字节**。
-已有快照上限为 3840 字节（16 个 IP 及有界字符串），封装成 blob 最多
-`4×ceil((3840+28)/3) = 5160` 字节，留有 2008 字节余量。
-编译期同时断言快照封装预算和 `32×(7168+128)+256 < 262144` 的响应预算。
-纯中继不会解密 blob；通过验证的恶意组成员仍能在本组发布任意密文。
-
-HTTP 使用 `POST /api/relay`，Content-Type 为 `application/octet-stream`，
-Content-Length 必填且不超过 262176；body 为一整帧，成功返回 200 和响应帧。
-支持 HTTP/1.0、1.1，不接受 chunked、重复 Content-Length 或其他路由；
-HTTP 格式/路由错误返回空 404，外层加密或签名错误仍静默关闭。
-
-固定跨语言向量：`probe/tools/e2e-vector.json`（测试用组密钥、TOKEN、种子、派生密钥、
-gid、slot、固定 nonce/blob 和 push/get 消息签名）。向量由独立 Node crypto 生成，
-Python cryptography 与 C Monocypher 测试逐字节核对，供 CryptoKit 测试直接作为资源复用。
-运行 `python3 probe/tools/test-probe.py probe/npulse-host` 会连同分组集成测试一起执行。
-其中 `test-combined.py` 验证同一进程的直连监控/管理与共享中继监控/管理管道，并打印服务端 RSS
-（直连、组合空闲、1/10 个上报节点；各取五次中位数，均配置相同管理 allowlist）。
-RSS 上报端使用现有测试 harness 分配不同身份，避免同机 `/etc/machine-id` 相同导致节点去重；
-服务端仍运行传入的真实探针二进制，RSS 不含上报进程。
-
-## Run
-
-```
-npulse -k 'shared-secret' -l 9000 -H 8080 -n router
-npulse -k 'direct-secret' -l 9000 -S 9001 -T 'relay-token' -n router
-npulse -R relay.example:9001 -T 'relay-token' -G 'group-secret' -i 5 -n satellite
-npulse -c /etc/npulse.conf
-```
-
-`-k` is required for normal direct/HTTP modes, not for pure shared
-relays or `-R` with an explicit `-G`. `-l [addr:]port` is the encrypted direct listener (default
-address `0.0.0.0`). `-H [addr:]port` is plain HTTP (default `127.0.0.1`), intended
-**only behind a TLS reverse proxy**. `-R host:port` publishes encrypted snapshots every `-i`
-seconds (default 5). Direct monitoring and shared relay `-S` may run in one process. IPv6 endpoints use
-`[address]:port`. `-n` defaults to hostname. `-h` prints usage. At least one
-listener or upstream is required. Config is unquoted `key=value`, with blank
-lines and `#` comment lines; keys are `secret`, `listen`, `http`,
-`interval`, `name`, `relay_listen` (`-S`), `token` (`-T`), `group_secret` (`-G`),
-`relay_upstream` (`-R`); single-letter flag names are also accepted as keys.
-CLI values override configuration regardless of order.
-Protect the config file and command-line secret from other local users.
-
-Direct requests are IETF ChaCha20-Poly1305 frames:
-`uint32_be(ciphertext length) | random nonce[12] | ciphertext | tag[16]`.
-The length bytes are authenticated additional data, with no magic or other
-framing. Key is SHA-512 of the UTF-8 secret, truncated to 32 bytes. Maximum
-ciphertext length is 262144. Each connection accepts one request and sends one
-response, then closes. Invalid requests receive no bytes. Read/write deadlines
-are five seconds. Timestamps must be within 120 seconds. The last 256 accepted
-nonces are cached (up to 240 seconds). Use a high-entropy secret: this protocol
-does not offer forward secrecy or password stretching.
-
-Requests: `{"op":"get","ts":UNIX_SECONDS}` or
-`{"op":"push","ts":UNIX_SECONDS,"node":SNAPSHOT}`. Push snapshots require a
-nonempty string id and must not contain server-owned `relay`/`last_seen` fields.
-Successful push returns `{"ok":true}`. Get returns
-`{"ok":true,"nodes":[...]}`. Self comes first only when `-l` is enabled and has
-`relay:false`. Up to 64 relayed nodes are stored by id, with `relay:true` and
-`last_seen`; entries expire after ten minutes. A fixed 32-client pool limits
-resource use; slow peers do not block other inbound clients. Upstream DNS and
-connect/send attempts are synchronous (connect/send waits capped at one second
-each, DNS resolution follows the system resolver).
-
-HTTP: `GET /api/nodes`, with `Authorization: Bearer SECRET` or `?key=SECRET`,
-returns the same JSON. All other requests return an empty 404. The query key
-is literal, not URL-decoded; prefer Bearer for secrets containing special URL
-characters and to avoid query-string logging. HTTP headers are limited to 8KB.
-
-Metrics are sampled from Linux procfs/sysfs once per second, plus statvfs and
-getifaddrs. Missing metrics are zero/empty except absent temperature is null.
-macOS host-test deliberately tolerates missing Linux files (zero-valued procfs
-metrics); it is for protocol verification, not macOS monitoring.
-
-## Verify
-
-```
-python3 -m venv .venv
-.venv/bin/pip install cryptography
-.venv/bin/python probe/tools/npulse-cli.py 127.0.0.1 9000 -k shared-secret get
-.venv/bin/python probe/tools/npulse-cli.py relay.example.com 9001 -T relay-token -G group-secret gget
-cd probe
-../.venv/bin/python tools/test-probe.py ./npulse-host
-# On Linux, substitute ./dist/npulse-linux-<arch> for ./npulse-host.
-```
-
-The integration check covers direct AEAD interoperability with Python's
-ChaCha20Poly1305, snapshot fields and string escaping, silent error handling,
-replay rejection, timeout, HTTP auth, relay-only operation, replacement by id,
-empty node lists, config and CLI precedence.
+**GPL-2.0-only**，见 [LICENSE](LICENSE)。Monocypher（BSD-2-Clause / CC0）、Nayuki QR（MIT）及 SwiftTerm（MIT）保留各自声明，见 [第三方许可证](ios/NodePulse/ThirdPartyNotices.txt)；App 设置内亦可查看。

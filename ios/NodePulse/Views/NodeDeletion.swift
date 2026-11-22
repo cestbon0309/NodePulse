@@ -7,19 +7,19 @@ private struct NodeDeletion: ViewModifier {
     @State private var error: String?
 
     func body(content: Content) -> some View {
-        content.confirmationDialog("删除节点？", isPresented: Binding(
+        content.confirmationDialog(L10n.text("删除节点？"), isPresented: Binding(
             get: { node != nil }, set: { if !$0 { node = nil } }
         ), titleVisibility: .visible, presenting: node) { item in
-            Button("删除节点", role: .destructive) { remove(item, endpoint: false) }
+            Button(L10n.text("删除节点"), role: .destructive) { remove(item, endpoint: false) }
             if store.removableEndpoint(for: item) != nil {
-                Button("同时删除接入点和密钥", role: .destructive) { remove(item, endpoint: true) }
+                Button(L10n.text("同时删除接入点和密钥"), role: .destructive) { remove(item, endpoint: true) }
             }
-            Button("取消", role: .cancel) { node = nil }
+            Button(L10n.text("取消"), role: .cancel) { node = nil }
         } message: { item in
-            Text("将从仪表盘移除「\(item.snapshot.name)」及其历史，并持续隐藏。可在设置 → 接入点中恢复。不会删除服务器上的数据。")
+            Text(L10n.text("将从仪表盘移除「%@」及其历史，并持续隐藏。可在设置 → 接入点中恢复。不会删除服务器上的数据。", String(describing: item.snapshot.name)))
         }
-        .alert("无法删除", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
-            Button("好") { error = nil }
+        .alert(L10n.text("无法删除"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+            Button(L10n.text("好")) { error = nil }
         } message: { Text(error ?? "") }
     }
 

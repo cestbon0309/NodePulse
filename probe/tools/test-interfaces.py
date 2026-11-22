@@ -45,10 +45,10 @@ esac
     tool("curl", fetch_body)
     def run(addresses="", choice="", expression="public_addresses", ok=True, **settings):
         fetch_log.write_text("")
-        env = dict(os.environ, PATH=str(tools), ADDRESSES=addresses, IFCONFIG="", CHOICE=choice,
+        env = dict(os.environ, NPULSE_LANG="zh", PATH=str(tools), ADDRESSES=addresses, IFCONFIG="", CHOICE=choice,
                    FETCH_LOG=str(fetch_log), FETCH_MODE="success")
         env.update(settings)
-        script = '\n'.join(function(n) for n in ("public_addresses", "valid_public_ip", "discover_public_ip", "resolve_public_ip", "select_bind", "bind_endpoint", "firewall_plan", "open_firewall"))
+        script = '\n'.join(function(n) for n in ("msg", "say", "public_addresses", "valid_public_ip", "discover_public_ip", "resolve_public_ip", "select_bind", "bind_endpoint", "firewall_plan", "open_firewall"))
         script += '\nfail() { printf "%s\\n" "$*" >&2; exit 1; }\nask() { printf "%s\\n" "$1" >&2; ANSWER=$(printf "%s\\n" "$CHOICE" | awk "NR==1 {print;exit}"); CHOICE=$(printf "%s\\n" "$CHOICE" | awk "NR>1"); ANSWER=${ANSWER:-$2}; }\n'
         script += 'BIND=${TEST_BIND:-}; PUBLIC_IP=${TEST_PUBLIC_IP:-}; PORT=9527; MODE=1; LISTEN=yes; YES=0; INIT=${TEST_INIT:-systemd}\n' + expression
         result = subprocess.run([*shell, "-c", script], env=env, text=True, capture_output=True, timeout=5)

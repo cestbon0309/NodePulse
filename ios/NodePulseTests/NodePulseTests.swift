@@ -1,7 +1,92 @@
 import XCTest
+import SwiftUI
 @testable import NodePulse
 
 final class NodePulseTests: XCTestCase {
+    @MainActor func testCompactCardHeightIndependentOfBadgeLocationAndEmptyMetadata() throws {
+        let suite = "Compact-\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = MonitorStore(defaults: defaults, secrets: MemorySecrets())
+        for size in [DynamicTypeSize.large, .accessibility3] {
+            var baseline: CGFloat?
+            for encrypted in [false, true] {
+                for address in [nil, "1.1.1.1", "invalid", "10.0.0.1"] as [String?] {
+                    for empty in [false, true] {
+                        let kind: Endpoint.Kind = encrypted ? .direct(host: "localhost", port: 9000) : .https(urlString: "https://example.com")
+                        let endpoint = Endpoint(name: "test", kind: kind)
+                        var snapshot = NodeSnapshot(); snapshot.id = "node"
+                        snapshot.name = empty ? "" : "A long node name that truncates"
+                        snapshot.os = empty ? "" : "OpenWrt 23.05"; snapshot.egressIp = address
+                        store.apply(endpoint, result: .success([snapshot]), latency: 1)
+                        if empty { store.apply(endpoint, result: .failure(ProbeError.timeout), latency: 1) }
+                        let item = try XCTUnwrap(store.nodes.last)
+                        let renderer = ImageRenderer(content: CompactNodeCard(item: item, locations: store.locations, demo: true)
+                            .frame(width: 180).environment(\.dynamicTypeSize, size))
+                        let height = try XCTUnwrap(renderer.uiImage).size.height
+                        XCTAssertGreaterThan(height, 100)
+                        if let baseline { XCTAssertEqual(height, baseline, accuracy: 1) }
+                        else { baseline = height }
+                    }
+                }
+            }
+        }
+    }
+
+    @MainActor func testDetailHeaderAddressSelection() {
+        XCTAssertEqual(DetailHeader.addresses(primary: "192.168.1.1", egress: "1.1.1.1"), ["192.168.1.1", "1.1.1.1"])
+        XCTAssertEqual(DetailHeader.addresses(primary: "1.1.1.1", egress: "1.1.1.1"), ["1.1.1.1"])
+        XCTAssertEqual(DetailHeader.addresses(primary: nil, egress: "1.1.1.1"), ["1.1.1.1"])
+        XCTAssertEqual(DetailHeader.addresses(primary: nil, egress: nil), [])
+        XCTAssertEqual(DetailHeader.addresses(primary: "", egress: "invalid"), [])
+        XCTAssertEqual(DetailHeader.addresses(primary: "192.168.1.1", egress: "10.0.0.1"), ["192.168.1.1"])
+        XCTAssertEqual(DetailHeader.addresses(primary: "2606:4700::ABCD", egress: "2606:4700::abcd").count, 1)
+    }
+    func testChartReadoutLatestSelectedAndEmpty() {
+        let start = Date(timeIntervalSince1970: 1000)
+        let history = (0..<3).map { HistorySample(date: start.addingTimeInterval(Double($0) * 5), cpu: Double($0), memPercent: 0, rxRate: 0, txRate: 0) }
+        XCTAssertEqual(HistorySample.displayed(in: history, at: nil), history.last)
+        XCTAssertEqual(HistorySample.displayed(in: history, at: start.addingTimeInterval(6)), history[1])
+        XCTAssertEqual(HistorySample.displayed(in: history, at: start.addingTimeInterval(-100)), history.first)
+        XCTAssertEqual(HistorySample.displayed(in: history, at: start.addingTimeInterval(100)), history.last)
+        XCTAssertNil(HistorySample.displayed(in: [], at: nil))
+        XCTAssertNil(HistorySample.displayed(in: [], at: start))
+    }
+
+    @MainActor func testEncryptionBadgeMatchesEndpointTransport() {
+        let suite = "Encryption-\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = MonitorStore(defaults: defaults, secrets: MemorySecrets())
+        let transports: [(Endpoint.Kind, Bool)] = [
+            (.direct(host: "localhost", port: 9000), true),
+            (.https(urlString: "https://example.com"), false),
+            (.groupTCP(host: "localhost", port: 9001), true),
+            (.groupHTTPS(urlString: "https://example.com"), false)
+        ]
+        for (kind, encrypted) in transports {
+            let endpoint = Endpoint(name: "入口", kind: kind)
+            var snapshot = NodeSnapshot(); snapshot.id = "node"
+            store.apply(endpoint, result: .success([]), latency: 1)
+            XCTAssertFalse(store.nodes.contains { $0.endpointID == endpoint.id })
+            store.apply(endpoint, result: .success([snapshot]), latency: 1)
+            XCTAssertEqual(store.nodes.last?.usesEndToEndEncryption, encrypted)
+            XCTAssertEqual(store.nodes.last?.endToEnd, kind.isGroup)
+            if !kind.isGroup { XCTAssertEqual(store.nodes.last?.connectionLabel, L10n.text("直连")) }
+            store.apply(endpoint, result: .failure(ProbeError.timeout), latency: 1)
+            XCTAssertEqual(store.nodes.last?.usesEndToEndEncryption, encrypted)
+            XCTAssertEqual(store.nodes.last?.online, false)
+        }
+    }
+
+    func testIPAddressMasking() {
+        for address in ["192.168.1.1", "2606:4700:4700::1111", "fe80::1%en0", "invalid-address", ""] {
+            XCTAssertEqual(PulseFormat.ip(address, hidden: false), address)
+            if !address.isEmpty { XCTAssertEqual(PulseFormat.ip(address, hidden: true), "•.•.•.•") }
+        }
+        XCTAssertEqual(PulseFormat.ip("192.168.1.1", hidden: true), "•.•.•.•")
+        XCTAssertEqual(PulseFormat.ip("2606:4700:4700::1111", hidden: true), "•.•.•.•")
+        XCTAssertEqual(PulseFormat.ip("", hidden: true), "")
+    }
+
     @MainActor func testHiddenNodePersistencePollingAndFreshHistory() throws {
         let suite = "Hidden-\(UUID())", defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -81,15 +166,15 @@ final class NodePulseTests: XCTestCase {
     func testConnectionLabelNeverRoutesDirectNodesThroughThemselves() {
         var snapshot = NodeSnapshot(); snapshot.name = "主机"
         var node = NodeItem(key: "node", endpointID: UUID(), endpointName: "主机", snapshot: snapshot, online: true)
-        XCTAssertEqual(node.connectionLabel, "直连")
+        XCTAssertEqual(node.connectionLabel, L10n.text("直连"))
         node.endpointName = "自定义别名"
-        XCTAssertEqual(node.connectionLabel, "直连")
+        XCTAssertEqual(node.connectionLabel, L10n.text("直连"))
         node.endToEnd = true
-        XCTAssertEqual(node.connectionLabel, "经由 自定义别名")
+        XCTAssertEqual(node.connectionLabel, L10n.text("经由 %@", "自定义别名"))
         node.endpointName = "主机"
-        XCTAssertEqual(node.connectionLabel, "中继")
+        XCTAssertEqual(node.connectionLabel, L10n.text("中继"))
         node.endpointName = ""
-        XCTAssertEqual(node.connectionLabel, "中继")
+        XCTAssertEqual(node.connectionLabel, L10n.text("中继"))
     }
 
     func testCompactRateFormatting() {
@@ -106,7 +191,7 @@ final class NodePulseTests: XCTestCase {
         let plaintext = try crypto.open(frame: captured)
         XCTAssertEqual(try DirectClient.decodeResponse(plaintext, requestID: rid), [])
         XCTAssertThrowsError(try DirectClient.decodeResponse(plaintext, requestID: String(repeating: "0", count: 32))) {
-            XCTAssertEqual($0.localizedDescription, "响应校验失败")
+            XCTAssertEqual($0.localizedDescription, L10n.text("响应校验失败"))
         }
         XCTAssertThrowsError(try DirectClient.decodeResponse(Data(#"{"ok":true,"nodes":[]}"#.utf8), requestID: rid))
         XCTAssertThrowsError(try DirectClient.decodeResponse(Data(), requestID: rid))
@@ -167,7 +252,7 @@ final class NodePulseTests: XCTestCase {
         XCTAssertTrue(store.nodes.allSatisfy { $0.online })
         store.apply(endpoint, result: .failure(ProbeError.timeout), latency: 6000)
         XCTAssertEqual(store.nodes.count, 2); XCTAssertTrue(store.nodes.allSatisfy { !$0.online })
-        XCTAssertEqual(store.statuses[endpoint.id]?.error, "超时")
+        XCTAssertEqual(store.statuses[endpoint.id]?.error, L10n.text("超时"))
         XCTAssertNotNil(store.statuses[endpoint.id]?.lastSuccess)
         store.demoMode = true
     }
@@ -208,9 +293,9 @@ final class NodePulseTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(nodes.count, 1); XCTAssertGreaterThanOrEqual(webNodes.count, 1)
         print("E2E PASS DirectClient nodes=\(nodes.count), HTTPSClient localhost nodes=\(webNodes.count)")
         do { _ = try await DirectClient().fetch(direct, secret: "wrong"); XCTFail("wrong key accepted") }
-        catch { XCTAssertEqual(error.localizedDescription, "密钥错误或被拒绝（对端静默断开）") }
+        catch { XCTAssertEqual(error.localizedDescription, L10n.text("密钥错误或被拒绝（对端静默断开）")) }
         do { _ = try await HTTPSClient().fetch(http, secret: "wrong"); XCTFail("wrong HTTP key accepted") }
-        catch { XCTAssertEqual(error.localizedDescription, "密钥错误或路径不对") }
+        catch { XCTAssertEqual(error.localizedDescription, L10n.text("密钥错误或路径不对")) }
     }
     func testKeychainWhenSigned() throws {
         let secrets = SecretStore(), id = UUID()

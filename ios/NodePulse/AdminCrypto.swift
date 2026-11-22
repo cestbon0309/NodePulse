@@ -46,7 +46,7 @@ struct AdminCipher {
         return try ChaChaPoly.Nonce(data: Data((0..<8).map { UInt8(truncatingIfNeeded: counter >> ($0 * 8)) }) + Data(repeating: 0, count: 4))
     }
     mutating func seal(_ data: Data) throws -> Data {
-        guard !data.isEmpty, data.count <= 131072 else { throw AdminError.message("管理消息过大") }
+        guard !data.isEmpty, data.count <= 131072 else { throw AdminError.message(L10n.text("管理消息过大")) }
         let header = AdminCrypto.length(data.count)
         let box = try ChaChaPoly.seal(data, using: key, nonce: nonce(), authenticating: header)
         counter += 1

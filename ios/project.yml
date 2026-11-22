@@ -1,5 +1,7 @@
 name: NodePulse
 options:
+  developmentLanguage: en
+  knownRegions: [en, zh-Hans]
   deploymentTarget:
     iOS: "17.0"
 settings:
@@ -20,7 +22,7 @@ targets:
     info:
       path: NodePulse/Info.plist
       properties:
-        NSCameraUsageDescription: 扫描探针终端的配对二维码，填写连接信息；仍需核对安全图案和数字。
+        NSCameraUsageDescription: Scan the probe terminal QR code to fill connection details. Always verify the security pattern and digits.
         CFBundleURLTypes:
           - CFBundleURLName: com.cestbon.nodepulse.pair
             CFBundleURLSchemes: [nodepulse]
@@ -30,8 +32,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cestbon.nodepulse
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_NSLocalNetworkUsageDescription: 连接局域网中的监控探针，查看节点状态。
-        INFOPLIST_KEY_NSFaceIDUsageDescription: 验证身份后管理探针、打开终端或执行电源操作。
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: Connect to monitoring probes on your local network to view node status.
+        INFOPLIST_KEY_NSFaceIDUsageDescription: Verify your identity before managing probes, opening terminals or using power controls.
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
   NodePulseTests:
     type: bundle.unit-test

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AddEndpointView: View {
+    @Environment(\.pulseTheme) private var theme
     @Bindable var store: MonitorStore
     @Environment(\.dismiss) private var dismiss
     @State private var manual = false
@@ -17,34 +18,34 @@ struct AddEndpointView: View {
         NavigationStack {
             List {
                 Section {
-                    Button { scanning = true } label: { Label("扫码配对", systemImage: "qrcode.viewfinder").font(.headline).padding(.vertical, 8) }
-                } footer: { Text("扫描服务器终端上的二维码，仅填写连接信息；仍须核对图案和数字。") }
+                    Button { scanning = true } label: { Label(L10n.text("扫码配对"), systemImage: "qrcode.viewfinder").font(.headline).padding(.vertical, 8) }
+                } footer: { Text(L10n.text("扫描服务器终端上的二维码，仅填写连接信息；仍须核对图案和数字。")) }
                 Section {
                     Button { relay = false; activeInvite = nil; initialAdmin = false; pairing = true } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("直连配对").font(.headline)
-                                Text("核对图案与数字，安全获取探针密钥").font(.caption).foregroundStyle(.secondary)
+                                Text(L10n.text("直连配对")).font(.headline)
+                                Text(L10n.text("核对图案与数字，安全获取探针密钥")).font(.caption).foregroundStyle(.secondary)
                             }.padding(.vertical, 10)
-                        } icon: { Image(systemName: "qrcode.viewfinder").font(.title2).foregroundStyle(.mint) }
+                        } icon: { Image(systemName: "qrcode.viewfinder").font(.title2).foregroundStyle(theme.ink) }
                     }.accessibilityIdentifier("direct-pairing")
-                    Button { relay = true; activeInvite = nil; initialAdmin = false; pairing = true } label: { Label("中转配对", systemImage: "point.3.connected.trianglepath.dotted").padding(.vertical, 8) }
-                } footer: { Text("先在服务器安装器中开启配对，或运行 npulse -P。只有双方确认一致后才会交换密钥。") }
-                Section("粘贴配对链接") {
+                    Button { relay = true; activeInvite = nil; initialAdmin = false; pairing = true } label: { Label(L10n.text("中转配对"), systemImage: "point.3.connected.trianglepath.dotted").padding(.vertical, 8) }
+                } footer: { Text(L10n.text("先在服务器安装器中开启配对，或运行 npulse -P。只有双方确认一致后才会交换密钥。")) }
+                Section(L10n.text("粘贴配对链接")) {
                     TextField("nodepulse://pair?…", text: $link).textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
-                    Button("预览连接信息") { consume(link) }.disabled(link.isEmpty)
+                    Button(L10n.text("预览连接信息")) { consume(link) }.disabled(link.isEmpty)
                 }
                 Section {
-                    Button { manual = true } label: { Label("手动输入密钥", systemImage: "key.horizontal") }
-                } footer: { Text("也可手动添加直连、HTTPS 或端到端中继接入点。") }
-            }.navigationTitle("添加接入点")
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
+                    Button { manual = true } label: { Label(L10n.text("手动输入密钥"), systemImage: "key.horizontal") }
+                } footer: { Text(L10n.text("也可手动添加直连、HTTPS 或端到端中继接入点。")) }
+            }.navigationTitle(L10n.text("添加接入点"))
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("取消")) { dismiss() } } }
                 .navigationDestination(isPresented: $pairing) { PairingView(store: store, relay: relay, invite: activeInvite, initialAdmin: initialAdmin, done: { dismiss() }) }
                 .sheet(isPresented: $manual) { EndpointForm(store: store) }
                 .sheet(isPresented: $scanning, onDismiss: { if let queuedInvite { invite = queuedInvite; self.queuedInvite = nil } }) {
                     PairScanner { text in
                         do { guard let url = URL(string: text) else { throw PairError.handshake }; queuedInvite = try PairInvite(url: url); scanning = false }
-                        catch { self.error = "无法识别配对二维码，请使用服务器当前显示的 NodePulse 二维码。"; scanning = false }
+                        catch { self.error = L10n.text("无法识别配对二维码，请使用服务器当前显示的 NodePulse 二维码。"); scanning = false }
                     }
                 }
                 .sheet(item: $invite) { value in
@@ -52,7 +53,7 @@ struct AddEndpointView: View {
                         activeInvite = value; initialAdmin = admin; relay = value.isRelay; invite = nil; pairing = true
                     }
                 }
-                .alert("无法打开配对链接", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button("好") { error = nil } } message: { Text(error ?? "") }
+                .alert(L10n.text("无法打开配对链接"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button(L10n.text("好")) { error = nil } } message: { Text(error ?? "") }
                 .onChange(of: store.pairingURL) { _, value in if let value { consume(value.absoluteString); store.pairingURL = nil } }
                 .task {
                     if let url = store.pairingURL { consume(url.absoluteString); store.pairingURL = nil }
@@ -63,13 +64,14 @@ struct AddEndpointView: View {
         }
     }
     private func consume(_ text: String) {
-        guard !pairing else { error = "请先完成或取消当前配对，再打开新的配对链接。"; return }
+        guard !pairing else { error = L10n.text("请先完成或取消当前配对，再打开新的配对链接。"); return }
         do { guard let url = URL(string: text) else { throw PairError.handshake }; invite = try PairInvite(url: url); link = "" }
-        catch { self.error = "配对链接无效或版本不受支持。请重新扫描服务器当前的二维码。" }
+        catch { self.error = L10n.text("配对链接无效或版本不受支持。请重新扫描服务器当前的二维码。") }
     }
 }
 
 struct PairingView: View {
+    @Environment(\.pulseTheme) private var theme
     @Bindable var store: MonitorStore
     var relay = false
     var invite: PairInvite?
@@ -93,60 +95,60 @@ struct PairingView: View {
         ScrollView {
             VStack(spacing: 24) {
                 if phase == 0 || phase == 1 {
-                    Image(systemName: "network.badge.shield.half.filled").font(.system(size: 52, weight: .light)).foregroundStyle(.mint).padding(.top, 24)
-                    Text(relay ? "无需公网 IP，中转配对" : "与探针安全配对").font(.title2.bold())
-                    if invite != nil { Label("已扫码 · 仍需核对图案", systemImage: "qrcode").font(.caption).foregroundStyle(.mint) }
+                    Image(systemName: "network.badge.shield.half.filled").font(.system(size: 52, weight: .light)).foregroundStyle(theme.ink).padding(.top, 24)
+                    Text(relay ? L10n.text("无需公网 IP，中转配对") : L10n.text("与探针安全配对")).font(.title2.bold())
+                    if invite != nil { Label(L10n.text("已扫码 · 仍需核对图案"), systemImage: "qrcode").font(.caption).foregroundStyle(theme.ink) }
                     VStack(alignment: .leading, spacing: 16) {
-                        TextField("IP 地址或主机名", text: $host).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).accessibilityIdentifier("pair-host")
+                        TextField(L10n.text("IP 地址或主机名"), text: $host).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).accessibilityIdentifier("pair-host")
                         Divider()
-                        HStack { Text("端口"); Spacer(); TextField("9527", text: $port).keyboardType(.numberPad).multilineTextAlignment(.trailing).accessibilityIdentifier("pair-port") }
+                        HStack { Text(L10n.text("端口")); Spacer(); TextField("9527", text: $port).keyboardType(.numberPad).multilineTextAlignment(.trailing).accessibilityIdentifier("pair-port") }
                         if relay {
-                            Divider(); SecureField("中转密码（访问令牌）", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled()
-                            TextField("配对码 XXXX-XXXX", text: $relayCode).textInputAutocapitalization(.characters).autocorrectionDisabled().font(.system(.body, design: .monospaced))
+                            Divider(); SecureField(L10n.text("中转密码（访问令牌）"), text: $token).textInputAutocapitalization(.never).autocorrectionDisabled()
+                            TextField(L10n.text("配对码 XXXX-XXXX"), text: $relayCode).textInputAutocapitalization(.characters).autocorrectionDisabled().font(.system(.body, design: .monospaced))
                                 .onChange(of: relayCode) { _, value in let formatted = PairInvite.formattedCode(value); if formatted != value { relayCode = formatted } }
-                            Text("仅支持 TCP 中转配对，不使用 HTTPS。").font(.caption).foregroundStyle(.secondary)
+                            Text(L10n.text("仅支持 TCP 中转配对，不使用 HTTPS。")).font(.caption).foregroundStyle(.secondary)
                         }
                     }.padding(20).background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 22)).disabled(phase == 1)
-                    Text("请先开启服务器的临时配对窗口。连接后请对照本机终端显示的图案和数字，不要使用对方发来的截图。").font(.subheadline).foregroundStyle(.secondary)
+                    Text(L10n.text("请先开启服务器的临时配对窗口。连接后请对照本机终端显示的图案和数字，不要使用对方发来的截图。")).font(.subheadline).foregroundStyle(.secondary)
                     Button(action: connect) {
-                        HStack { if phase == 1 { ProgressView() }; Text(phase == 1 ? "正在连接…" : "连接探针") }.frame(maxWidth: .infinity).padding(10)
-                    }.buttonStyle(.borderedProminent).tint(.mint).disabled(phase == 1 || host.trimmingCharacters(in: .whitespaces).isEmpty || validPort == nil || (relay && (token.isEmpty || relayCode.count != 9)))
+                        HStack { if phase == 1 { ProgressView() }; Text(phase == 1 ? L10n.text("正在连接…") : L10n.text("连接探针")) }.frame(maxWidth: .infinity).padding(10)
+                    }.buttonStyle(.borderedProminent).tint(theme.accent).disabled(phase == 1 || host.trimmingCharacters(in: .whitespaces).isEmpty || validPort == nil || (relay && (token.isEmpty || relayCode.count != 9)))
                 } else if phase == 2 || phase == 3, let session {
-                    Label("核对安全图案", systemImage: "checkmark.shield").font(.title2.bold()).padding(.top, 12)
-                    Text("与服务器终端上的图案和数字完全一致吗？").font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Label(L10n.text("核对安全图案"), systemImage: "checkmark.shield").font(.title2.bold()).padding(.top, 12)
+                    Text(L10n.text("与服务器终端上的图案和数字完全一致吗？")).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     VStack(spacing: 20) {
-                        Text(session.art.trimmingCharacters(in: .newlines)).font(.system(size: 19, weight: .medium, design: .monospaced)).lineSpacing(2).fixedSize().foregroundStyle(.mint)
-                            .accessibilityLabel("安全图案").accessibilityValue(session.art)
+                        Text(session.art.trimmingCharacters(in: .newlines)).font(.system(size: 19, weight: .medium, design: .monospaced)).lineSpacing(2).fixedSize().foregroundStyle(theme.ink)
+                            .accessibilityLabel(L10n.text("安全图案")).accessibilityValue(session.art)
                         Text(session.code).font(.system(size: 42, weight: .semibold, design: .monospaced)).tracking(4).accessibilityIdentifier("pair-code")
                     }.frame(maxWidth: .infinity).padding(.vertical, 26)
-                        .background(.mint.opacity(0.08), in: RoundedRectangle(cornerRadius: 28))
-                        .overlay(RoundedRectangle(cornerRadius: 28).stroke(.mint.opacity(0.25)))
+                        .background(theme.ink.opacity(0.08), in: RoundedRectangle(cornerRadius: 28))
+                        .overlay(RoundedRectangle(cornerRadius: 28).stroke(theme.ink.opacity(0.25)))
                         .scaleEffect(appeared ? 1 : 0.94).opacity(appeared ? 1 : 0)
                         .onAppear { withAnimation(reduceMotion ? nil : .spring(duration: 0.5)) { appeared = true } }
                     if phase == 2 {
-                        Toggle("同时授权本机管理", isOn: $grantAdmin).tint(.mint)
-                        Text("管理授权可控制文件、终端和电源，可能拥有 root 权限；仅完整构建支持。请在 30 秒内确认。").font(.caption).foregroundStyle(.secondary)
+                        Toggle(L10n.text("同时授权本机管理"), isOn: $grantAdmin).tint(theme.accent)
+                        Text(L10n.text("管理授权可控制文件、终端和电源，可能拥有 root 权限；仅完整构建支持。请在 30 秒内确认。")).font(.caption).foregroundStyle(.secondary)
                         HStack(spacing: 16) {
-                            Button("不一致", role: .destructive) { confirm(false) }.buttonStyle(.bordered).frame(maxWidth: .infinity)
-                            Button("一致") { confirm(true) }.buttonStyle(.borderedProminent).tint(.mint).frame(maxWidth: .infinity).accessibilityIdentifier("pair-confirm")
+                            Button(L10n.text("不一致"), role: .destructive) { confirm(false) }.buttonStyle(.bordered).frame(maxWidth: .infinity)
+                            Button(L10n.text("一致")) { confirm(true) }.buttonStyle(.borderedProminent).tint(theme.accent).frame(maxWidth: .infinity).accessibilityIdentifier("pair-confirm")
                         }.controlSize(.large)
                     } else {
-                        ProgressView("等待服务器确认…").padding()
-                        Text("请在服务器终端核对后输入 y 并回车。密钥仅在双方同意后传输。").font(.caption).foregroundStyle(.secondary)
+                        ProgressView(L10n.text("等待服务器确认…")).padding()
+                        Text(L10n.text("请在服务器终端核对后输入 y 并回车。密钥仅在双方同意后传输。")).font(.caption).foregroundStyle(.secondary)
                     }
                 } else if phase == 4 {
                     Spacer(minLength: 60)
-                    Image(systemName: "checkmark.shield.fill").font(.system(size: 84)).foregroundStyle(.mint.gradient).symbolEffect(.bounce, value: phase)
-                    Text("配对成功").font(.largeTitle.bold()).accessibilityIdentifier("pair-success")
+                    Image(systemName: "checkmark.shield.fill").font(.system(size: 84)).foregroundStyle(theme.ink.gradient).symbolEffect(.bounce, value: phase)
+                    Text(L10n.text("配对成功")).font(.largeTitle.bold()).accessibilityIdentifier("pair-success")
                     Text(savedName).font(.title3).foregroundStyle(.secondary)
-                    Text("探针已添加，密钥已安全存入钥匙串。\n服务器退出配对并启动正常服务后即可监控。").multilineTextAlignment(.center).foregroundStyle(.secondary)
-                    if adminUnavailable { Text("未授予管理权限（服务器拒绝或为 lite 版），仍可正常监控。").font(.callout).foregroundStyle(.orange) }
-                    Button("完成", action: done).buttonStyle(.borderedProminent).tint(.mint).controlSize(.large)
+                    Text(L10n.text("探针已添加，密钥已安全存入钥匙串。\n服务器退出配对并启动正常服务后即可监控。")).multilineTextAlignment(.center).foregroundStyle(.secondary)
+                    if adminUnavailable { Text(L10n.text("未授予管理权限（服务器拒绝或为 lite 版），仍可正常监控。")).font(.callout).foregroundStyle(theme.warning) }
+                    Button(L10n.text("完成"), action: done).buttonStyle(.borderedProminent).tint(theme.accent).controlSize(.large)
                 }
             }.padding(24).frame(maxWidth: 520).frame(maxWidth: .infinity)
-        }.navigationTitle(relay ? "中转配对" : "直连配对").navigationBarTitleDisplayMode(.inline)
+        }.navigationTitle(relay ? L10n.text("中转配对") : L10n.text("直连配对")).navigationBarTitleDisplayMode(.inline)
             .onDisappear { work?.cancel(); session?.close() }
-            .alert("配对未完成", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button("好") { error = nil } } message: { Text(error ?? "") }
+            .alert(L10n.text("配对未完成"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button(L10n.text("好")) { error = nil } } message: { Text(error ?? "") }
             .task {
                 grantAdmin = initialAdmin
                 if relay { port = "9010" }
@@ -199,7 +201,7 @@ struct PairingView: View {
                 withAnimation(reduceMotion ? nil : .spring(duration: 0.5)) { phase = 4 }
             } catch {
                 session.close()
-                if !Task.isCancelled { self.error = accepted ? error.localizedDescription : "图案或数字不一致，已取消配对，未保存任何密钥。"; phase = 0; self.session = nil }
+                if !Task.isCancelled { self.error = accepted ? error.localizedDescription : L10n.text("图案或数字不一致，已取消配对，未保存任何密钥。"); phase = 0; self.session = nil }
             }
         }
     }

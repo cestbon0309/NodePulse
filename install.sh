@@ -3,11 +3,69 @@ set +x
 set -eu
 umask 077
 
-fail() { printf '错误：%s\n' "$*" >&2; exit 1; }
+DISPLAY_LANG=${NPULSE_LANG:-}
+LANG_EXPLICIT=no
+if [ -n "$DISPLAY_LANG" ]; then LANG_EXPLICIT=yes
+else case "${LC_ALL:-${LANG:-}}" in zh*) DISPLAY_LANG=zh ;; *) DISPLAY_LANG=en ;; esac; fi
+msg() {
+    if [ "${DISPLAY_LANG:-${NPULSE_LANG:-en}}" = zh ]; then printf '%s' "$1"; else printf '%s' "$2"; fi
+}
+say() {
+    format=$(msg "$1" "$2"); shift 2
+    # shellcheck disable=SC2059
+    printf "$format" "$@"
+}
+fail() { say '错误：%s\n' 'Error: %s\n' "$*" >&2; exit 1; }
 help() {
+    if [ "$DISPLAY_LANG" = en ]; then
+        cat <<'HELP'
+NodePulse installer (root required; POSIX sh / OpenWrt ash)
+Usage: sh install.sh [install|upgrade|uninstall|status|pair] [options]
+  --lang zh|en          Display language (NPULSE_LANG; otherwise LC_ALL/LANG)
+  --yes                Unattended: use environment/defaults; never purge implicitly
+  --mode 1|2|3|4        Direct / HTTP+Nginx / E2E publisher / relay-only
+  --arch ARCH          x86_64,i386,aarch64,armv7,armv7-soft,mips,mipsel
+  --full | --lite      Full / compact (lite cannot administer or forward admin pipes)
+  --public-ip IP|auto  Advertised public IP (cloud external/elastic IP); HTTPS discovery
+  --port PORT          Direct or relay-only port (default 9000)
+  --bind IP            Override listener; external cloud IPs default to wildcard bind
+  --open-firewall      Consent to TCP firewall rules (not executed in DRY_RUN)
+  --http-port PORT     HTTP loopback port (default 9001); enables HTTP in relay mode
+  --upstream HOST:PORT Mode 3 shared relay (IPv6: [address]:port)
+  --name NAME          Node name
+  --admin-keys HEX,... Allow administration: up to 32 comma-separated Ed25519 keys
+  --admin-via-pair     Use full and pair with phone; both sides must authorize admin
+  --also-relay PORT    Mode 1: same process also relays; use a distinct port
+  --purge              Remove configuration on uninstall (otherwise preserved)
+  --help
+
+Environment: NPULSE_YES=1, NPULSE_LANG=zh|en, NPULSE_MODE, NPULSE_ARCH,
+NPULSE_FLAVOR=full|lite, NPULSE_PORT, NPULSE_HTTP_PORT, NPULSE_UPSTREAM,
+NPULSE_NAME, NPULSE_ADMIN_KEYS, NPULSE_ADMIN=yes|no|pair (pair: --admin-via-pair),
+NPULSE_ALSO_RELAY=PORT, NPULSE_PURGE=yes|no, NPULSE_BIND, NPULSE_OPEN_FIREWALL=yes,
+NPULSE_PUBLIC_IP (advertised for pairing/QR; need not exist on a local interface).
+pair stops the service, runs SAS pairing, saves explicitly authorized admin keys,
+then restarts. Keys use environment only: NPULSE_SECRET, NPULSE_TOKEN,
+NPULSE_GROUP_SECRET. Missing keys are securely generated (32 characters);
+publishers must supply the relay token and their existing group's shared key.
+NPULSE_INTERVAL defaults to 5 seconds. NPULSE_VERSION=vX.Y.Z pins a release;
+otherwise latest. NPULSE_MIRROR overrides the asset/SHA256SUMS directory.
+HTTP mirrors require NPULSE_INSECURE=1 (man-in-the-middle risk).
+NPULSE_INIT=systemd|procd overrides detection; systemd >=247 (LoadCredential).
+NPULSE_ARM_FLOAT=hard|soft helps ARM ABI detection; otherwise use --arch.
+
+Interactive input uses /dev/tty (supports curl .../install.sh | sh).
+Automation: --yes. Config: /etc/npulse/npulse.conf (0600); no eval/source,
+no secrets in service arguments. systemd normally uses DynamicUser; administration
+runs as root with full control. OpenWrt procd runs as root. Summaries show keys:
+never publish the output. Test: DESTDIR=/absolute/path DRY_RUN=1 ... --yes --arch x86_64
+Tests still download/verify, but never run the probe or service manager; non-root OK.
+HELP
+    else
     cat <<'HELP'
 NodePulse 安装器（需要 root；POSIX sh / OpenWrt ash）
 用法：sh install.sh [install|upgrade|uninstall|status|pair] [选项]
+  --lang zh|en          显示语言（NPULSE_LANG；否则按 LC_ALL/LANG 选择）
   --yes                 无交互，使用环境变量与默认值；不自动删除配置
   --mode 1|2|3|4         直连 / HTTP+Nginx / E2E上报 / 纯共享中继
   --arch ARCH            x86_64,i386,aarch64,armv7,armv7-soft,mips,mipsel
@@ -47,6 +105,7 @@ OpenWrt procd 服务以 root 运行。摘要会显示密钥，请勿将摘要保
 测试：DESTDIR=/绝对路径 DRY_RUN=1 ... --yes --arch x86_64
 测试仍真实下载并校验，但不运行二进制或调用服务管理器，允许非 root。
 HELP
+    fi
 }
 
 ACTION=install
@@ -77,19 +136,21 @@ VERSION=${NPULSE_VERSION:-}
 WORK=
 ECHO_OFF=0
 PAIR_STOPPED=0
+SHOW_HELP=0
 while [ "$#" -gt 0 ]; do
     case "$1" in
         install|upgrade|uninstall|status|pair) ACTION=$1; shift ;;
-        --help|-h) help; exit 0 ;;
+        --help|-h) SHOW_HELP=1; shift ;;
         --yes|-y) YES=1; shift ;;
         --full) FLAVOR=full; shift ;;
         --lite) FLAVOR=lite; shift ;;
         --purge) PURGE=yes; shift ;;
         --open-firewall) OPEN_FIREWALL=yes; shift ;;
         --admin-via-pair) ADMIN=pair; shift ;;
-        --mode|--arch|--port|--bind|--public-ip|--http-port|--upstream|--name|--admin-keys|--also-relay)
-            [ "$#" -ge 2 ] || fail "$1 缺少参数"
+        --lang|--mode|--arch|--port|--bind|--public-ip|--http-port|--upstream|--name|--admin-keys|--also-relay)
+            [ "$#" -ge 2 ] || fail "$(msg "$1 缺少参数" "$1 requires a value")"
             case "$1" in
+                --lang) DISPLAY_LANG=$2; LANG_EXPLICIT=yes ;;
                 --mode) MODE=$2 ;; --arch) ARCH=$2 ;; --port) PORT=$2 ;;
                 --bind) BIND=$2 ;;
                 --public-ip) PUBLIC_IP=$2 ;;
@@ -98,38 +159,40 @@ while [ "$#" -gt 0 ]; do
                 --name) NAME=$2 ;; --admin-keys) ADMIN_KEYS=$2 ;;
             esac
             shift 2 ;;
-        *) fail "未知参数（使用 --help）" ;;
+        *) fail "$(msg "未知参数（使用 --help）" "Unknown option (use --help)")" ;;
     esac
 done
-case "$ADMIN" in yes|no) ;; pair) ADMIN=yes; ADMIN_VIA_PAIR=yes ;; *) fail 'NPULSE_ADMIN 须为 yes、no 或 pair' ;; esac
-if [ "$ADMIN_VIA_PAIR" = yes ] && [ -n "$ADMIN_KEYS" ]; then fail '手机配对授权不能同时指定 --admin-keys / NPULSE_ADMIN_KEYS'; fi
-for setting in "$PURGE" "$OPEN_FIREWALL"; do case "$setting" in yes|no) ;; *) fail '开关须为 yes 或 no' ;; esac; done
-case "$YES:$DRY_RUN" in 0:0|0:1|1:0|1:1) ;; *) fail 'NPULSE_YES 和 DRY_RUN 须为 0 或 1' ;; esac
+case "$DISPLAY_LANG" in zh|en) ;; *) fail 'NPULSE_LANG / --lang: 请选择 zh 或 en / choose zh or en' ;; esac
+if [ "$SHOW_HELP" = 1 ]; then help; exit 0; fi
+case "$ADMIN" in yes|no) ;; pair) ADMIN=yes; ADMIN_VIA_PAIR=yes ;; *) fail "$(msg 'NPULSE_ADMIN 须为 yes、no 或 pair' 'NPULSE_ADMIN must be yes, no or pair')" ;; esac
+if [ "$ADMIN_VIA_PAIR" = yes ] && [ -n "$ADMIN_KEYS" ]; then fail "$(msg '手机配对授权不能同时指定 --admin-keys / NPULSE_ADMIN_KEYS' 'Phone pairing authorization cannot be combined with --admin-keys / NPULSE_ADMIN_KEYS')"; fi
+for setting in "$PURGE" "$OPEN_FIREWALL"; do case "$setting" in yes|no) ;; *) fail "$(msg '开关须为 yes 或 no' 'Switches must be yes or no')" ;; esac; done
+case "$YES:$DRY_RUN" in 0:0|0:1|1:0|1:1) ;; *) fail "$(msg 'NPULSE_YES 和 DRY_RUN 须为 0 或 1' 'NPULSE_YES and DRY_RUN must be 0 or 1')" ;; esac
 for utility in awk cat chmod cp dirname grep id mkdir mv rm tr uname wc; do
-    command -v "$utility" >/dev/null 2>&1 || fail "缺少必需命令 $utility；请安装对应工具或启用 BusyBox applet"
+    command -v "$utility" >/dev/null 2>&1 || fail "$(msg "缺少必需命令 $utility；请安装对应工具或启用 BusyBox applet" "Required command $utility is missing; install it or enable the BusyBox applet")"
 done
 NAME=${NAME:-$(uname -n)}
 if [ "$DRY_RUN" = 1 ]; then
-    case "$DESTDIR" in /*) ;; *) fail 'DRY_RUN 必须指定绝对 DESTDIR' ;; esac
-    [ "$DESTDIR" != / ] || fail 'DESTDIR 不能为 /'
+    case "$DESTDIR" in /*) ;; *) fail "$(msg 'DRY_RUN 必须指定绝对 DESTDIR' 'DRY_RUN requires an absolute DESTDIR')" ;; esac
+    [ "$DESTDIR" != / ] || fail "$(msg 'DESTDIR 不能为 /' 'DESTDIR must not be /')"
 else
-    [ -z "$DESTDIR" ] || fail 'DESTDIR 仅用于 DRY_RUN=1'
-    [ "$(id -u)" = 0 ] || fail '请以 root 运行（例如 sudo sh install.sh）'
-    [ "$(uname -s)" = Linux ] || fail '仅支持 Linux；主机测试请使用 DESTDIR / DRY_RUN'
+    [ -z "$DESTDIR" ] || fail "$(msg 'DESTDIR 仅用于 DRY_RUN=1' 'DESTDIR is only supported with DRY_RUN=1')"
+    [ "$(id -u)" = 0 ] || fail "$(msg '请以 root 运行（例如 sudo sh install.sh）' 'Run as root (for example sudo sh install.sh)')"
+    [ "$(uname -s)" = Linux ] || fail "$(msg '仅支持 Linux；主机测试请使用 DESTDIR / DRY_RUN' 'Linux only; use DESTDIR / DRY_RUN for host tests')"
 fi
-case "$DESTDIR" in *'/../'*|*/..|*'/./'*|*/.|*'//'*) fail 'DESTDIR 必须为规范绝对路径' ;; esac
+case "$DESTDIR" in *'/../'*|*/..|*'/./'*|*/.|*'//'*) fail "$(msg 'DESTDIR 必须为规范绝对路径' 'DESTDIR must be a canonical absolute path')" ;; esac
 DESTDIR=${DESTDIR%/}
 if [ "$DRY_RUN" = 1 ]; then
-    [ -d "$DESTDIR" ] || fail '测试 DESTDIR 必须是已存在的目录'
+    [ -d "$DESTDIR" ] || fail "$(msg '测试 DESTDIR 必须是已存在的目录' 'Test DESTDIR must be an existing directory')"
     DESTDIR=$(CDPATH='' cd "$DESTDIR" && pwd -P)
-    [ "$DESTDIR" != / ] || fail 'DESTDIR 不能指向根目录'
+    [ "$DESTDIR" != / ] || fail "$(msg 'DESTDIR 不能指向根目录' 'DESTDIR must not resolve to the root directory')"
 fi
 CONFIG=$DESTDIR/etc/npulse/npulse.conf
 STATE=$DESTDIR/etc/npulse/install.state
 cleanup() {
     if [ "$PAIR_STOPPED" = 1 ]; then
-        service start || printf '警告：恢复服务失败，请手动启动 npulse。\n' >&2
-        if [ "$ADMIN_VIA_PAIR" = yes ] && [ -z "$ADMIN_KEYS" ]; then printf '管理尚未启用；请稍后运行 sh install.sh pair 完成手机及服务器的管理授权。\n' >&2; fi
+        service start || say '警告：恢复服务失败，请手动启动 npulse。\n' 'Warning: service recovery failed; start npulse manually.\n' >&2
+        if [ "$ADMIN_VIA_PAIR" = yes ] && [ -z "$ADMIN_KEYS" ]; then say '管理尚未启用；请稍后运行 sh install.sh pair 完成手机及服务器的管理授权。\n' 'Administration is not enabled; run sh install.sh pair later to authorize it on both phone and server.\n' >&2; fi
     fi
     if [ "$ECHO_OFF" = 1 ]; then stty echo </dev/tty 2>/dev/null || :; fi
     if [ -n "$WORK" ]; then rm -rf "$WORK"; fi
@@ -139,30 +202,35 @@ trap 'exit 130' HUP INT TERM
 ask() {
     ANSWER=$2
     [ "$YES" = 0 ] || return 0
-    [ -r /dev/tty ] && [ -w /dev/tty ] || fail '没有交互终端，请使用 --yes 与环境变量'
+    [ -r /dev/tty ] && [ -w /dev/tty ] || fail "$(msg '没有交互终端，请使用 --yes 与环境变量' 'No interactive terminal; use --yes and environment variables')"
     if [ "${3:-}" = secret ]; then
         if command -v stty >/dev/null 2>&1 && stty -echo </dev/tty 2>/dev/null; then
             ECHO_OFF=1
         else
-            printf '警告：无法关闭终端回显，输入将会显示在屏幕上；请勿让旁人查看或录屏。\n' >/dev/tty
+            say '警告：无法关闭终端回显，输入将会显示在屏幕上；请勿让旁人查看或录屏。\n' 'Warning: terminal echo cannot be disabled; input will be visible. Avoid onlookers and screen recording.\n' >/dev/tty
         fi
     fi
     printf '%s ' "$1" >/dev/tty
-    IFS= read -r response </dev/tty || fail '未读取到输入'
+    IFS= read -r response </dev/tty || fail "$(msg '未读取到输入' 'Could not read input')"
     if [ "$ECHO_OFF" = 1 ]; then
         if stty echo </dev/tty 2>/dev/null; then ECHO_OFF=0
-        else printf '警告：无法恢复终端回显，请运行 stty echo。\n' >/dev/tty; fi
+        else say '警告：无法恢复终端回显，请运行 stty echo。\n' 'Warning: could not restore terminal echo; run stty echo.\n' >/dev/tty; fi
         printf '\n' >/dev/tty
     fi
     if [ -n "$response" ]; then ANSWER=$response; fi
 }
+if [ "$YES" = 0 ] && [ "$LANG_EXPLICIT" = no ]; then
+    language_default=2; if [ "$DISPLAY_LANG" = zh ]; then language_default=1; fi
+    ask "语言 / Language: 1 中文 / 2 English [默认 / default $language_default]:" "$language_default"
+    case "$ANSWER" in 1|zh) DISPLAY_LANG=zh ;; 2|en) DISPLAY_LANG=en ;; *) fail '请选择 1 或 2 / Choose 1 or 2' ;; esac
+fi
 safe_value() {
-    [ "$(printf '%s' "$1" | wc -c | tr -d ' ')" -le "${2:-1024}" ] || fail '配置字段过长'
+    [ "$(printf '%s' "$1" | wc -c | tr -d ' ')" -le "${2:-1024}" ] || fail "$(msg '配置字段过长' 'Configuration field is too long')"
     case "$1" in *'
-'*|[[:space:]]*|*[[:space:]]) fail '配置字段不能含换行或首尾空白' ;; esac
-    if printf '%s' "$1" | LC_ALL=C grep '[[:cntrl:]]' >/dev/null; then fail '配置字段不能含控制字符'; fi
+'*|[[:space:]]*|*[[:space:]]) fail "$(msg '配置字段不能含换行或首尾空白' 'Configuration fields cannot contain newlines or leading/trailing whitespace')" ;; esac
+    if printf '%s' "$1" | LC_ALL=C grep '[[:cntrl:]]' >/dev/null; then fail "$(msg '配置字段不能含控制字符' 'Configuration fields cannot contain control characters')"; fi
 }
-port() { case "$1" in ''|*[!0-9]*|0*) fail '端口须为 1–65535（不含前导零）' ;; esac; [ "${#1}" -le 5 ] && [ "$1" -le 65535 ] || fail '端口超出范围'; }
+port() { case "$1" in ''|*[!0-9]*|0*) fail "$(msg '端口须为 1–65535（不含前导零）' 'Ports must be 1-65535 without leading zeros')" ;; esac; [ "${#1}" -le 5 ] && [ "$1" -le 65535 ] || fail "$(msg '端口超出范围' 'Port is out of range')"; }
 public_addresses() {
     addresses=
     if command -v ip >/dev/null 2>&1; then addresses=$(ip -o addr show 2>/dev/null || :); fi
@@ -233,12 +301,12 @@ discover_public_ip() {
 resolve_public_ip() {
     if [ -z "$PUBLIC_IP" ] || [ "$PUBLIC_IP" = auto ]; then
         PUBLIC_IP=$(discover_public_ip) || PUBLIC_IP=
-        if [ -z "$PUBLIC_IP" ]; then printf '公网 IP 查询失败，请手动填写云控制台的外部/弹性 IP。\n'; fi
+        if [ -z "$PUBLIC_IP" ]; then say '公网 IP 查询失败，请手动填写云控制台的外部/弹性 IP。\n' 'Public IP lookup failed; enter the external/elastic IP from your cloud console.\n'; fi
     fi
     if [ "$YES" = 0 ]; then
-        ask "公网 IP（留空确认 $PUBLIC_IP，或输入其他公网 IP）：" "$PUBLIC_IP"; PUBLIC_IP=$ANSWER
+        ask "$(msg "公网 IP（留空确认 $PUBLIC_IP，或输入其他公网 IP）：" "Public IP (Enter to confirm $PUBLIC_IP, or enter another public IP):")" "$PUBLIC_IP"; PUBLIC_IP=$ANSWER
     fi
-    valid_public_ip "$PUBLIC_IP" || fail '请输入有效公网 IPv4/IPv6；可使用 --public-ip ADDR'
+    valid_public_ip "$PUBLIC_IP" || fail "$(msg '请输入有效公网 IPv4/IPv6；可使用 --public-ip ADDR' 'Enter a valid public IPv4/IPv6 address; you can use --public-ip ADDR')"
 }
 persist_public_ip() {
     printf '%s\n' "$PUBLIC_IP" > "$DESTDIR/etc/npulse/public-ip.new"
@@ -248,16 +316,16 @@ persist_public_ip() {
 select_bind() {
     candidates=$(public_addresses)
     if [ "$YES" = 0 ]; then
-        if [ -n "$candidates" ]; then printf '网卡地址提示（不代表外部可达）：\n%s\n' "$candidates"; fi
-        ask '这台机器有公网 IP 吗？（云服务器的外部 IP/弹性 IP 也算）[Y/n]' y
+        if [ -n "$candidates" ]; then say '网卡地址提示（不代表外部可达）：\n%s\n' 'NIC address hint (not proof of external reachability):\n%s\n' "$candidates"; fi
+        ask "$(msg '这台机器有公网 IP 吗？（云服务器的外部 IP/弹性 IP 也算）[Y/n]' 'Does this machine have a public IP (including a cloud external/elastic IP)? [Y/n]')" y
         case "$ANSWER" in
             y|Y|yes|YES) ;;
             n|N|no|NO)
-                printf '没有公网 IP 时，外网手机无法直连；推荐共享中继（模式 3），无需公网 IP。\n'
-                ask '切换到共享中继模式 3，或输入 1 仍使用直连？[3/1，默认 3]' 3
-                case "$ANSWER" in 3) MODE=3; LISTEN=no; BIND=; PUBLIC_IP= ;; 1) PUBLIC_IP=; BIND=${BIND:-0.0.0.0} ;; *) fail '请选择 3 或 1' ;; esac
+                say '没有公网 IP 时，外网手机无法直连；推荐共享中继（模式 3），无需公网 IP。\n' 'Without a public IP, phones outside your network cannot connect directly. Recommended: shared-relay publisher (mode 3), no public IP needed.\n'
+                ask "$(msg '切换到共享中继模式 3，或输入 1 仍使用直连？[3/1，默认 3]' 'Switch to shared-relay mode 3, or enter 1 to keep direct mode? [3/1, default 3]')" 3
+                case "$ANSWER" in 3) MODE=3; LISTEN=no; BIND=; PUBLIC_IP= ;; 1) PUBLIC_IP=; BIND=${BIND:-0.0.0.0} ;; *) fail "$(msg '请选择 3 或 1' 'Choose 3 or 1')" ;; esac
                 return ;;
-            *) fail '请输入 y 或 n' ;;
+            *) fail "$(msg '请输入 y 或 n' 'Enter y or n')" ;;
         esac
         resolve_public_ip
     elif [ -n "$PUBLIC_IP" ]; then resolve_public_ip
@@ -307,16 +375,16 @@ firewall_plan() {
              done ;;
         iptables) case "$BIND" in *:*) printf 'ip6tables -I INPUT -p tcp --dport %s -j ACCEPT\n' "$PORT" ;; *) printf 'iptables -I INPUT -p tcp --dport %s -j ACCEPT\n' "$PORT" ;; esac ;;
         uci) printf "rule=\$(uci add firewall rule)\nuci set \"firewall.\$rule.name=NodePulse\"\nuci set \"firewall.\$rule.src=wan\"\nuci set \"firewall.\$rule.proto=tcp\"\nuci set \"firewall.\$rule.dest_port=%s\"\nuci set \"firewall.\$rule.target=ACCEPT\"\nuci commit firewall\n/etc/init.d/firewall reload\n" "$PORT" ;;
-        none) printf '未检测到防火墙管理工具；请手动允许 TCP %s。\n' "$PORT" ;;
+        none) say '未检测到防火墙管理工具；请手动允许 TCP %s。\n' 'No firewall manager detected; allow TCP %s manually.\n' "$PORT" ;;
     esac
 }
 open_firewall() {
-    printf '云服务器还须在安全组/云防火墙放行 TCP %s，例如 GCP：gcloud compute firewall-rules create nodepulse --allow=tcp:%s（请按需限制来源和目标实例）。\n' "$PORT" "$PORT"
+    say '云服务器还须在安全组/云防火墙放行 TCP %s，例如 GCP：gcloud compute firewall-rules create nodepulse --allow=tcp:%s（请按需限制来源和目标实例）。\n' 'Cloud servers also need TCP %s allowed in security groups/cloud firewalls. GCP example: gcloud compute firewall-rules create nodepulse --allow=tcp:%s (restrict sources and target instances as appropriate).\n' "$PORT" "$PORT"
     firewall_plan
     [ "$FW" != none ] || return 0
-    if [ "$OPEN_FIREWALL" != yes ]; then ask '是否现在执行？[y/N]' n; case "$ANSWER" in y|Y|yes) OPEN_FIREWALL=yes ;; esac; fi
+    if [ "$OPEN_FIREWALL" != yes ]; then ask "$(msg '是否现在执行？[y/N]' 'Apply these firewall rules now? [y/N]')" n; case "$ANSWER" in y|Y|yes) OPEN_FIREWALL=yes ;; esac; fi
     [ "$OPEN_FIREWALL" = yes ] || return 0
-    if [ "$DRY_RUN" = 1 ]; then printf '[DRY_RUN] 不执行防火墙命令。\n'; return; fi
+    if [ "$DRY_RUN" = 1 ]; then say '[DRY_RUN] 不执行防火墙命令。\n' '[DRY_RUN] Firewall commands are not executed.\n'; return; fi
     case "$FW" in
         ufw) ufw allow "$PORT/tcp" ;;
         firewalld) firewall-cmd --permanent --add-port="$PORT/tcp" && firewall-cmd --reload ;;
@@ -335,11 +403,11 @@ open_firewall() {
     esac
 }
 random() {
-    [ -r /dev/urandom ] || fail '缺少安全随机源 /dev/urandom'
+    [ -r /dev/urandom ] || fail "$(msg '缺少安全随机源 /dev/urandom' 'Secure random source /dev/urandom is missing')"
     if command -v od >/dev/null 2>&1; then bytes=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
     elif command -v hexdump >/dev/null 2>&1; then bytes=$(hexdump -v -n 16 -e '1/1 "%02x"' /dev/urandom)
-    else fail '需要 od 或 hexdump 以读取安全随机数'; fi
-    [ "${#bytes}" -eq 32 ] || fail '安全随机数生成失败'
+    else fail "$(msg '需要 od 或 hexdump 以读取安全随机数' 'od or hexdump is required to read secure random bytes')"; fi
+    [ "${#bytes}" -eq 32 ] || fail "$(msg '安全随机数生成失败' 'Secure random generation failed')"
     printf '%s' "$bytes"
 }
 elf_byte() {
@@ -350,15 +418,15 @@ elf_byte() {
 credentials() {
     ANSWER=$2
     if [ -z "$2" ] || [ "${3:-}" = edit ]; then
-        ask "$1：密钥来源 1) 保留已有值或自动生成 2) 手动输入 [默认 1]：" 1
+        ask "$(msg "$1：密钥来源 1) 保留已有值或自动生成 2) 手动输入 [默认 1]：" "$1: key source 1) Keep existing or generate 2) Enter manually [default 1]:")" 1
         case "$ANSWER" in
             1) ANSWER=$2 ;;
-            2) ask "$1：手动输入（留空保留已有值或自动生成）：" "$2" secret ;;
-            *) fail '密钥来源须为 1 或 2' ;;
+            2) ask "$(msg "$1：手动输入（留空保留已有值或自动生成）：" "$1: enter manually (Enter to keep existing or generate):")" "$2" secret ;;
+            *) fail "$(msg '密钥来源须为 1 或 2' 'Key source must be 1 or 2')" ;;
         esac
     fi
     if [ -z "$ANSWER" ]; then ANSWER=$(random); fi
-    [ "${#ANSWER}" -eq 32 ] || [ -n "$2" ] || printf '%s\n' '提示：使用自定义密钥。' >&2
+    [ "${#ANSWER}" -eq 32 ] || [ -n "$2" ] || printf '%s\n' "$(msg '提示：使用自定义密钥。' 'Note: using a custom key.')" >&2
     safe_value "$ANSWER"
 }
 detect_arch() {
@@ -370,7 +438,7 @@ detect_arch() {
             aarch64|arm64) ARCH=aarch64 ;;
             mips|mipsel|mipsle|mips32*)
                 endian=$(elf_byte 5) || endian=
-                case "$endian:$machine" in 1:*) ARCH=mipsel ;; 2:*) ARCH=mips ;; *:mipsel*|*:mipsle*) ARCH=mipsel ;; *) fail '无法检测 MIPS 字节序，请指定 --arch mips 或 mipsel' ;; esac ;;
+                case "$endian:$machine" in 1:*) ARCH=mipsel ;; 2:*) ARCH=mips ;; *:mipsel*|*:mipsle*) ARCH=mipsel ;; *) fail "$(msg '无法检测 MIPS 字节序，请指定 --arch mips 或 mipsel' 'Cannot detect MIPS byte order; specify --arch mips or mipsel')" ;; esac ;;
             armv7|armv7l|armv8l)
                 abi=${NPULSE_ARM_FLOAT:-}
                 if [ -z "$abi" ]; then
@@ -381,25 +449,25 @@ detect_arch() {
                     esac
                 fi
                 if [ -z "$abi" ]; then
-                    [ "$YES" = 0 ] || fail '无法确认 ARM 浮点 ABI；指定 --arch armv7 或 armv7-soft'
-                    ask '无法检测 ARM ABI，请输入 hard（硬浮点）或 soft（软浮点）：' ''; abi=$ANSWER
+                    [ "$YES" = 0 ] || fail "$(msg '无法确认 ARM 浮点 ABI；指定 --arch armv7 或 armv7-soft' 'Cannot determine ARM float ABI; specify --arch armv7 or armv7-soft')"
+                    ask "$(msg '无法检测 ARM ABI，请输入 hard（硬浮点）或 soft（软浮点）：' 'Cannot detect ARM ABI; enter hard (hard-float) or soft (soft-float):')" ''; abi=$ANSWER
                 fi
-                case "$abi" in hard) ARCH=armv7 ;; soft) ARCH=armv7-soft ;; *) fail 'ARM ABI 须为 hard 或 soft' ;; esac ;;
-            *) fail '不支持此架构；支持列表见 --help' ;;
+                case "$abi" in hard) ARCH=armv7 ;; soft) ARCH=armv7-soft ;; *) fail "$(msg 'ARM ABI 须为 hard 或 soft' 'ARM ABI must be hard or soft')" ;; esac ;;
+            *) fail "$(msg '不支持此架构；支持列表见 --help' 'Unsupported architecture; see --help for supported targets')" ;;
         esac
     fi
-    case "$ARCH" in x86_64|i386|aarch64|armv7|armv7-soft|mips|mipsel) ;; *) fail '不支持的 --arch' ;; esac
+    case "$ARCH" in x86_64|i386|aarch64|armv7|armv7-soft|mips|mipsel) ;; *) fail "$(msg '不支持的 --arch' 'Unsupported --arch')" ;; esac
 }
 detect_init() {
     if [ -z "$INIT" ]; then
         if [ -f /etc/openwrt_release ] && [ -f /etc/rc.common ]; then INIT=procd
         elif [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then INIT=systemd
-        else fail '未检测到 systemd/OpenWrt procd；测试可用 NPULSE_INIT + DESTDIR/DRY_RUN'; fi
+        else fail "$(msg '未检测到 systemd/OpenWrt procd；测试可用 NPULSE_INIT + DESTDIR/DRY_RUN' 'No systemd/OpenWrt procd detected; tests can use NPULSE_INIT + DESTDIR/DRY_RUN')"; fi
     fi
     case "$INIT" in
         systemd) BIN=/usr/local/bin/npulse; UNIT=/etc/systemd/system/npulse.service ;;
         procd) BIN=/usr/bin/npulse; UNIT=/etc/init.d/npulse ;;
-        *) fail 'NPULSE_INIT 须为 systemd 或 procd' ;;
+        *) fail "$(msg 'NPULSE_INIT 须为 systemd 或 procd' 'NPULSE_INIT must be systemd or procd')" ;;
     esac
 }
 service() {
@@ -411,57 +479,57 @@ service() {
     fi
 }
 load_state() {
-    [ -f "$STATE" ] || fail '没有找到安装状态，请先 install'
+    [ -f "$STATE" ] || fail "$(msg '没有找到安装状态，请先 install' 'No installation state found; run install first')"
     ARCH=; FLAVOR=; INIT=
     while IFS='=' read -r key value; do
-        case "$key" in arch) ARCH=$value ;; flavor) FLAVOR=$value ;; init) INIT=$value ;; *) fail '安装状态无效' ;; esac
+        case "$key" in arch) ARCH=$value ;; flavor) FLAVOR=$value ;; init) INIT=$value ;; *) fail "$(msg '安装状态无效' 'Invalid installation state')" ;; esac
     done < "$STATE"
-    [ -n "$ARCH" ] && [ -n "$INIT" ] || fail '安装状态不完整'
+    [ -n "$ARCH" ] && [ -n "$INIT" ] || fail "$(msg '安装状态不完整' 'Incomplete installation state')"
     detect_arch; detect_init
-    case "$FLAVOR" in full|lite) ;; *) fail '安装状态版本类型无效' ;; esac
+    case "$FLAVOR" in full|lite) ;; *) fail "$(msg '安装状态版本类型无效' 'Invalid build flavor in installation state')" ;; esac
 }
 download() {
     if command -v curl >/dev/null 2>&1; then
-        curl -fLsS --connect-timeout 15 --max-time 180 "$1" -o "$2" 2>/dev/null || fail '下载失败，请检查版本、网络或镜像'
+        curl -fLsS --connect-timeout 15 --max-time 180 "$1" -o "$2" 2>/dev/null || fail "$(msg '下载失败，请检查版本、网络或镜像' 'Download failed; check the version, network or mirror')"
     elif command -v wget >/dev/null 2>&1; then
         if wget --help 2>&1 | grep -e '-T' -e '--timeout' >/dev/null; then
-            wget -q -T 180 -O "$2" "$1" 2>/dev/null || fail '下载失败，请检查版本、网络或镜像'
+            wget -q -T 180 -O "$2" "$1" 2>/dev/null || fail "$(msg '下载失败，请检查版本、网络或镜像' 'Download failed; check the version, network or mirror')"
         else
-            wget -q -O "$2" "$1" 2>/dev/null || fail '下载失败，请检查版本、网络或镜像'
+            wget -q -O "$2" "$1" 2>/dev/null || fail "$(msg '下载失败，请检查版本、网络或镜像' 'Download failed; check the version, network or mirror')"
         fi
-    else fail '需要 curl 或 wget'; fi
+    else fail "$(msg '需要 curl 或 wget' 'curl or wget is required')"; fi
 }
 fetch_binary() {
-    case "$VERSION" in ''|v[0-9]*) ;; *) fail 'NPULSE_VERSION 应形如 v1.0.0' ;; esac
-    case "$VERSION" in *[!A-Za-z0-9._-]*) fail '版本含非法字符' ;; esac
+    case "$VERSION" in ''|v[0-9]*) ;; *) fail "$(msg 'NPULSE_VERSION 应形如 v1.0.0' 'NPULSE_VERSION must look like v1.0.0')" ;; esac
+    case "$VERSION" in *[!A-Za-z0-9._-]*) fail "$(msg '版本含非法字符' 'Version contains invalid characters')" ;; esac
     base=https://github.com/cestbon0309/NodePulse/releases
     if [ -n "$VERSION" ]; then base=$base/download/$VERSION; else base=$base/latest/download; fi
     base=${NPULSE_MIRROR:-$base}; base=${base%/}
     case "$base" in
         https://*) ;;
-        http://*) [ "${NPULSE_INSECURE:-0}" = 1 ] || fail '拒绝 HTTP 镜像；仅可信测试可设置 NPULSE_INSECURE=1'
-            printf '警告：NPULSE_INSECURE=1，HTTP 镜像可被中间人替换二进制及校验清单！\n' >&2 ;;
-        *) fail '下载目录必须为 HTTPS URL' ;;
+        http://*) [ "${NPULSE_INSECURE:-0}" = 1 ] || fail "$(msg '拒绝 HTTP 镜像；仅可信测试可设置 NPULSE_INSECURE=1' 'HTTP mirror refused; only trusted tests may set NPULSE_INSECURE=1')"
+            say '警告：NPULSE_INSECURE=1，HTTP 镜像可被中间人替换二进制及校验清单！\n' 'Warning: NPULSE_INSECURE=1; an HTTP mirror permits interception and replacement of both binaries and checksums!\n' >&2 ;;
+        *) fail "$(msg '下载目录必须为 HTTPS URL' 'Download directory must be an HTTPS URL')" ;;
     esac
     asset=npulse-linux-$ARCH
     if [ "${1:-$FLAVOR}" = lite ]; then asset=$asset-lite; fi
     if [ -z "$WORK" ]; then
-        command -v mktemp >/dev/null 2>&1 || fail '需要 mktemp（BusyBox applet）以安全创建临时目录'
-        WORK=$(mktemp -d "${TMPDIR:-/tmp}/npulse-install.XXXXXX") || fail '无法创建临时目录，请检查 TMPDIR 和剩余空间'
+        command -v mktemp >/dev/null 2>&1 || fail "$(msg '需要 mktemp（BusyBox applet）以安全创建临时目录' 'mktemp (BusyBox applet) is required for secure temporary directories')"
+        WORK=$(mktemp -d "${TMPDIR:-/tmp}/npulse-install.XXXXXX") || fail "$(msg '无法创建临时目录，请检查 TMPDIR 和剩余空间' 'Cannot create temporary directory; check TMPDIR and free space')"
     fi
     download "$base/SHA256SUMS" "$WORK/SHA256SUMS"
     download "$base/$asset" "$WORK/binary"
     expected=$(awk -v name="$asset" '$2 == name || $2 == "*" name {print $1}' "$WORK/SHA256SUMS")
-    [ "${#expected}" -eq 64 ] || fail 'SHA256SUMS 缺少唯一匹配项'
-    case "$expected" in *[!0-9a-fA-F]*) fail '校验清单格式无效' ;; esac
+    [ "${#expected}" -eq 64 ] || fail "$(msg 'SHA256SUMS 缺少唯一匹配项' 'SHA256SUMS has no unique matching entry')"
+    case "$expected" in *[!0-9a-fA-F]*) fail "$(msg '校验清单格式无效' 'Invalid checksum manifest format')" ;; esac
     if command -v sha256sum >/dev/null 2>&1; then actual=$(sha256sum "$WORK/binary")
     elif command -v shasum >/dev/null 2>&1; then actual=$(shasum -a 256 "$WORK/binary")
     elif command -v openssl >/dev/null 2>&1; then actual=$(openssl dgst -sha256 "$WORK/binary"); actual=${actual##* }
-    else fail '需要 sha256sum、shasum 或 openssl'; fi
+    else fail "$(msg '需要 sha256sum、shasum 或 openssl' 'sha256sum, shasum or openssl is required')"; fi
     actual=${actual%% *}
     expected=$(printf '%s' "$expected" | tr 'A-F' 'a-f')
-    [ "$actual" = "$expected" ] || fail 'SHA256 校验失败，未安装任何下载内容'
-    printf '已校验 %s（%s）\n' "$asset" "${VERSION:-latest}"
+    [ "$actual" = "$expected" ] || fail "$(msg 'SHA256 校验失败，未安装任何下载内容' 'SHA256 verification failed; no downloaded content was installed')"
+    say '已校验 %s（%s）\n' 'Verified %s (%s)\n' "$asset" "${VERSION:-latest}"
 }
 replace_binary() {
     (umask 022; mkdir -p "$(dirname "$DESTDIR$BIN")")
@@ -556,7 +624,7 @@ HARDEN
     chmod 644 "$DESTDIR$UNIT"
 }
 summary() {
-    printf '\nNodePulse 已安装：%s / %s；配置 /etc/npulse/npulse.conf\n' "$ARCH" "$FLAVOR"
+    say '\nNodePulse 已安装：%s / %s；配置 /etc/npulse/npulse.conf\n' '\nNodePulse installed: %s / %s; config /etc/npulse/npulse.conf\n' "$ARCH" "$FLAVOR"
     address=${PUBLIC_IP:-$BIND}
     case "$address" in 0.0.0.0|::) address= ;; esac
     if [ -z "$address" ] && command -v ip >/dev/null 2>&1; then
@@ -564,31 +632,32 @@ summary() {
         if [ -z "$address" ]; then address=$(ip -6 addr show scope global 2>/dev/null | awk '$1 == "inet6" {split($2,a,"/"); print a[1]; exit}'); fi
     fi
     if [ -z "$address" ]; then address=$(uname -n); fi
-    printf 'App 参考地址：%s（NAT 后请改用可达公网地址/域名，并配置端口转发）。\n' "$address"
-    if [ "$LISTEN" = yes ]; then printf '直连 TCP 端口：%s；防火墙放行 TCP %s。\n' "$PORT" "$PORT"; fi
+    say 'App 参考地址：%s（NAT 后请改用可达公网地址/域名，并配置端口转发）。\n' 'App address: %s (behind NAT, use a reachable public address/domain and configure port forwarding).\n' "$address"
+    if [ "$LISTEN" = yes ]; then say '直连 TCP 端口：%s；防火墙放行 TCP %s。\n' 'Direct TCP port: %s; allow TCP %s in the firewall.\n' "$PORT" "$PORT"; fi
     case "$MODE" in
-        2) printf 'App：HTTPS https://probe.example.com；放行 TCP 443，不开放 HTTP 后端端口。\n' ;;
-        3) printf 'App：中继服务器 TCP %s；本机主动连出。\n' "$UPSTREAM" ;;
-        4) printf 'App：中继服务器 TCP，端口 %s；防火墙放行 TCP %s。\n' "$PORT" "$PORT" ;;
+        2) say 'App：HTTPS https://probe.example.com；放行 TCP 443，不开放 HTTP 后端端口。\n' 'App: HTTPS https://probe.example.com; allow TCP 443, do not expose the HTTP backend.\n' ;;
+        3) say 'App：中继服务器 TCP %s；本机主动连出。\n' 'App: relay server TCP %s; this probe connects outbound.\n' "$UPSTREAM" ;;
+        4) say 'App：中继服务器 TCP，端口 %s；防火墙放行 TCP %s。\n' 'App: relay server TCP, port %s; allow TCP %s in the firewall.\n' "$PORT" "$PORT" ;;
     esac
-    if [ -n "$SECRET" ]; then printf '探针密钥：%s\n' "$SECRET"; fi
-    if [ -n "$TOKEN" ] && [ -z "$ALSO_RELAY" ]; then printf '中继令牌：%s\n' "$TOKEN"; fi
+    if [ -n "$SECRET" ]; then say '探针密钥：%s\n' 'Probe key: %s\n' "$SECRET"; fi
+    if [ -n "$TOKEN" ] && [ -z "$ALSO_RELAY" ]; then say '中继令牌：%s\n' 'Relay token: %s\n' "$TOKEN"; fi
+    say '下一步：在 App 添加接入点，或运行 sh install.sh pair 扫码配对；务必在两端核对 SAS。\n' 'Next: add an endpoint in the app, or run sh install.sh pair to scan and pair; always compare SAS on both devices.\n'
     if [ -n "$ALSO_RELAY" ]; then
         case "$address" in *:*) relay_host=[$address] ;; *) relay_host=$address ;; esac
-        printf '中转地址：%s:%s\n中转密码：%s\n下游请选择模式 3（共享中继上报）；本机管理走直连，下游管理走中继管道。\n' "$relay_host" "$ALSO_RELAY" "$TOKEN"
+        say '中转地址：%s:%s\n中转密码：%s\n下游请选择模式 3（共享中继上报）；本机管理走直连，下游管理走中继管道。\n' 'Relay address: %s:%s\nRelay password: %s\nDownstream nodes: choose mode 3 (shared-relay publisher). Manage this node directly and downstream nodes through the relay pipe.\n' "$relay_host" "$ALSO_RELAY" "$TOKEN"
     fi
-    if [ -n "$GROUP" ]; then printf '组密钥：%s\n' "$GROUP"; fi
-    if [ "$MODE" = 4 ]; then printf '组密钥由各组自行生成，中继不需要也不应保存组密钥。\n'; fi
-    if [ "$MODE" = 3 ]; then printf '注意：令牌必须与已有共享中继配置匹配。\n'; fi
-    if [ "$INIT" = procd ]; then printf 'OpenWrt：服务以 root 运行。\n'; fi
-    if [ -n "$ADMIN_KEYS" ]; then printf '警告：管理已启用，探针以 root 运行；授权设备可控制整台机器。\n'; fi
+    if [ -n "$GROUP" ]; then say '组密钥：%s\n' 'Group key: %s\n' "$GROUP"; fi
+    if [ "$MODE" = 4 ]; then say '组密钥由各组自行生成，中继不需要也不应保存组密钥。\n' 'Each group generates its own group key; the relay neither needs nor should store it.\n'; fi
+    if [ "$MODE" = 3 ]; then say '注意：令牌必须与已有共享中继配置匹配。\n' 'Note: the token must match the existing shared relay.\n'; fi
+    if [ "$INIT" = procd ]; then say 'OpenWrt：服务以 root 运行。\n' 'OpenWrt: the service runs as root.\n'; fi
+    if [ -n "$ADMIN_KEYS" ]; then say '警告：管理已启用，探针以 root 运行；授权设备可控制整台机器。\n' 'Warning: administration is enabled and the probe runs as root; authorized devices control the entire machine.\n'; fi
     if [ "$ADMIN_VIA_PAIR" = yes ] && [ -z "$ADMIN_KEYS" ]; then
-        printf '管理尚未启用；请稍后运行 sh install.sh pair，在手机打开「同时授权本机管理」，并在服务器单独确认管理授权。\n'
+        say '管理尚未启用；请稍后运行 sh install.sh pair，在手机打开「同时授权本机管理」，并在服务器单独确认管理授权。\n' 'Administration is not enabled. Run sh install.sh pair later, enable phone administration authorization, and confirm it separately on the server.\n'
     fi
     if [ "$MODE" = 2 ] || { [ "$MODE" = 4 ] && [ -n "$HTTP_PORT" ]; }; then
         route=nodes; if [ "$MODE" = 4 ]; then route=relay; fi
-        if [ "$MODE" = 4 ]; then printf 'App 也可使用中继服务器 HTTPS：https://probe.example.com；开放 TCP 443。\n'; fi
-        printf '\nNginx server 示例（先设置域名并用 certbot 配置以下证书）：\n'
+        if [ "$MODE" = 4 ]; then say 'App 也可使用中继服务器 HTTPS：https://probe.example.com；开放 TCP 443。\n' 'The app can also use relay HTTPS: https://probe.example.com; allow TCP 443.\n'; fi
+        say '\nNginx server 示例（先设置域名并用 certbot 配置以下证书）：\n' '\nNginx server example (set your domain and configure these certificates with certbot first):\n'
         cat <<NGINX
 server {
     listen 443 ssl;
@@ -604,21 +673,21 @@ server {
     location / { return 404; }
 }
 NGINX
-        printf 'HTTPS 接入点不支持管理；需要管理时请保留 TCP 端口。\n'
+        say 'HTTPS 接入点不支持管理；需要管理时请保留 TCP 端口。\n' 'HTTPS endpoints do not support administration; retain the TCP port if administration is needed.\n'
     fi
 }
 
 pair_installed() {
     if [ -z "$WORK" ]; then
-        command -v mktemp >/dev/null 2>&1 || fail '需要 mktemp（BusyBox applet）以安全创建临时目录'
-        WORK=$(mktemp -d "${TMPDIR:-/tmp}/npulse-pair.XXXXXX") || fail '无法创建临时目录，请检查 TMPDIR 和剩余空间'
+        command -v mktemp >/dev/null 2>&1 || fail "$(msg '需要 mktemp（BusyBox applet）以安全创建临时目录' 'mktemp (BusyBox applet) is required for secure temporary directories')"
+        WORK=$(mktemp -d "${TMPDIR:-/tmp}/npulse-pair.XXXXXX") || fail "$(msg '无法创建临时目录，请检查 TMPDIR 和剩余空间' 'Cannot create temporary directory; check TMPDIR and free space')"
     fi
-    if [ "$DRY_RUN" = 1 ]; then printf '[DRY_RUN] 配对：不执行下载的二进制。\n'; return; fi
+    if [ "$DRY_RUN" = 1 ]; then say '[DRY_RUN] 配对：不执行下载的二进制。\n' '[DRY_RUN] Pairing: downloaded binaries are not executed.\n'; return; fi
     PAIR_STOPPED=1
     service stop
     pair_binary=$DESTDIR$BIN
     if [ "$FLAVOR" = lite ]; then
-        printf 'lite 版不支持管理；将下载已校验的临时完整版进行配对，服务仍使用 lite。\n'
+        say 'lite 版不支持管理；将下载已校验的临时完整版进行配对，服务仍使用 lite。\n' 'lite does not support administration; a verified temporary full build will be downloaded for pairing. The service remains lite.\n'
         fetch_binary full
         chmod 700 "$WORK/binary"
         pair_binary=$WORK/binary
@@ -635,13 +704,13 @@ pair_installed() {
         NPULSE_PAIR_HOST=${PUBLIC_IP:-} "$pair_binary" -P -c "$WORK/pair.conf" > "$WORK/pair-output" || pair_status=$?
         if [ "$pair_status" = 0 ]; then paired=yes; break; fi
         if [ "$pair_status" != 3 ] || [ "$MODE" != 3 ]; then break; fi
-        printf '中转密码错误或无法连接。\n'
+        say '中转密码错误或无法连接。\n' 'Incorrect relay password or unable to connect.\n'
         [ "$YES" = 0 ] || break
-        ask '重新填写中转地址和密码？[Y/n]' y
+        ask "$(msg '重新填写中转地址和密码？[Y/n]' 'Re-enter relay address and password? [Y/n]')" y
         case "$ANSWER" in y|Y|yes) ;; *) break ;; esac
-        ask '中转地址 host:port（IPv6 用 [地址]:端口）：' "$UPSTREAM"; UPSTREAM=$ANSWER; safe_value "$UPSTREAM"
-        case "$UPSTREAM" in *:*) port "${UPSTREAM##*:}" ;; *) fail '缺少中转 host:port' ;; esac
-        credentials '中转密码（访问令牌）' "$TOKEN" edit; TOKEN=$ANSWER
+        ask "$(msg '中转地址 host:port（IPv6 用 [地址]:端口）：' 'Relay address host:port (IPv6: [address]:port):')" "$UPSTREAM"; UPSTREAM=$ANSWER; safe_value "$UPSTREAM"
+        case "$UPSTREAM" in *:*) port "${UPSTREAM##*:}" ;; *) fail "$(msg '缺少中转 host:port' 'Missing relay host:port')" ;; esac
+        credentials "$(msg '中转密码（访问令牌）' 'Relay password (access token)')" "$TOKEN" edit; TOKEN=$ANSWER
     done
     if [ "$paired" = yes ] && [ "$MODE" = 3 ] && { [ "$UPSTREAM" != "$pair_upstream" ] || [ "$TOKEN" != "$pair_token" ]; }; then
         awk '!/^(relay_upstream|token|group_secret)=/' "$CONFIG" > "$CONFIG.new"
@@ -651,13 +720,13 @@ pair_installed() {
     if [ "$paired" = yes ] && [ "$FLAVOR" = full ]; then
         public=$(awk -F= '$1=="admin_pk" && NF==2 {print $2}' "$WORK/pair-output")
         if [ -n "$public" ]; then
-            [ "${#public}" = 64 ] || fail '配对返回了无效公钥'
-            case "$public" in *[!0-9a-fA-F]*) fail '配对返回了无效公钥' ;; esac
+            [ "${#public}" = 64 ] || fail "$(msg '配对返回了无效公钥' 'Pairing returned an invalid public key')"
+            case "$public" in *[!0-9a-fA-F]*) fail "$(msg '配对返回了无效公钥' 'Pairing returned an invalid public key')" ;; esac
             public=$(printf '%s' "$public" | tr 'A-F' 'a-f')
             old=$(awk -F= '$1=="admin_keys" {print $2}' "$CONFIG")
             case ",$old," in *",$public,"*) ;; *)
                 if [ -n "$old" ]; then public=$old,$public; fi
-                printf '%s\n' "$public" | awk -F, 'NF>32 {exit 1}' || fail '管理公钥已达 32 个上限'
+                printf '%s\n' "$public" | awk -F, 'NF>32 {exit 1}' || fail "$(msg '管理公钥已达 32 个上限' 'The 32-key administration limit has been reached')"
                 awk '!/^admin_keys=/' "$CONFIG" > "$CONFIG.new"
                 printf 'admin_keys=%s\n' "$public" >> "$CONFIG.new"; chmod 600 "$CONFIG.new"; mv "$CONFIG.new" "$CONFIG" ;;
             esac
@@ -666,14 +735,14 @@ pair_installed() {
     fi
     service start
     PAIR_STOPPED=0
-    if [ "$paired" != yes ]; then printf '配对未完成；服务已恢复，可稍后运行 pair 或使用手动密钥。\n'; fi
+    if [ "$paired" != yes ]; then say '配对未完成；服务已恢复，可稍后运行 pair 或使用手动密钥。\n' 'Pairing was not completed; service restored. Run pair later or use a manual key.\n'; fi
     rm -rf "$WORK"; WORK=
 }
 
 if [ "$ACTION" != install ]; then
     load_state
     case "$ACTION" in
-        pair) [ -f "$CONFIG" ] && [ -f "$DESTDIR$BIN" ] || fail '现有安装不完整'
+        pair) [ -f "$CONFIG" ] && [ -f "$DESTDIR$BIN" ] || fail "$(msg '现有安装不完整' 'Existing installation is incomplete')"
               BIND=; PORT=9000; ADMIN_KEYS=; MODE=1; LISTEN=no; UPSTREAM=; TOKEN=; GROUP=; SECRET=; ALSO_RELAY=
               while IFS='=' read -r key value; do
                   case "$key" in listen) LISTEN=yes; BIND=${value%:*}; BIND=${BIND#\[}; BIND=${BIND%\]}; PORT=${value##*:} ;;
@@ -681,7 +750,7 @@ if [ "$ACTION" != install ]; then
                       group_secret) GROUP=$value ;; secret) SECRET=$value ;; name) NAME=$value ;; esac
                   if [ "$key" = relay_listen ]; then ALSO_RELAY=${value##*:}; fi
               done < "$CONFIG"
-              [ -n "$BIND" ] || [ "$MODE" = 3 ] || fail '此安装没有可配对的直连或中转配置'
+              [ -n "$BIND" ] || [ "$MODE" = 3 ] || fail "$(msg '此安装没有可配对的直连或中转配置' 'This installation has no direct or relay configuration for pairing')"
               if [ "$MODE" != 3 ]; then
                   if [ -z "$PUBLIC_IP" ] && [ -f "$DESTDIR/etc/npulse/public-ip" ]; then IFS= read -r PUBLIC_IP < "$DESTDIR/etc/npulse/public-ip"; fi
                   if [ -n "$PUBLIC_IP" ]; then resolve_public_ip; persist_public_ip; fi
@@ -691,97 +760,96 @@ if [ "$ACTION" != install ]; then
               pair_installed; summary; exit ;;
         status) service status; exit ;;
         upgrade)
-            [ -f "$CONFIG" ] && [ -f "$DESTDIR$BIN" ] || fail '现有安装不完整'
+            [ -f "$CONFIG" ] && [ -f "$DESTDIR$BIN" ] || fail "$(msg '现有安装不完整' 'Existing installation is incomplete')"
             if grep -e '^[[:space:]]*upstream[[:space:]]*=' -e '^[[:space:]]*u[[:space:]]*=' "$CONFIG" >/dev/null; then
-                fail '旧式 upstream 上报已移除；请备份配置，改用共享中继（-R/-S、relay_upstream/relay_listen），选择安装器模式 3 后重新安装；本次未升级或重启服务'
+                fail "$(msg '旧式 upstream 上报已移除；请备份配置，改用共享中继（-R/-S、relay_upstream/relay_listen），选择安装器模式 3 后重新安装；本次未升级或重启服务' 'Legacy upstream publishing was removed; back up the config and switch to shared relay (-R/-S, relay_upstream/relay_listen), then reinstall using mode 3. No upgrade or service restart was performed')"
             fi
-            if [ "$FLAVOR" = lite ] && grep '^admin_keys=' "$CONFIG" >/dev/null; then fail '精简版配置不能包含管理密钥'; fi
+            if [ "$FLAVOR" = lite ] && grep '^admin_keys=' "$CONFIG" >/dev/null; then fail "$(msg '精简版配置不能包含管理密钥' 'lite configuration cannot contain administration keys')"; fi
             fetch_binary; replace_binary; service restart
-            printf '升级完成；配置与服务权限未改变。\n'; exit ;;
+            say '升级完成；配置与服务权限未改变。\n' 'Upgrade complete; configuration and service privileges are unchanged.\n'; exit ;;
         uninstall)
             service stop; service disable
             rm -f "$DESTDIR$BIN" "$DESTDIR$UNIT" "$STATE"
             service reload
-            if [ "$PURGE" != yes ]; then ask '同时删除配置和密钥？[yes/no，默认 no]' no; PURGE=$ANSWER; fi
+            if [ "$PURGE" != yes ]; then ask "$(msg '同时删除配置和密钥？[yes/no，默认 no]' 'Also delete configuration and keys? [yes/no, default no]')" no; PURGE=$ANSWER; fi
             if [ "$PURGE" != yes ]; then PURGE=no; fi
             if [ "$PURGE" = yes ]; then rm -f "$CONFIG" "$DESTDIR/etc/npulse/public-ip"; rmdir "$DESTDIR/etc/npulse" 2>/dev/null || :; fi
-            printf '已卸载；配置删除：%s。\n' "$PURGE"; exit ;;
+            say '已卸载；配置删除：%s。\n' 'Uninstalled; configuration deleted: %s.\n' "$PURGE"; exit ;;
     esac
 fi
 
 detect_arch; detect_init
-[ ! -e "$CONFIG" ] && [ ! -e "$DESTDIR$BIN" ] && [ ! -e "$DESTDIR$UNIT" ] || fail '已有安装或配置；请使用 upgrade，或备份并卸载旧安装'
+[ ! -e "$CONFIG" ] && [ ! -e "$DESTDIR$BIN" ] && [ ! -e "$DESTDIR$UNIT" ] || fail "$(msg '已有安装或配置；请使用 upgrade，或备份并卸载旧安装' 'Installation or configuration already exists; use upgrade, or back up and uninstall first')"
 if [ "$INIT" = systemd ] && [ "$DRY_RUN" != 1 ]; then
     systemd_version=$(systemctl --version | awk 'NR == 1 {print $2}')
-    case "$systemd_version" in ''|*[!0-9]*) fail '无法检测 systemd 版本' ;; esac
-    [ "$systemd_version" -ge 247 ] || fail '需要 systemd 247+，以安全加载 0600 配置'
+    case "$systemd_version" in ''|*[!0-9]*) fail "$(msg '无法检测 systemd 版本' 'Cannot detect systemd version')" ;; esac
+    [ "$systemd_version" -ge 247 ] || fail "$(msg '需要 systemd 247+，以安全加载 0600 配置' 'systemd 247+ is required to securely load mode-0600 configuration')"
 fi
-printf '请选择模式：\n1 直连探针（可同时提供共享中继）\n2 HTTP 探针 + Nginx\n3 推送到共享中继（端到端加密）\n4 纯共享中继服务器\n'
-ask "模式 [默认 $MODE]：" "$MODE"; MODE=$ANSWER
-case "$MODE" in 1|2|3|4) ;; *) fail '模式须为 1–4' ;; esac
+say '选择指南：有公网 IP → 1；NAT/家宽/路由器后面 → 3；只当中继 → 4；已有 Nginx/HTTPS → 2。\n请选择模式：\n1 直连探针：公网服务器（推荐）；可同时提供共享中继\n2 HTTP + Nginx：已有 HTTPS/反向代理\n3 共享中继上报：NAT、家宽、路由器；只需主动连出\n4 纯共享中继：公网服务器，只转发不透明密文\n' 'Decision guide: public IP → 1; behind NAT/home/router → 3; relay only → 4; existing Nginx/HTTPS → 2.\nChoose a mode:\n1 Direct probe: public-IP servers (recommended); can also host a shared relay\n2 HTTP + Nginx: existing HTTPS/reverse-proxy deployments\n3 Shared-relay publisher: NAT, home networks and routers; outbound only\n4 Relay server only: public-IP host forwarding opaque ciphertext\n'
+ask "$(msg "模式 [默认 $MODE]：" "Mode [default $MODE]:")" "$MODE"; MODE=$ANSWER
+case "$MODE" in 1|2|3|4) ;; *) fail "$(msg '模式须为 1–4' 'Mode must be 1-4')" ;; esac
 LISTEN=no
 if [ "$MODE" = 1 ]; then LISTEN=yes; fi
-if [ "$LISTEN" = yes ] || [ "$MODE" = 4 ]; then ask "TCP 监听端口 [默认 $PORT]：" "$PORT"; PORT=$ANSWER; port "$PORT"; fi
+if [ "$LISTEN" = yes ] || [ "$MODE" = 4 ]; then ask "$(msg "TCP 监听端口 [默认 $PORT]：" "TCP listen port [default $PORT]:")" "$PORT"; PORT=$ANSWER; port "$PORT"; fi
 if [ "$MODE" = 1 ]; then select_bind; else PUBLIC_IP=; fi
-if [ "$MODE" != 1 ] && [ -n "$ALSO_RELAY" ]; then fail '--also-relay PORT 仅支持直连模式 1'; fi
+if [ "$MODE" != 1 ] && [ -n "$ALSO_RELAY" ]; then fail "$(msg '--also-relay PORT 仅支持直连模式 1' '--also-relay PORT requires direct mode 1')"; fi
 if [ "$MODE" = 1 ]; then
     relay_enabled=no; if [ -n "$ALSO_RELAY" ]; then relay_enabled=yes; fi
-    ask "同时作为共享中继？[yes/no，默认 $relay_enabled]" "$relay_enabled"; relay_enabled=$ANSWER
+    ask "$(msg "同时作为共享中继？[yes/no，默认 $relay_enabled]" "Also host a shared relay? [yes/no, default $relay_enabled]")" "$relay_enabled"; relay_enabled=$ANSWER
     case "$relay_enabled" in
         yes)
             relay_default=${ALSO_RELAY:-$((PORT + 1))}
-            ask "共享中继端口 [默认 $relay_default]：" "$relay_default"; ALSO_RELAY=$ANSWER
-            port "$ALSO_RELAY"; [ "$ALSO_RELAY" != "$PORT" ] || fail '共享中继端口须与直连端口不同' ;;
+            ask "$(msg "共享中继端口 [默认 $relay_default]：" "Shared-relay port [default $relay_default]:")" "$relay_default"; ALSO_RELAY=$ANSWER
+            port "$ALSO_RELAY"; [ "$ALSO_RELAY" != "$PORT" ] || fail "$(msg '共享中继端口须与直连端口不同' 'Shared-relay port must differ from direct port')" ;;
         no) ALSO_RELAY= ;;
-        *) fail '共享中继开关须为 yes 或 no' ;;
+        *) fail "$(msg '共享中继开关须为 yes 或 no' 'Shared-relay switch must be yes or no')" ;;
     esac
 fi
-if [ -n "$BIND" ]; then safe_value "$BIND" 128; case "$BIND" in *[!0-9a-fA-F:.%_-]*) fail '绑定地址须为 IP 地址' ;; esac; fi
+if [ -n "$BIND" ]; then safe_value "$BIND" 128; case "$BIND" in *[!0-9a-fA-F:.%_-]*) fail "$(msg '绑定地址须为 IP 地址' 'Bind address must be an IP address')" ;; esac; fi
 if [ "$MODE" = 2 ]; then
-    ask "HTTP 回环端口 [默认 ${HTTP_PORT:-9001}]：" "${HTTP_PORT:-9001}"; HTTP_PORT=$ANSWER; port "$HTTP_PORT"
+    ask "$(msg "HTTP 回环端口 [默认 ${HTTP_PORT:-9001}]：" "HTTP loopback port [default ${HTTP_PORT:-9001}]:")" "${HTTP_PORT:-9001}"; HTTP_PORT=$ANSWER; port "$HTTP_PORT"
 elif [ "$MODE" = 4 ]; then
     use_http=no; if [ -n "$HTTP_PORT" ]; then use_http=yes; fi
-    ask "开启 HTTP /api/relay（仅回环）？[yes/no，默认 $use_http]" "$use_http"; use_http=$ANSWER
-    case "$use_http" in yes) ask "HTTP 回环端口 [默认 ${HTTP_PORT:-9001}]：" "${HTTP_PORT:-9001}"; HTTP_PORT=$ANSWER; port "$HTTP_PORT" ;; no) HTTP_PORT= ;; *) fail 'HTTP 开关须为 yes 或 no' ;; esac
+    ask "$(msg "开启 HTTP /api/relay（仅回环）？[yes/no，默认 $use_http]" "Enable HTTP /api/relay (loopback only)? [yes/no, default $use_http]")" "$use_http"; use_http=$ANSWER
+    case "$use_http" in yes) ask "$(msg "HTTP 回环端口 [默认 ${HTTP_PORT:-9001}]：" "HTTP loopback port [default ${HTTP_PORT:-9001}]:")" "${HTTP_PORT:-9001}"; HTTP_PORT=$ANSWER; port "$HTTP_PORT" ;; no) HTTP_PORT= ;; *) fail "$(msg 'HTTP 开关须为 yes 或 no' 'HTTP switch must be yes or no')" ;; esac
 fi
-if [ -n "$HTTP_PORT" ] && { [ "$LISTEN" = yes ] || [ "$MODE" = 4 ]; }; then [ "$PORT" != "$HTTP_PORT" ] || fail 'TCP 与 HTTP 端口不能相同'; fi
+if [ -n "$HTTP_PORT" ] && { [ "$LISTEN" = yes ] || [ "$MODE" = 4 ]; }; then [ "$PORT" != "$HTTP_PORT" ] || fail "$(msg 'TCP 与 HTTP 端口不能相同' 'TCP and HTTP ports must differ')"; fi
 if [ "$MODE" = 3 ]; then
-    ask '上游地址 host:port（IPv6 用 [地址]:端口）：' "$UPSTREAM"; UPSTREAM=$ANSWER
-    case "$UPSTREAM" in *:*) remote_port=${UPSTREAM##*:}; port "$remote_port"; [ -n "${UPSTREAM%:*}" ] || fail '上游主机不能为空' ;; *) fail '缺少上游 host:port' ;; esac
+    ask "$(msg '上游地址 host:port（IPv6 用 [地址]:端口）：' 'Upstream relay host:port (IPv6: [address]:port):')" "$UPSTREAM"; UPSTREAM=$ANSWER
+    case "$UPSTREAM" in *:*) remote_port=${UPSTREAM##*:}; port "$remote_port"; [ -n "${UPSTREAM%:*}" ] || fail "$(msg '上游主机不能为空' 'Upstream host must not be empty')" ;; *) fail "$(msg '缺少上游 host:port' 'Missing upstream host:port')" ;; esac
 fi
-if [ "$MODE" != 4 ]; then ask "节点名称 [默认 $NAME]：" "$NAME"; NAME=$ANSWER; fi
-if [ "$LISTEN" = yes ] || [ "$MODE" = 2 ]; then credentials '探针密钥' "$SECRET"; SECRET=$ANSWER; else SECRET=; fi
-if [ "$MODE" = 3 ] || [ "$MODE" = 4 ] || [ -n "$ALSO_RELAY" ]; then credentials '中转密码 / 中继访问令牌（需与中继一致）' "$TOKEN"; TOKEN=$ANSWER; else TOKEN=; fi
-if [ "$MODE" = 3 ]; then credentials '组密钥（仅可信组成员持有）' "$GROUP"; GROUP=$ANSWER; else GROUP=; fi
+if [ "$LISTEN" = yes ] || [ "$MODE" = 2 ]; then credentials "$(msg '探针密钥' 'Probe key')" "$SECRET"; SECRET=$ANSWER; else SECRET=; fi
+if [ "$MODE" = 3 ] || [ "$MODE" = 4 ] || [ -n "$ALSO_RELAY" ]; then credentials "$(msg '中转密码 / 中继访问令牌（需与中继一致）' 'Relay password / access token (must match relay)')" "$TOKEN"; TOKEN=$ANSWER; else TOKEN=; fi
+if [ "$MODE" = 3 ]; then credentials "$(msg '组密钥（仅可信组成员持有）' 'Group key (trusted group members only)')" "$GROUP"; GROUP=$ANSWER; else GROUP=; fi
 if [ -n "$ADMIN_KEYS" ]; then ADMIN=yes; fi
-if [ "$MODE" != 4 ]; then ask "启用远程管理？[yes/no，默认 $ADMIN]（警告：root 级控制权）" "$ADMIN"; ADMIN=$ANSWER; fi
-case "$ADMIN" in yes|no) ;; *) fail '管理开关须为 yes 或 no' ;; esac
+if [ "$MODE" != 4 ]; then ask "$(msg "启用远程管理？[yes/no，默认 $ADMIN]（警告：root 级控制权）" "Enable remote administration? [yes/no, default $ADMIN] (warning: root-level control)")" "$ADMIN"; ADMIN=$ANSWER; fi
+case "$ADMIN" in yes|no) ;; *) fail "$(msg '管理开关须为 yes 或 no' 'Administration switch must be yes or no')" ;; esac
 if [ "$ADMIN" = yes ]; then
-    [ "$MODE" != 4 ] || fail '纯中继不使用 -A；请选择 full 以转发管理管道'
-    [ "$LISTEN" = yes ] || [ "$MODE" = 3 ] || fail '管理需要直连 -l 或共享中继 -R'
+    [ "$MODE" != 4 ] || fail "$(msg '纯中继不使用 -A；请选择 full 以转发管理管道' 'Relay-only mode does not use -A; choose full to forward administration pipes')"
+    [ "$LISTEN" = yes ] || [ "$MODE" = 3 ] || fail "$(msg '管理需要直连 -l 或共享中继 -R' 'Administration requires direct -l or shared relay -R')"
     if [ "$YES" = 0 ]; then
         admin_source=1; if [ -n "$ADMIN_KEYS" ]; then admin_source=2; fi
-        ask "管理公钥来源：1) 配对时由手机自动提供（推荐） 2) 手动粘贴 [默认 $admin_source]：" "$admin_source"
-        case "$ANSWER" in 1) ADMIN_VIA_PAIR=yes ;; 2) ADMIN_VIA_PAIR=no ;; *) fail '管理公钥来源须为 1 或 2' ;; esac
+        ask "$(msg "管理公钥来源：1) 配对时由手机自动提供（推荐） 2) 手动粘贴 [默认 $admin_source]：" "Administration public-key source: 1) Supplied by phone during pairing (recommended) 2) Paste manually [default $admin_source]:")" "$admin_source"
+        case "$ANSWER" in 1) ADMIN_VIA_PAIR=yes ;; 2) ADMIN_VIA_PAIR=no ;; *) fail "$(msg '管理公钥来源须为 1 或 2' 'Administration public-key source must be 1 or 2')" ;; esac
     fi
     if [ "$ADMIN_VIA_PAIR" = yes ]; then ADMIN_KEYS=
     else
-        ask '粘贴 Ed25519 公钥（64 位十六进制，多个用逗号分隔）：' "$ADMIN_KEYS"; ADMIN_KEYS=$ANSWER
-        printf '%s\n' "$ADMIN_KEYS" | awk -F, 'NF < 1 || NF > 32 {exit 1} {for(i=1;i<=NF;i++) if(length($i)!=64 || $i ~ /[^0-9a-fA-F]/) exit 1}' || fail '管理公钥格式无效'
+        ask "$(msg '粘贴 Ed25519 公钥（64 位十六进制，多个用逗号分隔）：' 'Paste Ed25519 public keys (64 hex characters each, comma-separated):')" "$ADMIN_KEYS"; ADMIN_KEYS=$ANSWER
+        printf '%s\n' "$ADMIN_KEYS" | awk -F, 'NF < 1 || NF > 32 {exit 1} {for(i=1;i<=NF;i++) if(length($i)!=64 || $i ~ /[^0-9a-fA-F]/) exit 1}' || fail "$(msg '管理公钥格式无效' 'Invalid administration public-key format')"
         ADMIN_KEYS=$(printf '%s' "$ADMIN_KEYS" | tr 'A-F' 'a-f')
     fi
 else ADMIN_KEYS=; ADMIN_VIA_PAIR=no; fi
 [ -n "$FLAVOR" ] || FLAVOR=full
-printf '完整版 full（约 175–270 KB，随架构变化）：支持管理、实时管道、配对和二维码。\nlite（约 120–195 KB）：节省空间，但无管理/实时管道；配对需临时下载 full（纯中继转发管理也必须 full）。\n'
-ask "构建类型 full/lite（完整版/精简版）[默认 $FLAVOR]：" "$FLAVOR"; FLAVOR=$ANSWER
-case "$FLAVOR" in full) ;; lite) [ "$ADMIN" = no ] || fail 'lite 不允许启用管理，请选择 full' ;; *) fail '构建类型须为 full 或 lite' ;; esac
+say '完整版 full（约 175–270 KB，随架构变化）：支持管理、实时管道、配对和二维码。\nlite（约 120–195 KB）：节省空间，但无管理/实时管道；配对需临时下载 full（纯中继转发管理也必须 full）。\n' 'full (~175-275 KB, architecture-dependent): administration, live pipes, pairing and QR.\nlite (~120-195 KB): space-saving, no administration/live pipes; pairing temporarily downloads full. Relays forwarding administration also need full.\n'
+ask "$(msg "构建类型 full/lite（完整版/精简版）[默认 $FLAVOR]：" "Build full/lite [default $FLAVOR]:")" "$FLAVOR"; FLAVOR=$ANSWER
+case "$FLAVOR" in full) ;; lite) [ "$ADMIN" = no ] || fail "$(msg 'lite 不允许启用管理，请选择 full' 'lite cannot enable administration; choose full')" ;; *) fail "$(msg '构建类型须为 full 或 lite' 'Build must be full or lite')" ;; esac
 if [ "$ADMIN_VIA_PAIR" = yes ]; then
-    printf '手机配对授权需要 full；收到手机公钥并在服务器明确授权前，管理保持关闭。\n'
+    say '手机配对授权需要 full；收到手机公钥并在服务器明确授权前，管理保持关闭。\n' 'Phone administration pairing requires full; administration stays disabled until the phone key is received and separately authorized on the server.\n'
 fi
 for value in "$NAME" "$UPSTREAM" "$SECRET" "$TOKEN" "$GROUP"; do safe_value "$value"; done
 safe_value "$ADMIN_KEYS" 2080
-case "$INTERVAL" in ''|*[!0-9]*|0*) fail 'NPULSE_INTERVAL 须为 1–86400' ;; esac
-[ "${#INTERVAL}" -le 5 ] && [ "$INTERVAL" -le 86400 ] || fail '间隔超出范围'
+case "$INTERVAL" in ''|*[!0-9]*|0*) fail "$(msg 'NPULSE_INTERVAL 须为 1–86400' 'NPULSE_INTERVAL must be 1-86400')" ;; esac
+[ "${#INTERVAL}" -le 5 ] && [ "$INTERVAL" -le 86400 ] || fail "$(msg '间隔超出范围' 'Interval is out of range')"
 PRIVILEGED_PORT=no
 if { [ "$LISTEN" = yes ] || [ "$MODE" = 4 ]; } && [ "$PORT" -lt 1024 ]; then PRIVILEGED_PORT=yes; fi
 if [ -n "$HTTP_PORT" ] && [ "$HTTP_PORT" -lt 1024 ]; then PRIVILEGED_PORT=yes; fi
@@ -797,10 +865,10 @@ if [ "$LISTEN" = yes ] || [ "$MODE" = 3 ]; then
     pair_default=yes; if [ "$YES" = 1 ]; then pair_default=no; fi
     if [ "$ADMIN_VIA_PAIR" = yes ]; then
         pair_default=yes
-        printf '请在手机打开「同时授权本机管理」，核对图案后在服务器单独授权；跳过配对、配对失败或拒绝授权，管理将保持关闭。\n'
+        say '请在手机打开「同时授权本机管理」，核对图案后在服务器单独授权；跳过配对、配对失败或拒绝授权，管理将保持关闭。\n' 'Enable administration authorization on the phone, compare the pattern, then authorize separately on the server. Skipping, failure or refusal leaves administration disabled.\n'
     fi
-    ask '现在与手机配对？[Y/n]' "$pair_default"
+    ask "$(msg '现在与手机配对？[Y/n]' 'Pair with the phone now? [Y/n]')" "$pair_default"
     case "$ANSWER" in y|Y|yes) pair_installed ;; *) service start ;; esac
 else service start; fi
-printf '服务已启用并启动。\n'
+say '服务已启用并启动。\n' 'Service enabled and started.\n'
 summary

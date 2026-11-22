@@ -1,0 +1,27 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSCameraUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Scan the probe terminal QR code to fill connection details. Always verify the security pattern and digits."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "扫描探针终端的配对二维码，填写连接信息；仍需核对安全图案和数字。"}}
+      }
+    },
+    "NSLocalNetworkUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Connect to monitoring probes on your local network to view node status."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "连接局域网中的监控探针，查看节点状态。"}}
+      }
+    },
+    "NSFaceIDUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Verify your identity before managing probes, opening terminals or using power controls."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "验证身份后管理探针、打开终端或执行电源操作。"}}
+      }
+    }
+  },
+  "version": "1.0"
+}

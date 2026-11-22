@@ -37,15 +37,15 @@ struct AdminIdentity {
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
             if error?.code == LAError.passcodeNotSet.rawValue { return }
-            throw AdminError.message("无法验证设备身份，请检查设备密码设置")
+            throw AdminError.message(L10n.text("无法验证设备身份，请检查设备密码设置"))
         }
         do {
-            guard try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "验证身份以管理远程节点") else {
-                throw AdminError.message("身份验证未通过")
+            guard try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: L10n.text("验证身份以管理远程节点")) else {
+                throw AdminError.message(L10n.text("身份验证未通过"))
             }
         } catch let error as LAError {
-            if [.userCancel, .systemCancel, .appCancel].contains(error.code) { throw AdminError.message("已取消身份验证") }
-            throw AdminError.message("身份验证未通过，请使用设备密码重试")
+            if [.userCancel, .systemCancel, .appCancel].contains(error.code) { throw AdminError.message(L10n.text("已取消身份验证")) }
+            throw AdminError.message(L10n.text("身份验证未通过，请使用设备密码重试"))
         }
         #endif
     }
@@ -54,6 +54,6 @@ struct AdminIdentity {
 enum AdminError: LocalizedError {
     case message(String)
     var errorDescription: String? { if case .message(let text) = self { return text }; return nil }
-    static let handshake = AdminError.message("未授权或握手失败，请检查管理公钥、密钥和探针时间；探针可能未启用 -A")
-    static let disconnected = AdminError.message("管理连接已断开，请重新连接")
+    static let handshake = AdminError.message(L10n.text("未授权或握手失败，请检查管理公钥、密钥和探针时间；探针可能未启用 -A"))
+    static let disconnected = AdminError.message(L10n.text("管理连接已断开，请重新连接"))
 }

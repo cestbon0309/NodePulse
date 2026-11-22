@@ -117,7 +117,7 @@ final class AdminTests: XCTestCase {
                 let final = try await session.request("ls", ["path": root])
                 XCTAssertEqual((final["entries"] as? [[String: Any]])?.count, 2)
                 do { _ = try await session.request("ls", ["path": root + "/missing"]); XCTFail("missing directory accepted") }
-                catch { XCTAssertTrue(error.localizedDescription.contains("操作失败")) }
+                catch { XCTAssertTrue(error.localizedDescription.contains(Bundle.main.preferredLocalizations.first == "en" ? "operation failed" : "操作失败")) }
                 async let ping = session.request("ping")
                 async let metadata = session.request("info")
                 _ = try await (ping, metadata)
@@ -139,17 +139,17 @@ final class AdminTests: XCTestCase {
                 XCTAssertTrue(String(decoding: output, as: UTF8.self).contains("hi")); XCTAssertEqual(exitCode, 3)
                 _ = try await session.request("rm", ["path": root, "recursive": true]); await session.close()
                 do { _ = try await session.request("ping"); XCTFail("closed session accepted request") }
-                catch { XCTAssertTrue(error.localizedDescription.contains("断开")) }
+                catch { XCTAssertTrue(error.localizedDescription.contains(Bundle.main.preferredLocalizations.first == "en" ? "connection lost" : "断开")) }
                 print("E2E PASS AdminSession \(endpoint.kind.isGroup ? "relay" : "direct"): hello/MAC, empty ls, 200KB put/get SHA256, empty/EOF/abort/errors, concurrent ids, PTY resize/echo hi/exit 3")
             } catch { _ = try? await session.request("rm", ["path": root, "recursive": true]); await session.close(); throw error }
         }
         do {
             let session = try await AdminSession.connect(endpoint: direct, node: node.id, secret: "integration-admin-secret", signing: Curve25519.Signing.PrivateKey())
             await session.close(); XCTFail("unauthorized key accepted")
-        } catch { XCTAssertTrue(error.localizedDescription.contains("未授权")) }
+        } catch { XCTAssertTrue(error.localizedDescription.contains(Bundle.main.preferredLocalizations.first == "en" ? "Unauthorized" : "未授权")) }
         do {
             let session = try await AdminSession.connect(endpoint: relay, node: "offline", secret: "admin-relay-token", groupSecret: "admin-relay-group", signing: signing)
             await session.close(); XCTFail("offline node accepted")
-        } catch { XCTAssertTrue(error.localizedDescription.contains("节点离线")) }
+        } catch { XCTAssertTrue(error.localizedDescription.contains(Bundle.main.preferredLocalizations.first == "en" ? "Node offline" : "节点离线")) }
     }
 }

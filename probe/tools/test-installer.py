@@ -57,7 +57,7 @@ def new_root():
 def run(root, *args, ok=True, **settings):
     env = {k: v for k, v in os.environ.items() if not k.startswith("NPULSE_")}
     env.update(DESTDIR=str(root), DRY_RUN="1", NPULSE_INIT="systemd", NPULSE_ARCH="x86_64", NPULSE_MIRROR=BASE)
-    env.update(NPULSE_INSECURE="1")
+    env.update(NPULSE_INSECURE="1", NPULSE_LANG="zh")
     env.update(settings)
     result = subprocess.run([*SHELL, str(ROOT / "install.sh"), *args], env=env, text=True, capture_output=True, timeout=30)
     assert (result.returncode == 0) == ok, (args, result.stdout, result.stderr)
@@ -88,7 +88,7 @@ def interactive_pair(root, expected, answer="", ok=True):
     argv = (["script", "-q", "/dev/null", "/bin/sh", "-c", command] if sys.platform == "darwin" else
             ["script", "-q", "-e", "-c", command, "/dev/null"])
     env = {k: v for k, v in os.environ.items() if not k.startswith("NPULSE_")}
-    env.update(DESTDIR=str(root), DRY_RUN="1")
+    env.update(DESTDIR=str(root), DRY_RUN="1", NPULSE_LANG="zh")
     proc = subprocess.Popen(argv, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, start_new_session=True)
     transcript, deadline, sent = b"", time.monotonic() + 15, False
@@ -114,7 +114,8 @@ def interactive_pair(root, expected, answer="", ok=True):
 
 def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_env=False,
                 mode=1, arch="x86_64", init="systemd", flavor=None, flavor_flag=None, flavor_answer="", public_answer="y",
-                tool_path=None, stty_mode="normal", secret_source="2", preset_secrets=None, also_relay=False):
+                tool_path=None, stty_mode="normal", secret_source="2", preset_secrets=None, also_relay=False,
+                language="zh", choose_language=False, locale="en_US.UTF-8"):
     tools = root / "tools"; tools.mkdir()
     firewall = tools / "ufw"
     firewall.write_text('#!/bin/sh\n[ "$1" = status ] || exit 99\nprintf "Status: active\\n"\n')
@@ -134,6 +135,8 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
     env = {k: v for k, v in os.environ.items() if not k.startswith("NPULSE_")}
     env.update(DESTDIR=str(root), DRY_RUN="1", NPULSE_INIT="systemd", NPULSE_ARCH="x86_64", NPULSE_MIRROR=BASE, NPULSE_INSECURE="1", NPULSE_BIND="0.0.0.0")
     env.update(NPULSE_MODE=str(mode), NPULSE_ARCH=arch, NPULSE_INIT=init)
+    env.update(LC_ALL=locale, LANG=locale)
+    if not choose_language: env["NPULSE_LANG"] = language
     if mode == 1: env["NPULSE_PUBLIC_IP"] = "8.8.4.4"
     if flavor: env["NPULSE_FLAVOR"] = flavor
     if keys_via_env: env["NPULSE_ADMIN_KEYS"] = preset_keys
@@ -165,9 +168,6 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
     if mode == 3:
         prompts += ["上游地址"]
         responses += ["relay.example:9010"]
-    if mode != 4:
-        prompts += ["节点名称"]
-        responses += [""]
     secret = "interactive-secret-MUST-NOT-ECHO"
     credentials = [("secret" if mode in (1, 2) else "token",
                     "NPULSE_SECRET" if mode in (1, 2) else "NPULSE_TOKEN", secret)]
@@ -203,6 +203,22 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
     if mode in (1, 3):
         prompts += ["现在与手机配对"]
         responses += [pair]
+    if language == "en":
+        translated = {"模式 [默认": "Mode [default", "TCP 监听端口": "TCP listen port",
+                      "这台机器有公网 IP 吗": "Does this machine have a public IP",
+                      "切换到共享中继模式 3": "Switch to shared-relay mode 3",
+                      "公网 IP（留空确认": "Public IP (Enter to confirm",
+                      "同时作为共享中继": "Also host a shared relay?", "共享中继端口": "Shared-relay port",
+                      "HTTP 回环端口": "HTTP loopback port", "开启 HTTP /api/relay": "Enable HTTP /api/relay",
+                      "上游地址": "Upstream relay host:port", "密钥来源": "key source",
+                      "手动输入（": "enter manually (", "root 级控制权": "root-level control",
+                      "管理公钥来源：": "Administration public-key source:", "粘贴 Ed25519 公钥": "Paste Ed25519 public keys",
+                      "构建类型 full/lite": "Build full/lite", "是否现在执行": "Apply these firewall rules now?",
+                      "现在与手机配对": "Pair with the phone now"}
+        prompts = [translated[p] for p in prompts]
+    if choose_language:
+        prompts.insert(0, "语言 / Language: 1 中文 / 2 English")
+        responses.insert(0, "1" if language == "zh" else "2")
     proc = subprocess.Popen(argv, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, start_new_session=True)
     transcript, step, cursor, deadline = b"", 0, 0, time.monotonic() + 30
@@ -224,7 +240,7 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
         saved = config(root)
         if also_relay:
             assert saved["listen"] == "0.0.0.0:9000" and saved["relay_listen"] == "0.0.0.0:9001"
-            assert "中转地址：8.8.4.4:9001".encode() in transcript and b"ufw allow 9001/tcp" in transcript
+            assert (("中转地址：" if language == "zh" else "Relay address: ") + "8.8.4.4:9001").encode() in transcript and b"ufw allow 9001/tcp" in transcript
         for key, variable, value in credentials:
             if variable in (preset_secrets or {}):
                 assert saved[key] == preset_secrets[variable]
@@ -237,8 +253,8 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
                 else: assert transcript.count(value.encode()) >= 2, "visible fallback was not exercised"
         expected_flavor = flavor_answer or (flavor_flag or "").removeprefix("--") or flavor or "full"
         assert f"flavor={expected_flavor}\n" in (root / "etc/npulse/install.state").read_text()
-        assert f"[默认 {(flavor_flag or '').removeprefix('--') or flavor or 'full'}]".encode() in transcript
-        assert "175–270 KB".encode() in transcript and "120–195 KB".encode() in transcript
+        assert f"[{'默认' if language == 'zh' else 'default'} {(flavor_flag or '').removeprefix('--') or flavor or 'full'}]".encode() in transcript
+        assert ("175–270 KB" if language == "zh" else "175-275 KB").encode() in transcript and ("120–195 KB" if language == "zh" else "120-195 KB").encode() in transcript
         if admin_source is not None:
             unit = (root / "etc/systemd/system/npulse.service").read_text()
             if preset_keys: assert "[默认 2]".encode() in transcript
@@ -257,6 +273,24 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
 
 
 try:
+    for language in ("zh", "en"):
+        for mode in range(1, 5):
+            root = new_root()
+            result = run(root, "--yes", "--lang", language, "--mode", str(mode), "--upstream", "relay.example:9001", NPULSE_LANG="en" if language == "zh" else "zh")
+            assert ("选择指南" if language == "zh" else "Decision guide") in result.stdout
+            if language == "en": assert not re.search(r"[\u3400-\u9fff]", result.stdout + result.stderr)
+        transcript = interactive(new_root(), language=language, choose_language=True, locale="zh_CN.UTF-8", also_relay=True)
+        assert "默认 / default 1" in transcript and transcript.index("语言 / Language") < transcript.index("选择指南" if language == "zh" else "Decision guide")
+        (OUTPUT / f"interactive-{language}.txt").write_text(transcript)
+    for locale, language in (("zh_CN.UTF-8", "zh"), ("C", "en"), ("", "en")):
+        result = run(new_root(), "--yes", NPULSE_LANG="", LANG=locale, LC_ALL="")
+        assert ("选择指南" if language == "zh" else "Decision guide") in result.stdout
+    result = run(new_root(), "--help", "--lang", "en", NPULSE_LANG="zh")
+    assert "Usage:" in result.stdout and "--lang zh|en" in result.stdout
+    for args, language in ((["--lang", "fr"], "zh"), (["--lang", ""], "en"), (["--lang"], "en"), ([], "fr")):
+        result = run(new_root(), "--yes", *args, ok=False, NPULSE_LANG=language)
+        assert not ("NodePulse installed:" in result.stdout or "NodePulse 已安装" in result.stdout)
+    print("PASS bilingual mode matrix, first language prompt, LC_ALL/LANG defaults, flag/env precedence, help and invalid/empty/missing languages; interactive zh/en direct + shared-relay transcripts saved")
     run(new_root(), "--yes", ok=False, NPULSE_INSECURE="0")
     for mode in range(1, 5):
         root = new_root()

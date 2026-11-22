@@ -188,7 +188,7 @@ final class GroupRelayTests: XCTestCase {
         let tested = await store.testConnection(http, secret: "integration-relay-token", groupSecret: "integration-group-secret")
         XCTAssertEqual(try tested.get(), 2)
         do { _ = try await client.fetch(tcp, token: "wrong", groupSecret: "integration-group-secret"); XCTFail("wrong token accepted") }
-        catch { XCTAssertEqual(error.localizedDescription, "密钥错误或被拒绝（对端静默断开）") }
+        catch { XCTAssertEqual(error.localizedDescription, L10n.text("密钥错误或被拒绝（对端静默断开）")) }
         print("E2E PASS GroupClient TCP nodes=\(direct.snapshots.count), HTTP nodes=\(web.snapshots.count), dropped=0; store online/badges=2")
     }
 }

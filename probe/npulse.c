@@ -2,6 +2,9 @@
 #ifndef ADMIN
 #define ADMIN 1
 #endif
+#ifndef PAIR
+#define PAIR ADMIN
+#endif
 #if ADMIN
 #define _FILE_OFFSET_BITS 64
 #define ADMIN_FLAGS "A:"
@@ -32,7 +35,9 @@ static void stop(int sig) {
   (void)sig;
   running = 0;
 }
+#if ADMIN || PAIR
 #include "session.h"
+#endif
 typedef struct {
   char *json, *id;
   time_t seen;
@@ -163,9 +168,15 @@ static char *unframe(const uint8_t *p, size_t total, const uint8_t transport_key
 #if ADMIN
 #include "admin.h"
 #endif
+#if ADMIN || PAIR
 #include "pipe.h"
 #define ADMIN_POLLS (PIPE_SOCKETS + (ADMIN ? CLIENTS * 4 + PIPE_PROBES : 0))
+#else
+#define ADMIN_POLLS 0
+#endif
+#if PAIR
 #include "pairing.h"
+#endif
 typedef struct {
   int fd, http, relay;
   uint8_t *in, *out;
@@ -238,7 +249,10 @@ static char *request(uint8_t *p, size_t total, int relay, Client *client) {
   nonce_pos = (nonce_pos + 1) % 256;
   if (relay) {
     if (client) {
-      int result = pair_pipe_request(&j, now, client->fd);
+      int result = -1;
+#if PAIR
+      result = pair_pipe_request(&j, now, client->fd);
+#endif
 #if ADMIN
       if (result < 0) result = pipe_request(&j, stamp, now, client->fd, &response);
 #endif
@@ -512,7 +526,11 @@ static void config(const char *path) {
   fclose(f);
 }
 static void usage(void) {
+#if PAIR
   puts("Temporary pairing: -P (-l addr:port -k SECRET | -R relay:port -T TOKEN -G GROUP) [-n NAME] [-W seconds (default 600)] [-Q ascii]");
+#else
+  puts("Pairing unavailable (PAIR=0); use install.sh pair for lite installations.");
+#endif
   puts("npulse 0.1.0\nUsage: npulse [-k SECRET] [-l [addr:]port] [-H "
        "[addr:]port]\n              [-u host:port] [-i seconds] [-n NAME] [-c "
        "config] [-h]\nDirect listen defaults to 0.0.0.0; HTTP defaults to "
@@ -555,6 +573,7 @@ int main(int argc, char **argv) {
     option(k, optarg);
   }
   if (pairing) {
+#if PAIR
     if (optind != argc || http_addr || upstream || relay_addr ||
         (group_upstream ? listen_addr || !relay_token || !*relay_token || !group_secret || !*group_secret : !listen_addr || !secret || !*secret)) {
       usage(); return 2;
@@ -563,6 +582,11 @@ int main(int argc, char **argv) {
     metrics_init(display);
     if (!display) display = hostname_buf;
     return pair_run(pair_timeout, qr_ascii);
+#else
+    (void)pair_timeout; (void)qr_ascii;
+    fprintf(stderr, "此构建不支持配对（PAIR=0）；lite 版请运行 install.sh pair，临时使用完整版配对。\n");
+    return 2;
+#endif
   }
   int relay_http = relay_addr || (relay_token && !secret);
   int collect = listen_addr || upstream || group_upstream || (http_addr && !relay_http);
@@ -594,7 +618,9 @@ int main(int argc, char **argv) {
     if (!display) display = hostname_buf;
     sample();
   }
+#if ADMIN || PAIR
   pipe_init();
+#endif
   signal(SIGPIPE, SIG_IGN);
   signal(SIGINT, stop);
   signal(SIGTERM, stop);
@@ -614,7 +640,9 @@ int main(int argc, char **argv) {
     clients[i].fd = -1;
   double next_sample = monotime() + 1, next_push = monotime();
   while (running) {
+#if ADMIN || PAIR
     pipe_tick(monotime());
+#endif
     struct pollfd pf[CLIENTS + 3 + ADMIN_POLLS];
     int count = CLIENTS + 3;
 #if ADMIN
@@ -635,11 +663,15 @@ int main(int argc, char **argv) {
       }
 #endif
     }
+#if ADMIN || PAIR
     int pipe_base = count;
     count += pipe_poll(pf + count);
+#endif
     poll(pf, (nfds_t)count, 100);
     double now = monotime();
+#if ADMIN || PAIR
     pipe_io(pf + pipe_base);
+#endif
 #if ADMIN
     admin_tick(now);
     int accepted;
@@ -817,7 +849,9 @@ int main(int argc, char **argv) {
   for (int i = 0; i < 3; i++)
     if (listeners[i] >= 0)
       close(listeners[i]);
+#if ADMIN || PAIR
   pipe_shutdown();
+#endif
 #if ADMIN
   admin_shutdown();
 #endif

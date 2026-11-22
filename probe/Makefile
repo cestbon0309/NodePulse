@@ -1,8 +1,9 @@
 CC = cc
 ADMIN ?= 1
-QR ?= 1
+PAIR ?= $(ADMIN)
+QR ?= $(PAIR)
 HOST_OUT ?= npulse-host
-CPPFLAGS += -DADMIN=$(ADMIN) -DQR=$(QR)
+CPPFLAGS += -DADMIN=$(ADMIN) -DPAIR=$(PAIR) -DQR=$(QR)
 CFLAGS ?= -Os -flto -std=gnu99 -Wall -Wextra -ffunction-sections -fdata-sections
 SOURCES = npulse.c vendor/monocypher.c vendor/monocypher-ed25519.c vendor/qrcodegen.c
 HEADERS = json.h metrics.h group.h admin.h pipe.h session.h pairing.h vendor/monocypher.h vendor/monocypher-ed25519.h vendor/qrcodegen.h

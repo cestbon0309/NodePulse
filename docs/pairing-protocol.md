@@ -43,7 +43,7 @@ trusted local console, never a picture/code supplied by the network peer.
 
 ## Encrypted confirmation
 
-From here use the admin session frame format (also compiled into lite):
+From here use the admin session frame format (compiled when `ADMIN=1` or `PAIR=1`):
 `len32_be | ciphertext | tag16`, ChaCha20-Poly1305 with AD equal to the four
 length bytes; nonce is `uint64_le(counter) || zero32`. Each direction starts
 at counter zero, increments only after a successful authenticated frame, never
@@ -102,7 +102,18 @@ existing endpoint. Relay HTTPS pairing is not supported.
 
 ## QR prefill and PSK
 
-Both builds default to `QR=1`; `QR=0 ./probe/build.sh` or `make QR=0`
+Full builds default to `PAIR=1 QR=1`. Published lite builds default to
+`ADMIN=0 PAIR=0 QR=0`, excluding pairing, QR and realtime relay pipes to preserve
+the size budget; `npulse -P` prints an explicit unsupported-build error.
+`make ADMIN=0 PAIR=1` opts into pairing for a custom lite build (larger).
+For a lite installation, both the install-time pairing prompt and `install.sh pair`
+download a temporary same-architecture full binary using the configured version,
+HTTPS mirror policy and SHA256SUMS verification. Only that temporary binary pairs;
+the installed lite binary, service permissions and configuration remain unchanged
+except explicitly retried relay connection details. Any returned `admin_pk` is
+ignored with a 「lite 版不支持管理」 warning. The temporary files are removed on
+success, failure and signal-triggered cleanup, and the lite service is restored.
+`QR=0 ./probe/build.sh` or `make QR=0`
 omits the encoder (text URLs remain available). The vendored MIT-licensed
 Nayuki QR-Code-generator encodes byte mode with ECC M. Terminal output has a
 four-module quiet zone and black foreground/white background ANSI half blocks

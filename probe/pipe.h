@@ -91,6 +91,7 @@ static int relay_free(void) {
   for (int i = 0; i < PIPE_SOCKETS; i++) if (!relay_pipes[i].mode) return i;
   return -1;
 }
+#if PAIR
 static int pair_pipe_request(Json *j, time_t now, int fd) {
   int listen = eq(j, field(j, 0, "op"), "ppair"), connect = eq(j, field(j, 0, "op"), "pconnect");
   if (!listen && !connect) return -1;
@@ -151,6 +152,7 @@ static int pair_pipe_request(Json *j, time_t now, int fd) {
   if (!listen) { RelayPipe *probe = &relay_pipes[waiting]; probe->peer = index; probe->mode = RP_ACK; probe->deadline = p->deadline; probe->last = p->last; }
   return 1;
 }
+#endif
 #if ADMIN
 static int pipe_request(Json *j, long long stamp, time_t now, int fd, char **response) {
   char *op = string(j, field(j, 0, "op"));

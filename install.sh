@@ -326,8 +326,8 @@ fetch_binary() {
         *) fail '下载目录必须为 HTTPS URL' ;;
     esac
     asset=npulse-linux-$ARCH
-    if [ "$FLAVOR" = lite ]; then asset=$asset-lite; fi
-    WORK=$(mktemp -d "${TMPDIR:-/tmp}/npulse-install.XXXXXX") || fail '无法创建临时目录'
+    if [ "${1:-$FLAVOR}" = lite ]; then asset=$asset-lite; fi
+    [ -n "$WORK" ] || WORK=$(mktemp -d "${TMPDIR:-/tmp}/npulse-install.XXXXXX") || fail '无法创建临时目录'
     download "$base/SHA256SUMS" "$WORK/SHA256SUMS"
     download "$base/$asset" "$WORK/binary"
     expected=$(awk -v name="$asset" '$2 == name || $2 == "*" name {print $1}' "$WORK/SHA256SUMS")
@@ -483,7 +483,15 @@ pair_installed() {
     if [ "$DRY_RUN" = 1 ]; then printf '[DRY_RUN] 配对：不执行下载的二进制。\n'; return; fi
     PAIR_STOPPED=1
     service stop
+    pair_binary=$DESTDIR$BIN
+    if [ "$FLAVOR" = lite ]; then
+        printf 'lite 版不支持管理；将下载已校验的临时完整版进行配对，服务仍使用 lite。\n'
+        fetch_binary full
+        chmod 700 "$WORK/binary"
+        pair_binary=$WORK/binary
+    fi
     paired=no
+    pair_upstream=$UPSTREAM; pair_token=$TOKEN
     while :; do
         {
             printf 'name=%s\n' "$NAME"
@@ -491,7 +499,7 @@ pair_installed() {
             else printf 'listen=%s\nsecret=%s\n' "$(bind_endpoint)" "$SECRET"; fi
         } > "$WORK/pair.conf"
         pair_status=0
-        "$DESTDIR$BIN" -P -c "$WORK/pair.conf" > "$WORK/pair-output" || pair_status=$?
+        "$pair_binary" -P -c "$WORK/pair.conf" > "$WORK/pair-output" || pair_status=$?
         if [ "$pair_status" = 0 ]; then paired=yes; break; fi
         if [ "$pair_status" != 3 ] || [ "$MODE" != 4 ]; then break; fi
         printf '中转密码错误或无法连接。\n'
@@ -502,7 +510,7 @@ pair_installed() {
         case "$UPSTREAM" in *:*) port "${UPSTREAM##*:}" ;; *) fail '缺少中转 host:port' ;; esac
         credentials '中转密码（访问令牌）' "$TOKEN"; TOKEN=$ANSWER
     done
-    if [ "$paired" = yes ] && [ "$MODE" = 4 ]; then
+    if [ "$paired" = yes ] && [ "$MODE" = 4 ] && { [ "$UPSTREAM" != "$pair_upstream" ] || [ "$TOKEN" != "$pair_token" ]; }; then
         awk '!/^(relay_upstream|token|group_secret)=/' "$CONFIG" > "$CONFIG.new"
         printf 'relay_upstream=%s\ntoken=%s\ngroup_secret=%s\n' "$UPSTREAM" "$TOKEN" "$GROUP" >> "$CONFIG.new"
         chmod 600 "$CONFIG.new"; mv "$CONFIG.new" "$CONFIG"
@@ -526,6 +534,7 @@ pair_installed() {
     service start
     PAIR_STOPPED=0
     if [ "$paired" != yes ]; then printf '配对未完成；服务已恢复，可稍后运行 pair 或使用手动密钥。\n'; fi
+    rm -rf "$WORK"; WORK=
 }
 
 if [ "$ACTION" != install ]; then

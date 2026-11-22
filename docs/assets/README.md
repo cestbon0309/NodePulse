@@ -12,6 +12,15 @@ Grayscale appears in dark/light dashboards and the updated compact detail header
 The original full-resolution captures are in `ios/build/screens/`
 (ignored build artifacts); optimized source PNGs are committed here.
 
+For still captures, launch the debug app with `-demo -refreshInterval 3600`.
+The launch argument overrides the polling preference for that process only:
+the initial demo snapshot and history are real, but cannot change during capture.
+Wait at least two seconds after launch, navigation or layout/theme changes before
+taking a screenshot. Normal demo mode remains live; its three-second updates use
+SwiftUI numeric transitions, whose deliberately blurred intermediate digits must
+not be captured for documentation. Check original and optimized numeric crops
+before regenerating heroes. Do not paint over or substitute screenshot digits.
+
 Regenerate the 2400×1200 hero banners on macOS with Pillow:
 
 ```sh

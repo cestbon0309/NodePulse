@@ -643,7 +643,8 @@ if [ "$ADMIN" = yes ]; then
     [ "$MODE" != 5 ] || fail '纯中继不使用 -A；请选择 full 以转发管理管道'
     [ "$LISTEN" = yes ] || [ "$MODE" = 4 ] || fail '管理需要直连 -l 或共享中继 -R'
     if [ "$YES" = 0 ]; then
-        ask '管理公钥来源：1) 配对时由手机自动提供（推荐） 2) 手动粘贴' 1
+        admin_source=1; if [ -n "$ADMIN_KEYS" ]; then admin_source=2; fi
+        ask "管理公钥来源：1) 配对时由手机自动提供（推荐） 2) 手动粘贴 [默认 $admin_source]：" "$admin_source"
         case "$ANSWER" in 1) ADMIN_VIA_PAIR=yes ;; 2) ADMIN_VIA_PAIR=no ;; *) fail '管理公钥来源须为 1 或 2' ;; esac
     fi
     if [ "$ADMIN_VIA_PAIR" = yes ]; then ADMIN_KEYS=

@@ -117,13 +117,13 @@ try:
         print("PASS bounded worst-case snapshot with 16 IPs encrypts below 7168-byte blob cap and survives relay round trip")
         legacy, direct, normal_http = port(), port(), port()
         start("-l", f"127.0.0.1:{legacy}", "-k", "legacy-secret", "-n", "legacy-upstream")
-        start("-R", f"127.0.0.1:{tcp}", "-T", TOKEN, "-k", "legacy-secret", "-G", A,
+        start("--publisher", "-R", f"127.0.0.1:{tcp}", "-T", TOKEN, "-k", "legacy-secret", "-G", A,
               "-l", f"127.0.0.1:{direct}", "-H", f"127.0.0.1:{normal_http}",
-              "-u", f"127.0.0.1:{legacy}", "-n", "group-a-one", "-i", "1")
-        start("-R", f"127.0.0.1:{tcp}", "-T", TOKEN, "-k", A, "-n", "group-a-two", "-i", "1")
+              "-u", f"127.0.0.1:{legacy}", "-n", "group-a-one", "-i", "1", binary=harness)
+        start("--publisher", "-R", f"127.0.0.1:{tcp}", "-T", TOKEN, "-k", A, "-n", "group-a-two", "-i", "1", binary=harness)
         config = Path(temp) / "publisher.conf"
         config.write_text(f"relay_upstream=127.0.0.1:{tcp}\ntoken={TOKEN}\ngroup_secret={B}\nname=group-b-one\ninterval=1\n")
-        start("-c", str(config))
+        start("--publisher", "-c", str(config), binary=harness)
         raw_a = wait_for(lambda: (r if len((r := get(tcp))["blobs"]) == 2 else None))
         raw_b = wait_for(lambda: (r if len((r := get(tcp, B))["blobs"]) == 1 else None))
         nodes_a, nodes_b = c.open_blobs(A, raw_a)["nodes"], c.open_blobs(B, raw_b)["nodes"]

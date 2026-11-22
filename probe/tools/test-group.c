@@ -3,8 +3,12 @@
 #include "../metrics.h"
 #include <assert.h>
 static int forbid_metrics;
+static int simulated_node;
 static void guarded_sample(void) { assert(!forbid_metrics); sample(); }
-static void guarded_init(const char *name) { assert(!forbid_metrics); metrics_init(name); }
+static void guarded_init(const char *name) {
+  assert(!forbid_metrics); metrics_init(name);
+  if (simulated_node) identify("", hostname_buf, "fixture-mac", name);
+}
 #define sample guarded_sample
 #define metrics_init guarded_init
 #define main npulse_main
@@ -17,6 +21,10 @@ static void matches(Json *j, const char *name, const char *actual) {
   free(expected);
 }
 int main(int argc, char **argv) {
+  if (argc > 2 && !strcmp(argv[1], "--publisher")) {
+    simulated_node = 1;
+    return npulse_main(argc - 1, argv + 1);
+  }
   if (argc > 2 && !strcmp(argv[1], "--relay-only")) {
     forbid_metrics = 1;
     return npulse_main(argc - 1, argv + 1);

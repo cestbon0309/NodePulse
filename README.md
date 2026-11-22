@@ -4,7 +4,7 @@
 
 直连安装先询问是否有公网 IP（云服务器的外部/弹性 IP 也算），网卡扫描仅作提示，不据此判断。
 选择有公网 IP 后，通过多个 HTTPS 服务查询（先 IPv4，IPv6 回退），校验后可确认或改填；查询失败则手动填写。
-没有公网 IP 时解释直连限制并默认建议共享中转（模式 4），也可继续直连；组密钥在本机生成。
+没有公网 IP 时解释直连限制并默认建议共享中转（模式 3），也可继续直连；组密钥在本机生成。
 云外部 IP 不在本机网卡上时，监听 `0.0.0.0`（IPv6 为 `::`），公网 IP 单独用于配对二维码和 App 地址；
 地址确实在本机网卡上时才可绑定它。公网地址保存在 `/etc/npulse/public-ip`，后续 `pair` 会复用；升级保留、卸载清理配置时删除。
 自动安装可使用 `--public-ip ADDR` / `NPULSE_PUBLIC_IP=ADDR`，或 `--public-ip auto` 自动查询（失败即报错）；
@@ -49,8 +49,14 @@ GitHub API，也不需要 token。下载前请信任所执行的脚本；二进�
 同一 Release 的 `SHA256SUMS`（包括 14 个 full/lite 二进制与 install.sh）。
 校验清单保证传输完整性，不代替发布者签名；自定义镜像能替换文件及清单，必须可信。
 
-菜单支持直连、HTTP+Nginx、旧式上报、端到端共享中继上报、纯共享中继。
-模式 2/3/4 可选择「同时作为旧式中继」以增加 `-l`；模式 1 本身即可接收旧式上报。
+模式重新编号为：1 直连、2 HTTP+Nginx、3 端到端共享中继上报、4 纯共享中继。
+旧式 `-u` / `upstream=` 上报和直连端口接收、合并子节点的功能已移除，改用 `-R/-S` 共享中继。
+已有 `upstream=` 配置升级会拒绝替换二进制或重启；请先备份配置，按共享中继方式重新安装。
+直连模式可选择「同时作为共享中继」，默认 no；启用后默认使用直连端口 + 1（必须不同）。
+非交互使用 `--also-relay PORT` 或 `NPULSE_ALSO_RELAY=PORT`；`NPULSE_TOKEN` 提供中转密码，
+未提供时安全生成。同一份配置包含 `listen`、`relay_listen` 和独立的 `secret` / `token`，
+由一个服务进程同时提供直连和共享中继。防火墙及云安全组须开放两个端口，安装器分别提示。
+摘要中的「中转地址」「中转密码」供下游模式 3 使用；本机管理走直连，下游管理走中继管道。
 纯共享中继可以额外开启回环 HTTP `/api/relay`。HTTP 模式打印域名/证书待替换的
 Nginx 示例，不自动安装 Nginx/certbot，不修改防火墙；摘要说明应开放的端口。
 上报到已有服务时，务必填写匹配的令牌/密钥；留空默认生成新的 32 字符随机值。
@@ -86,10 +92,13 @@ curl -fsSL https://github.com/cestbon0309/NodePulse/releases/latest/download/ins
 NPULSE_SECRET='替换为安全密钥' sh install.sh --yes --mode 1 --port 9000 --lite
 # 共享中继上报；管理密钥来自 App「设置 → 管理密钥」：
 NPULSE_TOKEN='与中继一致的令牌' NPULSE_GROUP_SECRET='本组共享密钥' \
-  sh install.sh --yes --mode 4 --upstream relay.example.com:9000 --full \
+  sh install.sh --yes --mode 3 --upstream relay.example.com:9000 --full \
   --admin-keys '替换为64位Ed25519公钥'
 # 新机器部署纯中继（没有组密钥）；可通过 Nginx 转发回环 HTTP：
-NPULSE_TOKEN='安全令牌' sh install.sh --yes --mode 5 --full --http-port 9001
+NPULSE_TOKEN='安全令牌' sh install.sh --yes --mode 4 --full --http-port 9001
+# 直连和共享中继由同一进程提供：
+NPULSE_SECRET='直连密钥' NPULSE_TOKEN='中转密码' \
+  sh install.sh --yes --mode 1 --public-ip auto --also-relay 9001
 
 sh install.sh status
 sh install.sh upgrade --yes       # 保持配置、权限、full/lite 和架构，替换并重启
@@ -241,20 +250,6 @@ sudo systemctl start nginx
 若之前已放行 9000，请删除该防火墙规则。iOS 选择 HTTPS，填 `https://probe.example.com`。
 Nginx 保留 Authorization，其他路径返回 404；避免在 URL 中放密钥，以免进入访问日志。
 
-### 中继
-
-上游采用直连配置并开放 TCP 9000；下游只主动连出，不需要任何入站防火墙规则。
-下游的 secret 必须与上游相同；共享密钥意味着任一成员可向上游推送节点，应只用于同一信任域。
-在下游配置中移除 listen/http，加入 upstream（替换域名）：
-
-```sh
-sudo sed -i '/^listen=/d; /^http=/d; s/^# upstream=.*/upstream=relay.example.com:9000/' /etc/npulse.conf
-sudo systemctl restart npulse
-```
-
-OpenWrt 使用同样的配置键，编辑后运行 `/etc/init.d/npulse restart`。
-上游可同时运行 Nginx HTTPS，iOS 连接上游即可看到中继节点。
-
 ### CI / 发布
 
 `.github/workflows/probe.yml` 使用 Zig 0.17.1，运行真实 Linux 原生集成测试及
@@ -356,7 +351,7 @@ HTTP 端口不应对公网开放。Nginx 示例中的精确匹配 `location = /a
 
 ```sh
 npulse -R relay.example.com:9010 -T TOKEN -G GROUP_SECRET -i 5 -n router
-# 可同时保留本机直连、旧式中继或 HTTP；省略 -G 时采用 -k 的值：
+# 可同时保留本机直连或 HTTP；省略 -G 时采用 -k 的值：
 npulse -k GROUP_SECRET -R relay.example.com:9010 -T TOKEN -l 9000 -n server
 ```
 
@@ -413,23 +408,28 @@ HTTP 格式/路由错误返回空 404，外层加密或签名错误仍静默关�
 gid、slot、固定 nonce/blob 和 push/get 消息签名）。向量由独立 Node crypto 生成，
 Python cryptography 与 C Monocypher 测试逐字节核对，供 CryptoKit 测试直接作为资源复用。
 运行 `python3 probe/tools/test-probe.py probe/npulse-host` 会连同分组集成测试一起执行。
+其中 `test-combined.py` 验证同一进程的直连监控/管理与共享中继监控/管理管道，并打印服务端 RSS
+（直连、组合空闲、1/10 个上报节点；各取五次中位数，均配置相同管理 allowlist）。
+RSS 上报端使用现有测试 harness 分配不同身份，避免同机 `/etc/machine-id` 相同导致节点去重；
+服务端仍运行传入的真实探针二进制，RSS 不含上报进程。
 
 ## Run
 
 ```
 npulse -k 'shared-secret' -l 9000 -H 8080 -n router
-npulse -k 'shared-secret' -u upstream.example:9000 -i 5 -n satellite
+npulse -k 'direct-secret' -l 9000 -S 9001 -T 'relay-token' -n router
+npulse -R relay.example:9001 -T 'relay-token' -G 'group-secret' -i 5 -n satellite
 npulse -c /etc/npulse.conf
 ```
 
-`-k` is required for normal direct/HTTP/upstream modes, not for pure shared
+`-k` is required for normal direct/HTTP modes, not for pure shared
 relays or `-R` with an explicit `-G`. `-l [addr:]port` is the encrypted direct listener (default
 address `0.0.0.0`). `-H [addr:]port` is plain HTTP (default `127.0.0.1`), intended
-**only behind a TLS reverse proxy**. `-u host:port` pushes upstream every `-i`
-seconds (default 5); all three modes may be combined. IPv6 endpoints use
+**only behind a TLS reverse proxy**. `-R host:port` publishes encrypted snapshots every `-i`
+seconds (default 5). Direct monitoring and shared relay `-S` may run in one process. IPv6 endpoints use
 `[address]:port`. `-n` defaults to hostname. `-h` prints usage. At least one
 listener or upstream is required. Config is unquoted `key=value`, with blank
-lines and `#` comment lines; keys are `secret`, `listen`, `http`, `upstream`,
+lines and `#` comment lines; keys are `secret`, `listen`, `http`,
 `interval`, `name`, `relay_listen` (`-S`), `token` (`-T`), `group_secret` (`-G`),
 `relay_upstream` (`-R`); single-letter flag names are also accepted as keys.
 CLI values override configuration regardless of order.
@@ -472,7 +472,7 @@ metrics); it is for protocol verification, not macOS monitoring.
 python3 -m venv .venv
 .venv/bin/pip install cryptography
 .venv/bin/python probe/tools/npulse-cli.py 127.0.0.1 9000 -k shared-secret get
-.venv/bin/python probe/tools/npulse-cli.py 127.0.0.1 9000 -k shared-secret push --node snapshot.json
+.venv/bin/python probe/tools/npulse-cli.py relay.example.com 9001 -T relay-token -G group-secret gget
 cd probe
 ../.venv/bin/python tools/test-probe.py ./npulse-host
 # On Linux, substitute ./dist/npulse-linux-<arch> for ./npulse-host.

@@ -5,9 +5,9 @@ the probe's uid; root is required for real power actions. Keep the probe secret
 and the Ed25519 private admin key separate. Anyone with only the probe secret can
 monitor, but cannot start an admin session without an allowlisted signing key.
 C1 uses the direct channel; C2 adds a realtime TCP pipe through the shared relay
-(specified below). HTTP and legacy relay do not support admin. The iOS client
-supports direct TCP and group TCP endpoints. Existing direct get/push and
-monitoring frames are unchanged.
+(specified below). HTTP does not support admin. The iOS client
+supports direct TCP and group TCP endpoints. Direct get and shared-relay
+monitoring frames are unchanged; legacy direct push has been removed.
 
 ## Build and enable
 

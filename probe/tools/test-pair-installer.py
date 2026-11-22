@@ -50,7 +50,7 @@ DRY_RUN=0; YES=0; NAME=fixture; BIND=2001:db8::1; PORT=9527; VERSION=; ARCH=mips
 UPSTREAM=old.example:9010; TOKEN=old-token; GROUP=fixture-group; SECRET=fixture-secret
 PAIR_STOPPED=0; ECHO_OFF=0; ADMIN_KEYS=
 ADMIN_VIA_PAIR=no; INIT=systemd; UNIT=$BASE/npulse.service; PRIVILEGED_PORT=no
-LISTEN=yes; if [ "$MODE" = 4 ]; then LISTEN=no; fi
+LISTEN=yes; ALSO_RELAY=; if [ "$MODE" = 3 ]; then LISTEN=no; fi
 if [ "$DEFERRED" = 1 ]; then
     ADMIN_VIA_PAIR=yes
     write_unit
@@ -77,7 +77,7 @@ if [ "$DEFERRED" = 1 ]; then summary; fi
         assert output.returncode == 0 and (base / "pair-host").read_text() == address
         assert "listen=[2001:db8::1]:9527" in captured and "public_ip=" not in captured
     print("PASS public pairing host passed independently of bind/config; direct IPv4/IPv6 advertisement does not change listener or service configuration")
-    output, config, captured, trace = run(mode=4, retry=True)
+    output, config, captured, trace = run(mode=3, retry=True)
     assert output.returncode == 0 and "中转密码错误或无法连接" in output.stdout
     assert "relay_upstream=new.example:9020" in config and "token=new-token" in config
     assert "group_secret=fixture-group" in config and "listen=" not in captured and "secret=" not in captured.split("group_secret=")[0]
@@ -87,7 +87,7 @@ if [ "$DEFERRED" = 1 ]; then summary; fi
         assert output.returncode == status and trace == ["stop", "start"], (output, trace)
         assert "admin_keys=" + "b" * 64 + "\n" in config
         assert "fixture-secret" not in output.stdout and "fixture-group" not in output.stdout and "old-token" not in output.stdout
-    for mode in (1, 4):
+    for mode in (1, 3):
         for public, result, interrupt, status in [("A" * 64, 0, False, 0), ("", 0, False, 0), ("a" * 64, 1, False, 0), ("invalid", 0, False, 1), ("", 0, True, 130)]:
             output, config, captured, trace = run(mode=mode, public=public, result=result, interrupt=interrupt, deferred=True)
             assert output.returncode == status, output.stderr
@@ -111,7 +111,7 @@ if [ "$DEFERRED" = 1 ]; then summary; fi
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{server.server_port}"
     try:
-        for mode, public, result, interrupt in [(1, "a" * 64, 0, False), (4, "", 0, False), (1, "", 1, False), (1, "", 0, True)]:
+        for mode, public, result, interrupt in [(1, "a" * 64, 0, False), (3, "", 0, False), (1, "", 1, False), (1, "", 0, True)]:
             output, config, captured, trace = run(mode=mode, public=public, result=result, interrupt=interrupt, flavor="lite", mirror=url)
             assert output.returncode == (130 if interrupt else 0), output.stderr
             assert "lite 版不支持管理" in output.stdout

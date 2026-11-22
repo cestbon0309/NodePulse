@@ -28,13 +28,11 @@ struct NodeSnapshot: Codable, Identifiable, Hashable {
     var ips: [String] = []
     var ts: Double?
     var version = ""
-    var relay: Bool?
-    var lastSeen: Double?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id, name, hostname, os, kernel, arch, cpuModel, cpuCores, cpuUsage, load
         case memTotal, memUsed, swapTotal, swapUsed, diskTotal, diskUsed
-        case netRx, netTx, netRxRate, netTxRate, uptime, procs, tcpConns, temp, ips, ts, version, relay, lastSeen
+        case netRx, netTx, netRxRate, netTxRate, uptime, procs, tcpConns, temp, ips, ts, version
     }
     init() {}
     init(from decoder: Decoder) throws {
@@ -53,8 +51,6 @@ struct NodeSnapshot: Codable, Identifiable, Hashable {
         uptime = read(.uptime, 0); procs = read(.procs, 0); tcpConns = read(.tcpConns, 0)
         temp = try? c.decode(Double.self, forKey: .temp); ips = read(.ips, [])
         ts = try? c.decode(Double.self, forKey: .ts); version = read(.version, "")
-        relay = try? c.decode(Bool.self, forKey: .relay)
-        lastSeen = try? c.decode(Double.self, forKey: .lastSeen)
     }
     var memPercent: Double { memTotal > 0 ? 100 * memUsed / memTotal : 0 }
 }

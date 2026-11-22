@@ -6,10 +6,10 @@ final class NodePulseTests: XCTestCase {
         let suite = "Hidden-\(UUID())", defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let secrets = MemorySecrets(), store = MonitorStore(defaults: defaults, secrets: secrets)
-        let endpoint = Endpoint(name: "入口", kind: .direct(host: "localhost", port: 1))
-        try store.save(endpoint, secret: "keep-secret")
+        let endpoint = Endpoint(name: "入口", kind: .groupTCP(host: "localhost", port: 1))
+        try store.save(endpoint, secret: "keep-secret", groupSecret: "keep-group")
         var own = NodeSnapshot(); own.id = "own"; own.name = "主机"
-        var child = NodeSnapshot(); child.id = "child"; child.name = "子节点"; child.relay = true
+        var child = NodeSnapshot(); child.id = "child"; child.name = "子节点"
         store.apply(endpoint, result: .success([own, child]), latency: 1)
         let node = store.nodes[1]
         XCTAssertNil(store.removableEndpoint(for: node))
@@ -84,9 +84,7 @@ final class NodePulseTests: XCTestCase {
         XCTAssertEqual(node.connectionLabel, "直连")
         node.endpointName = "自定义别名"
         XCTAssertEqual(node.connectionLabel, "直连")
-        node.snapshot.relay = true
-        XCTAssertEqual(node.connectionLabel, "经由 自定义别名")
-        node.snapshot.relay = false; node.endToEnd = true
+        node.endToEnd = true
         XCTAssertEqual(node.connectionLabel, "经由 自定义别名")
         node.endpointName = "主机"
         XCTAssertEqual(node.connectionLabel, "中继")
@@ -135,7 +133,7 @@ final class NodePulseTests: XCTestCase {
         let sample = #"{"ok":true,"nodes":[{"id":"1b2efbfcf191aab6fd7615f7df9a77dfea87ba3c45c265da0ae4899f6c9e215c","name":"swift-test","hostname":"ip-172-16-4-2.us-west-2.compute.internal","os":"Darwin","kernel":"25.6.0","arch":"arm64","cpu_model":"","cpu_cores":12,"cpu_usage":0.0,"load":[4.42,12.72,12.77],"mem_total":0,"mem_used":0,"swap_total":0,"swap_used":0,"disk_total":131545956352,"disk_used":107959439360,"net_rx":0,"net_tx":0,"net_rx_rate":0.0,"net_tx_rate":0.0,"uptime":0.0,"procs":0,"tcp_conns":0,"temp":null,"ips":["172.16.4.2"],"ts":1795334822,"version":"0.1.0","relay":false}]}"#
         let node = try XCTUnwrap(ProbeResponse.decode(Data(sample.utf8)).first)
         XCTAssertEqual(node.cpuCores, 12); XCTAssertEqual(node.diskTotal, 131545956352)
-        XCTAssertEqual(node.ips, ["172.16.4.2"]); XCTAssertNil(node.temp); XCTAssertNil(node.lastSeen)
+        XCTAssertEqual(node.ips, ["172.16.4.2"]); XCTAssertNil(node.temp)
         let partial = try ProbeResponse.decode(Data(#"{"ok":true,"nodes":[{"id":"minimal","unknown":123},{"id":"bad-field","cpu_usage":"oops"}]}"#.utf8))
         XCTAssertEqual(partial.count, 2); XCTAssertEqual(partial[0].load, [])
         XCTAssertEqual(partial[1].cpuUsage, 0)
@@ -163,10 +161,10 @@ final class NodePulseTests: XCTestCase {
         XCTAssertFalse(String(data: defaults.data(forKey: "endpoints")!, encoding: .utf8)!.contains("never-in-defaults"))
         XCTAssertEqual(MonitorStore(defaults: defaults).endpoints, [endpoint])
         var own = NodeSnapshot(); own.id = "self"; own.ts = 1000
-        var relay = NodeSnapshot(); relay.id = "relay"; relay.ts = 950; relay.lastSeen = 950; relay.relay = true
+        var relay = NodeSnapshot(); relay.id = "other"; relay.ts = 950
         for _ in 0..<125 { store.apply(endpoint, result: .success([own, relay]), latency: 10) }
         XCTAssertEqual(store.nodes[0].history.count, 120)
-        XCTAssertTrue(store.nodes[0].online); XCTAssertFalse(store.nodes[1].online)
+        XCTAssertTrue(store.nodes.allSatisfy { $0.online })
         store.apply(endpoint, result: .failure(ProbeError.timeout), latency: 6000)
         XCTAssertEqual(store.nodes.count, 2); XCTAssertTrue(store.nodes.allSatisfy { !$0.online })
         XCTAssertEqual(store.statuses[endpoint.id]?.error, "超时")
@@ -182,35 +180,21 @@ final class NodePulseTests: XCTestCase {
         XCTAssertEqual(store.nodes.count, 5); XCTAssertNotEqual(store.nodes[0].snapshot.cpuUsage, first)
         XCTAssertTrue(store.nodes.contains { !$0.online }); XCTAssertEqual(store.nodes[0].history.count, 41)
     }
-    @MainActor func testRelayFreshnessUsesUpstreamClock() {
+    @MainActor func testSharedRelayFreshnessUsesAuthenticatedAge() {
         let suite = "Freshness-\(UUID())", defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        let endpoint = Endpoint(name: "upstream", kind: .direct(host: "localhost", port: 1))
-        var own = NodeSnapshot(); own.id = "self"; own.ts = 1000
-        for skewedTime in [1.0, 100000.0] {
-            let store = MonitorStore(defaults: defaults)
-            var relay = NodeSnapshot(); relay.id = "relay"; relay.relay = true
-            relay.ts = skewedTime; relay.lastSeen = 995
-            store.apply(endpoint, result: .success([own, relay]), latency: 1)
-            XCTAssertTrue(store.nodes[1].online)
-            relay.lastSeen = 900
-            store.apply(endpoint, result: .success([own, relay]), latency: 1)
-            XCTAssertFalse(store.nodes[1].online)
-            relay.lastSeen = nil; relay.ts = 995
-            let fallback = MonitorStore(defaults: defaults)
-            fallback.apply(endpoint, result: .success([own, relay]), latency: 1)
-            XCTAssertTrue(fallback.nodes[1].online)
-            relay.ts = 900
-            fallback.apply(endpoint, result: .success([own, relay]), latency: 1)
-            XCTAssertFalse(fallback.nodes[1].online)
-        }
+        let endpoint = Endpoint(name: "shared", kind: .groupTCP(host: "localhost", port: 1))
+        let now = Date(timeIntervalSince1970: 1000)
         let store = MonitorStore(defaults: defaults)
-        var relay = NodeSnapshot(); relay.id = "relay"; relay.relay = true
-        relay.ts = 1; relay.lastSeen = Date().timeIntervalSince1970
-        store.apply(endpoint, result: .success([relay]), latency: 1)
-        XCTAssertTrue(store.nodes[0].online)
-        relay.lastSeen = Date().timeIntervalSince1970 - 300
-        store.apply(endpoint, result: .success([relay]), latency: 1)
+        var node = NodeSnapshot(); node.id = "relay"; node.ts = 995
+        store.apply(endpoint, result: .success([node]), latency: 1, now: now, ages: [node.id: 5])
+        XCTAssertTrue(store.nodes[0].online); XCTAssertTrue(store.nodes[0].endToEnd)
+        store.apply(endpoint, result: .success([node]), latency: 1, now: now, ages: [node.id: 300])
+        XCTAssertFalse(store.nodes[0].online)
+        node.ts = 1
+        store.apply(endpoint, result: .success([node]), latency: 1, now: now, ages: [node.id: 0])
+        XCTAssertFalse(store.nodes[0].online)
+        store.apply(endpoint, result: .success([node]), latency: 1, now: now)
         XCTAssertFalse(store.nodes[0].online)
     }
     func testLiveProbe() async throws {

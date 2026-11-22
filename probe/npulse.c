@@ -25,10 +25,8 @@
 static int random_bytes(void *p, size_t n);
 #include "group.h"
 #define CLIENTS 32
-#define RELAY_NODES 64
-typedef char RelayFrameBudget[(RELAY_NODES * (MAX_NODE_JSON + 64) + MAX_NODE_JSON + 128 < MAX_FRAME) ? 1 : -1];
 static uint8_t key[32];
-static const char *secret, *display, *listen_addr, *http_addr, *upstream;
+static const char *secret, *display, *listen_addr, *http_addr;
 static int interval = 5;
 static volatile sig_atomic_t running = 1;
 static void stop(int sig) {
@@ -38,11 +36,6 @@ static void stop(int sig) {
 #if ADMIN || PAIR
 #include "session.h"
 #endif
-typedef struct {
-  char *json, *id;
-  time_t seen;
-} Node;
-static Node nodes[RELAY_NODES];
 static uint8_t nonces[256][12];
 static time_t nonce_seen[256];
 static unsigned nonce_pos;
@@ -197,25 +190,11 @@ static char *nodes_json(const char *rid) {
     add(&b, ",");
   }
   add(&b, "\"nodes\":[");
-  int comma = 0;
   if (listen_addr || (http_addr && !(relay_addr || (relay_token && !secret)))) {
     char *s = snapshot(display);
     s[strlen(s) - 1] = 0;
     add(&b, "%s,\"relay\":false}", s);
     free(s);
-    comma = 1;
-  }
-  time_t now = time(NULL);
-  for (int i = 0; i < RELAY_NODES; i++) {
-    Node *n = &nodes[i];
-    if (n->json && now - n->seen > 600) {
-      free(n->json);
-      free(n->id);
-      memset(n, 0, sizeof(*n));
-    }
-    if (n->json && b.n + strlen(n->json) + 64 + 2 <= MAX_FRAME)
-      add(&b, "%s%.*s,\"relay\":true,\"last_seen\":%lld}", comma++ ? "," : "",
-          (int)strlen(n->json) - 1, n->json, (long long)n->seen);
   }
   add(&b, "]}");
   return b.s;
@@ -277,45 +256,6 @@ static char *request(uint8_t *p, size_t total, int relay, Client *client) {
     }
     response = nodes_json(rid);
     free(rid);
-  }
-  else if (eq(&j, op, "push")) {
-    int obj = field(&j, 0, "node"), id = field(&j, obj, "id");
-    if (obj < 0 || j.t[obj].type != '{' ||
-        j.t[obj].end - j.t[obj].start > MAX_NODE_JSON)
-      goto done;
-    if (id < 0 || j.t[id].type != '"' || j.t[id].end - j.t[id].start < 3 ||
-        j.t[id].end - j.t[id].start > 258)
-      goto done;
-    /* Relay metadata belongs to this server, never to the sender. */
-    if (field(&j, obj, "relay") >= 0 || field(&j, obj, "last_seen") >= 0)
-      goto done;
-    char *ident = string(&j, id);
-    if (!ident)
-      goto done;
-    int slot = -1;
-    for (int i = 0; i < RELAY_NODES; i++)
-      if (nodes[i].id && !strcmp(nodes[i].id, ident)) {
-        slot = i;
-        break;
-      }
-    if (slot < 0)
-      for (int i = 0; i < RELAY_NODES; i++)
-        if (!nodes[i].json || now - nodes[i].seen > 600) {
-          slot = i;
-          break;
-        }
-    if (slot >= 0) {
-      char *copy = strndup(plain + j.t[obj].start,
-                           (size_t)(j.t[obj].end - j.t[obj].start));
-      if (copy) {
-        free(nodes[slot].json);
-        free(nodes[slot].id);
-        nodes[slot] = (Node){copy, ident, now};
-        ident = NULL;
-        response = strdup("{\"ok\":true}");
-      }
-    }
-    free(ident);
   }
 done:
   crypto_wipe(plain, n);
@@ -411,12 +351,6 @@ static void send_push(const char *address, const char *json, const uint8_t trans
 }
 static void push(void) {
   char *s = snapshot(display);
-  if (upstream) {
-    Buffer b = buffer();
-    add(&b, "{\"op\":\"push\",\"ts\":%lld,\"node\":%s}", (long long)time(NULL), s);
-    send_push(upstream, b.s, key);
-    free(b.s);
-  }
   if (group_upstream) {
     char *json = group_push_json(s);
     if (json) { send_push(group_upstream, json, relay_key); free(json); }
@@ -477,8 +411,10 @@ static void option(const char *k, const char *v) {
     listen_addr = strdup(v);
   else if (!strcmp(k, "http") || !strcmp(k, "H"))
     http_addr = strdup(v);
-  else if (!strcmp(k, "upstream") || !strcmp(k, "u"))
-    upstream = strdup(v);
+  else if (!strcmp(k, "upstream") || !strcmp(k, "u")) {
+    fprintf(stderr, "legacy relay removed, use -R/-S (relay_upstream/relay_listen)\n");
+    exit(2);
+  }
   else if (!strcmp(k, "name") || !strcmp(k, "n"))
     display = strdup(v);
   else if (!strcmp(k, "interval") || !strcmp(k, "i")) {
@@ -532,10 +468,10 @@ static void usage(void) {
   puts("Pairing unavailable (PAIR=0); use install.sh pair for lite installations.");
 #endif
   puts("npulse 0.1.0\nUsage: npulse [-k SECRET] [-l [addr:]port] [-H "
-       "[addr:]port]\n              [-u host:port] [-i seconds] [-n NAME] [-c "
+       "[addr:]port]\n              [-i seconds] [-n NAME] [-c "
        "config] [-h]\nDirect listen defaults to 0.0.0.0; HTTP defaults to "
        "127.0.0.1.\nIPv6 endpoints use [address]:port. Config keys: secret, "
-       "listen, http,\nupstream, interval, name (key=value). CLI overrides "
+       "listen, http, interval, name (key=value). CLI overrides "
        "config.");
   puts("Shared E2E relay: -S [addr:]port -T TOKEN [-H [addr:]port]\n"
        "Publish E2E snapshots: -R host:port -T TOKEN [-G SECRET (default -k)]\n"
@@ -553,11 +489,11 @@ int main(int argc, char **argv) {
       usage();
       return 0;
     }
-  while ((opt = getopt(argc, argv, "Pk:l:H:u:i:n:c:S:T:G:R:W:Q:" ADMIN_FLAGS "h")) != -1)
+  while ((opt = getopt(argc, argv, "Pk:l:H:ui:n:c:S:T:G:R:W:Q:" ADMIN_FLAGS "h")) != -1)
     if (opt == 'c')
       config(optarg);
   optind = 1;
-  while ((opt = getopt(argc, argv, "Pk:l:H:u:i:n:c:S:T:G:R:W:Q:" ADMIN_FLAGS "h")) != -1) {
+  while ((opt = getopt(argc, argv, "Pk:l:H:ui:n:c:S:T:G:R:W:Q:" ADMIN_FLAGS "h")) != -1) {
     if (opt == 'c')
       continue;
     if (opt == '?')
@@ -574,7 +510,7 @@ int main(int argc, char **argv) {
   }
   if (pairing) {
 #if PAIR
-    if (optind != argc || http_addr || upstream || relay_addr ||
+    if (optind != argc || http_addr || relay_addr ||
         (group_upstream ? listen_addr || !relay_token || !*relay_token || !group_secret || !*group_secret : !listen_addr || !secret || !*secret)) {
       usage(); return 2;
     }
@@ -589,10 +525,10 @@ int main(int argc, char **argv) {
 #endif
   }
   int relay_http = relay_addr || (relay_token && !secret);
-  int collect = listen_addr || upstream || group_upstream || (http_addr && !relay_http);
+  int collect = listen_addr || group_upstream || (http_addr && !relay_http);
   if (!group_secret) group_secret = secret;
-  if (optind != argc || (!listen_addr && !http_addr && !upstream && !relay_addr && !group_upstream) ||
-      ((listen_addr || upstream || (http_addr && !relay_http)) && (!secret || !*secret)) ||
+  if (optind != argc || (!listen_addr && !http_addr && !relay_addr && !group_upstream) ||
+      ((listen_addr || (http_addr && !relay_http)) && (!secret || !*secret)) ||
       ((relay_addr || relay_http || group_upstream) && (!relay_token || !*relay_token)) ||
       (group_upstream && (!group_secret || !*group_secret))) {
     usage();
@@ -688,7 +624,7 @@ int main(int argc, char **argv) {
       sample();
       next_sample = now + 1;
     }
-    if ((upstream || group_upstream) && now >= next_push) {
+    if (group_upstream && now >= next_push) {
       push();
       next_push = now + interval;
     }

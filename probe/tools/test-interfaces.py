@@ -65,7 +65,7 @@ esac
     for address in "172.15.0.1 172.32.0.1 100.63.255.254 100.128.0.1 2001:db8::1".split():
         assert run(f"2: eth0 {'inet6' if ':' in address else 'inet'} {address}/24").stdout.strip() == address + " eth0", address
     assert run("2: eth0 inet 100.90.0.2/24", expression=selected).stdout.endswith("1|yes|0.0.0.0|0.0.0.0:9527")
-    assert run(one, "n", selected).stdout.endswith("4|no||0.0.0.0:9527")
+    assert run(one, "n", selected).stdout.endswith("3|no||0.0.0.0:9527")
     assert run("", "n\n1", selected).stdout.endswith("0.0.0.0|0.0.0.0:9527")
     fixture = "eth0 Link encap:Ethernet\n          inet addr:8.8.8.8 Bcast:8.8.8.255\nen0: flags=8863\n\tinet6 2001:db8::8 prefixlen 64\n"
     assert run(IP_FAIL="1", IFCONFIG=fixture).stdout.splitlines() == ["8.8.8.8 eth0", "2001:db8::8 en0"]

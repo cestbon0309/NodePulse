@@ -19,7 +19,7 @@ struct NodeItem: Identifiable {
     var endToEnd = false
     var id: String { key }
     var connectionLabel: String {
-        guard endToEnd || snapshot.relay == true else { return "直连" }
+        guard endToEnd else { return "直连" }
         return endpointName.isEmpty || endpointName == snapshot.name ? "中继" : "经由 \(endpointName)"
     }
 }
@@ -94,7 +94,7 @@ final class MonitorStore {
     }
     func removableEndpoint(for node: NodeItem) -> Endpoint? {
         guard let endpoint = endpoints.first(where: { $0.id == node.endpointID }),
-              !endpoint.kind.isGroup, node.snapshot.relay != true,
+              !endpoint.kind.isGroup,
               nodes.filter({ $0.endpointID == endpoint.id }).count == 1,
               !hiddenNodes.contains(where: { $0.endpointID == endpoint.id }) else { return nil }
         return endpoint
@@ -178,14 +178,13 @@ final class MonitorStore {
             for index in nodes.indices where nodes[index].endpointID == endpoint.id { nodes[index].online = false }
         case .success(let snapshots):
             statuses[endpoint.id] = EndpointStatus(lastSuccess: now, latency: latency, error: nil, droppedBlobs: droppedBlobs)
-            let upstreamTS = snapshots.first(where: { $0.relay != true })?.ts ?? now.timeIntervalSince1970
             for snapshot in snapshots {
                 let key = "\(endpoint.id)/\(snapshot.id)"
                 guard !hiddenNodes.contains(where: { $0.id == key }) else { continue }
                 let index = nodes.firstIndex { $0.key == key }
                 let old = index.map { nodes[$0] }
-                let timestamp = !endpoint.kind.isGroup && snapshot.relay == true ? (snapshot.lastSeen ?? snapshot.ts) : snapshot.ts
-                let previousTimestamp = old.map { !endpoint.kind.isGroup && $0.snapshot.relay == true ? ($0.snapshot.lastSeen ?? $0.snapshot.ts) : $0.snapshot.ts } ?? timestamp
+                let timestamp = snapshot.ts
+                let previousTimestamp = old?.snapshot.ts ?? timestamp
                 let delta = (timestamp ?? 0) - (previousTimestamp ?? timestamp ?? 0)
                 let cadence = delta > 0 && (!endpoint.kind.isGroup || delta <= 600) ? delta : (old?.probeInterval ?? 5)
                 let stale: Bool
@@ -194,8 +193,7 @@ final class MonitorStore {
                     stale = (ages[snapshot.id] ?? .infinity) > max(30, 4 * cadence) ||
                         !stamp.isFinite || abs(now.timeIntervalSince1970 - stamp) > 600
                 } else {
-                    stale = snapshot.relay == true &&
-                        upstreamTS - (snapshot.lastSeen ?? snapshot.ts ?? 0) > max(30, 4 * cadence)
+                    stale = false
                 }
                 var item = NodeItem(key: key, endpointID: endpoint.id, endpointName: endpoint.name,
                                     snapshot: snapshot, online: !stale, history: old?.history ?? [])
@@ -226,11 +224,13 @@ final class MonitorStore {
             s.memUsed = s.memTotal * (0.48 + 0.08 * sin(demoTick * 0.4 + Double(index)))
             s.netRxRate = 100000 + 80000 * sin(demoTick + Double(index)); s.netTxRate = s.netRxRate * 0.3
             s.load = [s.cpuUsage / 50, 0.7, 0.5]; s.diskTotal = 32 * 1073741824; s.diskUsed = s.diskTotal * 0.4
-            s.ts = Date().timeIntervalSince1970 - (index == 3 ? 300 : 0); s.relay = index == 2 || index == 3
-            s.lastSeen = s.relay == true ? s.ts : nil; s.version = "0.1.0"; s.ips = ["192.168.1.\(index + 1)"]
+            s.ts = Date().timeIntervalSince1970 - (index == 3 ? 300 : 0)
+            s.version = "0.1.0"; s.ips = ["192.168.1.\(index + 1)"]
             s.uptime = 86400 * Double(index + 1); s.temp = 42 + 3 * sin(demoTick); return s
         }
-        apply(endpoint, result: .success(snapshots), latency: 12)
+        apply(endpoint, result: .success(snapshots.enumerated().filter { $0.offset != 2 && $0.offset != 3 }.map(\.element)), latency: 12)
+        let relay = Endpoint(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!, name: "演示中继", kind: .groupTCP(host: "localhost", port: 9001))
+        apply(relay, result: .success([snapshots[2], snapshots[3]]), latency: 12, ages: [snapshots[2].id: 0, snapshots[3].id: 300])
         for index in nodes.indices where nodes[index].history.count == 1 {
             let s = nodes[index].snapshot
             nodes[index].history = (0..<40).map { tick in

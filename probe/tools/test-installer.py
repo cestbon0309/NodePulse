@@ -113,7 +113,7 @@ def interactive_pair(root, expected, answer="", ok=True):
 
 def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_env=False,
                 mode=1, arch="x86_64", init="systemd", flavor=None, flavor_flag=None, flavor_answer="", public_answer="y",
-                tool_path=None, stty_mode="normal", secret_source="2", preset_secrets=None):
+                tool_path=None, stty_mode="normal", secret_source="2", preset_secrets=None, also_relay=False):
     tools = root / "tools"; tools.mkdir()
     firewall = tools / "ufw"
     firewall.write_text('#!/bin/sh\n[ "$1" = status ] || exit 99\nprintf "Status: active\\n"\n')
@@ -139,36 +139,41 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
     env.update(preset_secrets or {})
     env["PATH"] = str(tools) + os.pathsep + str(tool_path or env["PATH"])
     prompts, responses = ["模式 [默认"], [""]
-    if mode in (2, 3, 4):
-        prompts += ["同时作为旧式中继"]
-        responses += [""]
-    if mode in (1, 5):
+    if mode in (1, 4):
         prompts += ["TCP 监听端口"]
         responses += [""]
     if mode == 1:
         prompts += ["这台机器有公网 IP 吗"]
         responses += [public_answer]
         if public_answer == "n":
-            prompts += ["切换到共享中继模式 4"]
+            prompts += ["切换到共享中继模式 3"]
             responses += [""]
-            mode = 4
+            mode = 3
         else:
             prompts += ["公网 IP（留空确认"]
             responses += [""]
-    if mode in (2, 5):
+    if mode == 1:
+        prompts += ["同时作为共享中继"]
+        responses += ["yes" if also_relay else ""]
+        if also_relay:
+            prompts += ["共享中继端口"]
+            responses += [""]
+    if mode in (2, 4):
         prompts += ["HTTP 回环端口" if mode == 2 else "开启 HTTP /api/relay"]
         responses += [""]
-    if mode in (3, 4):
+    if mode == 3:
         prompts += ["上游地址"]
         responses += ["relay.example:9010"]
-    if mode != 5:
+    if mode != 4:
         prompts += ["节点名称"]
         responses += [""]
     secret = "interactive-secret-MUST-NOT-ECHO"
-    credentials = [("secret" if mode in (1, 2, 3) else "token",
-                    "NPULSE_SECRET" if mode in (1, 2, 3) else "NPULSE_TOKEN", secret)]
-    if mode == 4:
+    credentials = [("secret" if mode in (1, 2) else "token",
+                    "NPULSE_SECRET" if mode in (1, 2) else "NPULSE_TOKEN", secret)]
+    if mode == 3:
         credentials += [("group_secret", "NPULSE_GROUP_SECRET", "interactive-group-secret")]
+    if also_relay:
+        credentials += [("token", "NPULSE_TOKEN", "interactive-relay-token")]
     for _, variable, value in credentials:
         if variable not in (preset_secrets or {}):
             prompts += ["密钥来源"]
@@ -176,7 +181,7 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
             if secret_source == "2":
                 prompts += ["手动输入（"]
                 responses += [value]
-    if mode != 5:
+    if mode != 4:
         prompts += ["root 级控制权"]
         responses += ["yes" if admin_source is not None and not preset_keys else ""]
     manual = admin_source == "2" or (admin_source == "" and bool(preset_keys))
@@ -191,7 +196,10 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
     if mode == 1:
         prompts += ["是否现在执行"]
         responses += ["n"]
-    if mode in (1, 4):
+        if also_relay:
+            prompts += ["是否现在执行"]
+            responses += ["n"]
+    if mode in (1, 3):
         prompts += ["现在与手机配对"]
         responses += [pair]
     proc = subprocess.Popen(argv, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -213,6 +221,9 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
         assert proc.wait(timeout=3) == 0, transcript.decode(errors="replace")
         if mode == 1: assert b"ufw allow 9000/tcp" in transcript
         saved = config(root)
+        if also_relay:
+            assert saved["listen"] == "0.0.0.0:9000" and saved["relay_listen"] == "0.0.0.0:9001"
+            assert "中转地址：8.8.4.4:9001".encode() in transcript and b"ufw allow 9001/tcp" in transcript
         for key, variable, value in credentials:
             if variable in (preset_secrets or {}):
                 assert saved[key] == preset_secrets[variable]
@@ -246,12 +257,10 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
 
 try:
     run(new_root(), "--yes", ok=False, NPULSE_INSECURE="0")
-    for mode in range(1, 6):
+    for mode in range(1, 5):
         root = new_root()
         args = ["install", "--yes", "--mode", str(mode), "--upstream", "relay.example.com:9000"]
-        if mode in (2, 3, 4):
-            args += ["--also-relay"]
-        if mode in (2, 5):
+        if mode in (2, 4):
             args += ["--http-port", "9001"]
         output = run(root, *args)
         values = config(root)
@@ -260,15 +269,13 @@ try:
         assert "DynamicUser=yes" in unit and "LoadCredential=npulse.conf:/etc/npulse/npulse.conf" in unit
         assert "Restart=always" in unit and "NoNewPrivileges=yes" in unit
         assert "npulse.conf" in unit and values.get("secret", "not-a-secret") not in unit
-        if mode < 5:
+        if mode == 1:
             assert values["listen"] == "0.0.0.0:9000"
-        if mode in (2, 5):
+        if mode in (2, 4):
             assert values["http"] == "127.0.0.1:9001" and "proxy_http_version 1.1" in output.stdout
         if mode == 3:
-            assert values["upstream"] == "relay.example.com:9000"
-        if mode == 4:
             assert values["relay_upstream"] == "relay.example.com:9000" and len(values["group_secret"]) == 32
-        if mode == 5:
+        if mode == 4:
             assert set(values) == {"interval", "token", "relay_listen", "http"}
         for key in ("secret", "token", "group_secret"):
             if key in values:
@@ -283,7 +290,40 @@ try:
         run(root, "status", "--yes")
         run(root, "uninstall", "--yes")
         assert not binary.exists() and not unit_path.exists() and (root / "etc/npulse/npulse.conf").exists()
-    print("PASS five modes + supported -l combinations: verified binaries, 0600 config, hardened DynamicUser units, nginx snippets, upgrade preserves config, status, uninstall keeps config")
+    print("PASS four modes: verified binaries, 0600 config, hardened DynamicUser units, nginx snippets, upgrade preserves config, status, uninstall keeps config")
+
+    root = new_root()
+    interactive(root, also_relay=True)
+    run(root, "uninstall", "--yes", "--purge")
+    root = new_root()
+    result = run(root, "--yes", "--public-ip", "2606:4700:4700::1111", "--also-relay", "443")
+    saved = config(root)
+    assert saved["listen"] == "[::]:9000" and saved["relay_listen"] == "[::]:443" and len(saved["token"]) == 32
+    assert "中转地址：[2606:4700:4700::1111]:443" in result.stdout
+    assert "AmbientCapabilities=CAP_NET_BIND_SERVICE" in (root / "etc/systemd/system/npulse.service").read_text()
+    run(root, "uninstall", "--yes", "--purge")
+    for args, settings in ((["--also-relay", "9010"], {}), ([], {"NPULSE_ALSO_RELAY": "9010"})):
+        root = new_root()
+        result = run(root, "--yes", "--public-ip", "8.8.4.4", "--open-firewall", *args, NPULSE_TOKEN="relay-test-token", **settings)
+        saved = config(root)
+        assert saved["listen"] == "0.0.0.0:9000" and saved["relay_listen"] == "0.0.0.0:9010"
+        assert saved["token"] == "relay-test-token" and "upstream" not in saved
+        assert "中转地址：8.8.4.4:9010" in result.stdout and "中转密码：relay-test-token" in result.stdout
+        assert "TCP 9000" in result.stdout and "TCP 9010" in result.stdout
+        run(root, "upgrade", "--yes")
+        assert config(root) == saved
+        path = root / "etc/npulse/npulse.conf"
+        path.write_text(path.read_text() + "upstream=old.example:9000\n")
+        before, binary = path.read_bytes(), (root / "usr/local/bin/npulse").read_bytes()
+        failed = run(root, "upgrade", "--yes", ok=False)
+        assert "旧式 upstream 上报已移除" in failed.stderr and "模式 3" in failed.stderr
+        assert path.read_bytes() == before and (root / "usr/local/bin/npulse").read_bytes() == binary
+        assert "restart" not in failed.stdout
+        run(root, "uninstall", "--yes", "--purge")
+    for args in (("--also-relay", "9000"), ("--also-relay", "bad"), ("--also-relay", "65536"),
+                 ("--mode", "2", "--also-relay", "9002")):
+        run(new_root(), "--yes", *args, ok=False)
+    print("PASS direct plus shared relay: interactive default PORT+1, explicit flag/env token, one config/process, both firewall ports and summary; invalid/conflicting ports rejected; legacy upstream upgrade fails without replacing binary/config or restarting")
 
     tools = isolated_tools(exclude=("stty",))
     if shutil.which("curl"): (tools / "curl").symlink_to(shutil.which("curl"))
@@ -302,8 +342,8 @@ try:
         assert "输入将会显示在屏幕上" not in output
         assert (root / "tools/stty-log").read_text() == "-echo\necho\n"
         run(root, "uninstall", "--yes", "--purge")
-    for mode, preset in ((1, {}), (4, {}), (1, {"NPULSE_SECRET": "preset-secret"}),
-                         (4, {"NPULSE_TOKEN": "preset-token", "NPULSE_GROUP_SECRET": "preset-group"})):
+    for mode, preset in ((1, {}), (3, {}), (1, {"NPULSE_SECRET": "preset-secret"}),
+                         (3, {"NPULSE_TOKEN": "preset-token", "NPULSE_GROUP_SECRET": "preset-group"})):
         root = new_root()
         output = interactive(root, mode=mode, secret_source="1", preset_secrets=preset, stty_mode="fail")
         assert not (root / "tools/stty-log").exists() and "输入将会显示在屏幕上" not in output
@@ -330,7 +370,7 @@ try:
 
     public = "ab" * 32
     root = new_root()
-    run(root, "--yes", "--mode", "4", "--upstream", "[::1]:9000", "--full", "--admin-keys", public)
+    run(root, "--yes", "--mode", "3", "--upstream", "[::1]:9000", "--full", "--admin-keys", public)
     unit = (root / "etc/systemd/system/npulse.service").read_text()
     assert "User=root" in unit and "DynamicUser=" not in unit and "ProtectHome=" not in unit
     assert config(root)["admin_keys"] == public and "listen" not in config(root)
@@ -342,7 +382,7 @@ try:
     print("PASS outbound-only relay admin runs root/full; lite+admin rejected before installation; explicit purge removes config")
 
     root = new_root()
-    run(root, "--yes", "--mode", "5", "--lite", NPULSE_INIT="procd", NPULSE_ARCH="mipsel")
+    run(root, "--yes", "--mode", "4", "--lite", NPULSE_INIT="procd", NPULSE_ARCH="mipsel")
     assert (root / "usr/bin/npulse").read_bytes() == (MIRROR / "npulse-linux-mipsel-lite").read_bytes()
     unit = (root / "etc/init.d/npulse").read_text()
     assert "procd_set_param respawn 3600 5 0" in unit and "-c /etc/npulse/npulse.conf" in unit
@@ -358,7 +398,7 @@ try:
         run(root, "uninstall", "--yes", "--purge")
     print("PASS all seven architectures default full, including MIPS/MIPSEL")
 
-    for mode in range(1, 6):
+    for mode in range(1, 5):
         for arch, init in (("x86_64", "systemd"), ("mips", "procd"), ("mipsel", "procd")):
             root = new_root()
             interactive(root, mode=mode, arch=arch, init=init)
@@ -379,7 +419,7 @@ try:
         assert f"flavor={expected}\n" in (root / "etc/npulse/install.state").read_text()
         run(root, "uninstall", "--yes", "--purge")
     run(new_root(), "--yes", "--admin-via-pair", "--lite", ok=False)
-    print("PASS interactive Enter and unattended defaults full in all five modes on systemd and OpenWrt MIPS/MIPSEL; explicit menu/flag/env lite honored, --full overrides env, lite+pair-admin rejected")
+    print("PASS interactive Enter and unattended defaults full in all four modes on systemd and OpenWrt MIPS/MIPSEL; explicit menu/flag/env lite honored, --full overrides env, lite+pair-admin rejected")
 
     tools = isolated_tools()
     if shutil.which("curl"):
@@ -471,7 +511,7 @@ try:
     for source, pair in [("", "n"), ("1", "y"), ("2", "n")]:
         root = new_root(); interactive(root, source, pair)
         run(root, "uninstall", "--yes", "--purge")
-    for mode in ("1", "4"):
+    for mode in ("1", "3"):
         for options, settings in [(["--admin-via-pair"], {}), ([], {"NPULSE_ADMIN": "pair"})]:
             root = new_root()
             rejected = run(new_root(), "--yes", "--mode", mode, "--upstream", "relay.example:9010", "--lite", *options, ok=False, **settings)
@@ -529,7 +569,7 @@ try:
 
     for args, settings in [
         (["--mode", "9"], {}), (["--port", "0"], {}), (["--port", "65536"], {}),
-        (["--mode", "4"], {}), (["--mode", "5", "--admin-keys", public], {}),
+        (["--mode", "3"], {}), (["--mode", "4", "--admin-keys", public], {}),
         (["--admin-keys", "bad"], {}), (["--name", "bad\nsecret=oops"], {}),
         ([], {"NPULSE_VERSION": "../../oops"}), ([], {"NPULSE_ARCH": "unknown"}),
         ([], {"DESTDIR": "/"}), ([], {"DESTDIR": str(OUTPUT / ".." )}),

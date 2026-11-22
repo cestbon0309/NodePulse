@@ -4,6 +4,15 @@ import XCTest
 @testable import NodePulse
 
 final class AdminTests: XCTestCase {
+    func testSlashHeavySessionMessageSize() throws {
+        let chunk = Data(repeating: 0xff, count: 65536)
+        for type in ["put", "pty_in"] {
+            let json = try AdminSession.messageData(["t": type, "id": 1, "handle": 1, "pty": 1, "offset": 0, "data": chunk.base64EncodedString()])
+            XCTAssertLessThan(json.count, 131072)
+            var cipher = AdminCipher(key: Data(repeating: 1, count: 32))
+            XCTAssertNoThrow(try cipher.seal(json))
+        }
+    }
     func testEndpointPortChanges() {
         XCTAssertEqual(EndpointForm.swappedPort("9000", from: 0, to: 2), "9010")
         XCTAssertEqual(EndpointForm.swappedPort("9010", from: 2, to: 0), "9000")

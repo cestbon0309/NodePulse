@@ -177,7 +177,7 @@ actor AdminSession {
         try Task.checkCancellation()
         let id = nextID; nextID += 1
         var json = fields; json["t"] = type; json["id"] = id
-        let frame = try tx.seal(JSONSerialization.data(withJSONObject: json, options: [.withoutEscapingSlashes]))
+        let frame = try tx.seal(Self.messageData(json))
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 pending[id] = continuation
@@ -201,10 +201,13 @@ actor AdminSession {
         sending = task
         return task
     }
+    static func messageData(_ json: [String: Any]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: json, options: [.withoutEscapingSlashes])
+    }
     func input(pty: Int, data: Data) async throws {
         guard !closed else { throw AdminError.disconnected }
         guard data.count <= 65536 else { throw AdminError.message("终端输入过大") }
-        let json = try JSONSerialization.data(withJSONObject: ["t": "pty_in", "pty": pty, "data": data.base64EncodedString()])
+        let json = try Self.messageData(["t": "pty_in", "pty": pty, "data": data.base64EncodedString()])
         do { try await enqueue(tx.seal(json)).value }
         catch { close(error); throw error }
     }

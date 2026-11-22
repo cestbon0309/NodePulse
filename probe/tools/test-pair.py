@@ -114,12 +114,33 @@ def main():
         capture = s.until("是否一致")
         assert client.art in capture and client.code in capture
         client.send({"op": "confirm", "name": "Python", "admin_pk": "ab" * 32}, True)
-        s.answer("y"); result = client.receive(True); client.close(); s.wait(0)
         supported = b"Admin (disabled by default)" in subprocess.check_output([binary, "-h"])
+        s.answer("y")
+        if supported:
+            s.until("是否授权"); s.answer("y")
+        result = client.receive(True); client.close(); s.wait(0)
         assert result["admin"] is supported
         assert s.stdout == ("admin_pk=" + "ab" * 32 + "\n" if supported else "")
         assert result["ok"] and result["key"] == "paired-test-key" and result["name"] == "配对测试" and len(result["node"]) == 64
         assert result["port"] == s.port
+        if supported:
+            for early_sas, admin_answer in [(True, "n"), (False, "n"), (False, "")]:
+                pending = Server(binary)
+                if early_sas: os.write(pending.fd, b"y\ny\n")
+                phone = c.PairClient("127.0.0.1", pending.port)
+                pending.until("是否一致")
+                if not early_sas: os.write(pending.fd, b"y\ny\n")
+                phone.send({"op": "confirm", "admin_pk": "ab" * 32}, True)
+                if early_sas:
+                    assert not select.select([phone.sock], [], [], .15)[0], "input before SAS prompt approved pairing"
+                    pending.answer("y")
+                pending.until("该手机请求管理权限（root 级控制），是否授权？[y/N]")
+                assert not select.select([phone.sock], [], [], .15)[0], "buffered SAS answers granted admin"
+                pending.answer(admin_answer)
+                monitoring = phone.receive(True); phone.close(); pending.wait(0)
+                assert monitoring["ok"] and monitoring["key"] == "paired-test-key" and monitoring["admin"] is False
+                assert not pending.stdout
+            print(f"PASS {Path(binary).name}: pre-buffered y/y cannot grant SAS or admin; fresh separate root prompt; n/empty admin response still pairs for monitoring with admin:false and no stdout key")
         normal = subprocess.Popen([binary, "-l", f"127.0.0.1:{s.port}", "-k", result["key"]])
         try:
             deadline = time.monotonic() + 3

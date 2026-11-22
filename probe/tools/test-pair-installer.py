@@ -14,8 +14,12 @@ import threading
 root = Path(__file__).resolve().parents[2]
 source = (root / "install.sh").read_text()
 shell = sys.argv[1] if len(sys.argv) > 1 else "/bin/dash"
+language = os.environ.get("NPULSE_LANG", "zh")
+
+def text(zh, en):
+    return zh if language == "zh" else en
 functions = "\n".join(re.search(r"^" + name + r"\(\) \{.*?^\}", source, re.M | re.S).group(0)
-                      for name in ("pair_installed", "fetch_binary", "download", "bind_endpoint", "cleanup", "safe_value", "port", "fail"))
+                      for name in ("msg", "say", "pair_installed", "fetch_binary", "download", "bind_endpoint", "cleanup", "safe_value", "port", "fail"))
 functions += "\n" + re.search(r"^write_unit\(\) \{.*?(?=^pair_installed\(\) \{)", source, re.M | re.S).group(0)
 
 with tempfile.TemporaryDirectory(prefix="npulse-pair-installer-") as directory:
@@ -43,7 +47,7 @@ exit "${RESULT:-0}"
         unit_stub = "" if deferred else "\nwrite_unit() { printf 'root-unit:%s\\n' \"$ADMIN_KEYS\" >> \"$BASE/trace\"; }\n"
         script = "set -eu\numask 077\n" + functions + unit_stub + '''
 service() { printf '%s\n' "$1" >> "$BASE/trace"; }
-ask() { case "$1" in 重新*) ANSWER=y ;; *) ANSWER=new.example:9020 ;; esac; }
+ask() { case "$1" in 重新*|Re-enter*) ANSWER=y ;; *) ANSWER=new.example:9020 ;; esac; }
 credentials() { ANSWER=new-token; }
 WORK=$BASE/work; CONFIG=$BASE/npulse.conf; BIN=$BASE/fake-probe; DESTDIR=
 DRY_RUN=0; YES=0; NAME=fixture; BIND=2001:db8::1; PORT=9527; VERSION=; ARCH=mipsel
@@ -61,7 +65,7 @@ trap 'exit 130' HUP INT TERM
 pair_installed
 if [ "$DEFERRED" = 1 ]; then summary; fi
 '''
-        env = dict(os.environ, BASE=str(base), MODE=str(mode), PUBLIC=public, RESULT=str(result), RETRY=str(int(retry)), FLAVOR=flavor,
+        env = dict(os.environ, NPULSE_LANG=language, BASE=str(base), MODE=str(mode), PUBLIC=public, RESULT=str(result), RETRY=str(int(retry)), FLAVOR=flavor,
                    INTERRUPT=str(int(interrupt)), NPULSE_MIRROR=mirror, NPULSE_INSECURE=insecure, DEFERRED=str(int(deferred)), PUBLIC_IP=public_ip)
         output = subprocess.run([shell, "-c", script], env=env, text=True, capture_output=True, timeout=5)
         captured = base / "captured.conf"
@@ -78,7 +82,7 @@ if [ "$DEFERRED" = 1 ]; then summary; fi
         assert "listen=[2001:db8::1]:9527" in captured and "public_ip=" not in captured
     print("PASS public pairing host passed independently of bind/config; direct IPv4/IPv6 advertisement does not change listener or service configuration")
     output, config, captured, trace = run(mode=3, retry=True)
-    assert output.returncode == 0 and "中转密码错误或无法连接" in output.stdout
+    assert output.returncode == 0 and text("中转密码错误或无法连接", "Incorrect relay password or unable to connect") in output.stdout
     assert "relay_upstream=new.example:9020" in config and "token=new-token" in config
     assert "group_secret=fixture-group" in config and "listen=" not in captured and "secret=" not in captured.split("group_secret=")[0]
     assert trace == ["stop", "start"]
@@ -98,7 +102,7 @@ if [ "$DEFERRED" = 1 ]; then summary; fi
                 assert trace == ["stop", "reload", "start"]
             else:
                 assert "admin_keys=" not in config and "DynamicUser=yes" in unit and "User=root" not in unit
-                assert trace == ["stop", "start"] and "管理尚未启用" in output.stdout + output.stderr and "sh install.sh pair" in output.stdout + output.stderr
+                assert trace == ["stop", "start"] and text("管理尚未启用", "Administration is not enabled") in output.stdout + output.stderr and "sh install.sh pair" in output.stdout + output.stderr
     mirror = base / "mirror"; mirror.mkdir()
     full = mirror / "npulse-linux-mipsel"; full.write_bytes(binary.read_bytes())
     sums = mirror / "SHA256SUMS"
@@ -114,7 +118,7 @@ if [ "$DEFERRED" = 1 ]; then summary; fi
         for mode, public, result, interrupt in [(1, "a" * 64, 0, False), (3, "", 0, False), (1, "", 1, False), (1, "", 0, True)]:
             output, config, captured, trace = run(mode=mode, public=public, result=result, interrupt=interrupt, flavor="lite", mirror=url)
             assert output.returncode == (130 if interrupt else 0), output.stderr
-            assert "lite 版不支持管理" in output.stdout
+            assert text("lite 版不支持管理", "lite does not support administration") in output.stdout
             assert trace == ["stop", "start"] and binary.read_bytes() == installed
             assert (base / "executed").read_text().strip() == str(base / "work/binary")
             assert config == "listen=0.0.0.0:9527\nsecret=fixture-secret\nrelay_upstream=old.example:9010\ntoken=old-token\ngroup_secret=fixture-group\nadmin_keys=" + "b" * 64 + "\n"

@@ -11,6 +11,9 @@
 #include <sys/socket.h>
 #define MAX_FRAME (256 * 1024)
 #define CLIENTS 32
+#define RELAY_NODES 64
+#define MAX_NODE_JSON 3072
+typedef char RelayFrameBudget[(RELAY_NODES * (MAX_NODE_JSON + 64) + 32768 < MAX_FRAME) ? 1 : -1];
 static uint8_t key[32];
 static const char *secret, *display, *listen_addr, *http_addr, *upstream;
 static int interval = 5;
@@ -23,7 +26,7 @@ typedef struct {
   char *json, *id;
   time_t seen;
 } Node;
-static Node nodes[64];
+static Node nodes[RELAY_NODES];
 static uint8_t nonces[256][12];
 static time_t nonce_seen[256];
 static unsigned nonce_pos;
@@ -141,14 +144,14 @@ static char *nodes_json(const char *rid) {
     comma = 1;
   }
   time_t now = time(NULL);
-  for (int i = 0; i < 64; i++) {
+  for (int i = 0; i < RELAY_NODES; i++) {
     Node *n = &nodes[i];
     if (n->json && now - n->seen > 600) {
       free(n->json);
       free(n->id);
       memset(n, 0, sizeof(*n));
     }
-    if (n->json)
+    if (n->json && b.n + strlen(n->json) + 64 + 2 <= MAX_FRAME)
       add(&b, "%s%.*s,\"relay\":true,\"last_seen\":%lld}", comma++ ? "," : "",
           (int)strlen(n->json) - 1, n->json, (long long)n->seen);
   }
@@ -207,6 +210,9 @@ static char *request(uint8_t *p, size_t total) {
   }
   else if (eq(&j, op, "push")) {
     int obj = field(&j, 0, "node"), id = field(&j, obj, "id");
+    if (obj < 0 || j.t[obj].type != '{' ||
+        j.t[obj].end - j.t[obj].start > MAX_NODE_JSON)
+      goto done;
     if (id < 0 || j.t[id].type != '"' || j.t[id].end - j.t[id].start < 3 ||
         j.t[id].end - j.t[id].start > 258)
       goto done;
@@ -217,13 +223,13 @@ static char *request(uint8_t *p, size_t total) {
     if (!ident)
       goto done;
     int slot = -1;
-    for (int i = 0; i < 64; i++)
+    for (int i = 0; i < RELAY_NODES; i++)
       if (nodes[i].id && !strcmp(nodes[i].id, ident)) {
         slot = i;
         break;
       }
     if (slot < 0)
-      for (int i = 0; i < 64; i++)
+      for (int i = 0; i < RELAY_NODES; i++)
         if (!nodes[i].json || now - nodes[i].seen > 600) {
           slot = i;
           break;

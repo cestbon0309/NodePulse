@@ -88,7 +88,8 @@ try:
         probe = pathlib.Path(__file__).resolve().parent.parent
         binary = root / "test-identity"
         subprocess.run([os.environ.get("CC", "cc"), str(probe / "tools/test-identity.c"),
-                        str(probe / "vendor/monocypher-ed25519.c"), "-o", str(binary)], check=True)
+                        str(probe / "vendor/monocypher-ed25519.c"),
+                        str(probe / "vendor/monocypher.c"), "-o", str(binary)], check=True)
         subprocess.run([str(binary), str(root)], check=True)
     rid = "0123456789abcdef" * 2
     client.validate_response({"rid": rid}, rid)
@@ -162,6 +163,23 @@ try:
     assert client.exchange("127.0.0.1", direct, secret, manual) == {"ok": True}
     assert [n["name"] for n in get(direct)["nodes"] if n["id"] == "manual"] == ["updated"]
     print("PASS relay-only periodic upstream push, last_seen metadata, push ACK and replacement by id")
+    bounded = port()
+    start("-k", secret, "-l", f"127.0.0.1:{bounded}")
+    wait_for(lambda: get(bounded))
+    for size in (3073, 8192):
+        node = {"id": "oversized", "padding": ""}
+        node["padding"] = "x" * (size - len(json.dumps(node, separators=(",", ":"))))
+        silent(bounded, client.encode(secret, {"op": "push", "ts": int(time.time()), "node": node}))
+    assert len(get(bounded)["nodes"]) == 1
+    for index in range(64):
+        node = {"id": f"bounded-{index}", "padding": ""}
+        node["padding"] = "x" * (3072 - len(json.dumps(node, separators=(",", ":"))))
+        assert client.exchange("127.0.0.1", bounded, secret,
+                               {"op": "push", "ts": int(time.time()), "node": node})["ok"]
+    full = get(bounded)
+    assert len(full["nodes"]) == 65
+    assert len(json.dumps(full).encode()) < 256 * 1024
+    print("PASS relay frame budget: oversized pushes silent; 64 boundary-size nodes plus self fit one get")
     with tempfile.TemporaryDirectory() as directory:
         config_port = port()
         config = pathlib.Path(directory) / "probe.conf"

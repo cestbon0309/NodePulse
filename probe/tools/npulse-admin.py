@@ -15,6 +15,7 @@ import socket
 import struct
 import sys
 import termios
+import tempfile
 import time
 import tty
 from cryptography.hazmat.primitives import serialization
@@ -220,17 +221,28 @@ class AdminClient:
     def download(self, remote, local):
         offset = 0
         identity = None
-        with open(local, "xb") as dest:
-            while True:
-                obj = self.request("get", path=remote, offset=offset, len=65536, **({"identity": identity} if identity else {}))
-                identity = obj["identity"]
-                data = base64.b64decode(obj["data"], validate=True)
-                dest.write(data)
-                offset += len(data)
-                if obj["eof"]:
-                    return {"ok": True, "bytes": offset}
-                if not data:
-                    raise OSError("download made no progress")
+        local = Path(local)
+        if local.exists() or local.is_symlink():
+            raise FileExistsError(str(local))
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(prefix=".npulse-download-", dir=local.parent, delete=False) as dest:
+                temporary = Path(dest.name)
+                while True:
+                    obj = self.request("get", path=remote, offset=offset, len=65536, **({"identity": identity} if identity else {}))
+                    identity = obj["identity"]
+                    data = base64.b64decode(obj["data"], validate=True)
+                    dest.write(data)
+                    offset += len(data)
+                    if obj["eof"]:
+                        break
+                    if not data:
+                        raise OSError("download made no progress")
+            os.rename(temporary, local)
+            return {"ok": True, "bytes": offset}
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
 
 def interactive(client):

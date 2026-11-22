@@ -83,6 +83,24 @@ def rejected(fn):
 
 
 def main(root):
+    class DownloadFixture:
+        download = c.AdminClient.download
+        calls = 0
+        fail = True
+        def request(self, *args, **kwargs):
+            self.calls += 1
+            if self.fail and self.calls > 1:
+                raise OSError("interrupted")
+            return {"identity": "fixture", "data": "YQ==", "eof": not self.fail}
+    fixture = DownloadFixture()
+    target = root / "retried-download"
+    rejected(lambda: fixture.download("remote", target))
+    assert not target.exists() and not list(root.glob(".npulse-download-*"))
+    fixture.fail = False
+    assert fixture.download("remote", target)["bytes"] == 1 and target.read_bytes() == b"a"
+    rejected(lambda: fixture.download("remote", target))
+    assert target.read_bytes() == b"a" and not list(root.glob(".npulse-download-*"))
+    print("PASS atomic Python download: interrupted transfer removes temporary file; retry succeeds; existing destination preserved")
     private_file = root / "admin-key.json"
     command = [sys.executable, str(ROOT / "tools/npulse-admin.py")]
     result = subprocess.run([*command, "keygen", "--out", str(private_file)], check=True, capture_output=True, text=True)

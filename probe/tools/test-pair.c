@@ -3,6 +3,9 @@
 #undef main
 #include <assert.h>
 int main(int argc, char **argv) {
+  if (argc == 2 && !strcmp(argv[1], "--pair-host")) {
+    char host[256]; listen_addr = "127.0.0.1:9527"; pair_host(host); puts(host); return 0;
+  }
   uint8_t decoded[3];
   assert(!hex_decode(decoded, "00aBcD", 3));
   assert(decoded[0] == 0 && decoded[1] == 0xab && decoded[2] == 0xcd);

@@ -47,6 +47,11 @@ static void pair_qr(FILE *tty, const char *url, int ascii) {
   fprintf(tty, "%s\n扫码仅填写连接信息，仍须核对双方图案和数字。请勿分享此链接。\n", url); fflush(tty);
 }
 static void pair_host(char out[256]) {
+  const char *advertised = getenv("NPULSE_PAIR_HOST");
+  uint8_t address[16];
+  if (advertised && (inet_pton(AF_INET, advertised, address) == 1 || inet_pton(AF_INET6, advertised, address) == 1)) {
+    snprintf(out, 256, "%s", advertised); return;
+  }
   const char *s = listen_addr, *end = strrchr(s, ':');
   if (*s == '[') { s++; end = strchr(s, ']'); }
   if (end && end - s < 256) { memcpy(out, s, (size_t)(end - s)); out[end - s] = 0; }

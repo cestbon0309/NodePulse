@@ -20,41 +20,83 @@ def function(name):
 
 with tempfile.TemporaryDirectory(prefix="npulse-interfaces-") as directory:
     tools = Path(directory)
-    for name in ("awk", "grep"):
+    for name in ("awk", "grep", "head"):
         (tools / name).symlink_to(shutil.which(name))
     def tool(name, body):
         path = tools / name
         path.write_text("#!/bin/sh\n" + body + "\n"); path.chmod(0o755)
     tool("ip", '[ "${IP_FAIL:-0}" = 0 ] || exit 1\nprintf "%s\\n" "$ADDRESSES"')
     tool("ifconfig", 'printf "%s\\n" "$IFCONFIG"')
+    fetch_log = tools / "fetch-log"
+    fetch_body = '''
+if [ "$1" = --help ]; then echo 'wget -T timeout -O file'; exit 0; fi
+for url do :; done
+printf '%s\\n' "$*" >> "$FETCH_LOG"
+case "$FETCH_MODE:$url" in
+ all-fail:*|first-fail:https://api.ipify.org) exit 1 ;;
+ invalid:*) echo '<html>not an address</html>' ;;
+ private:*) echo '10.0.0.1' ;;
+ v6:https://api6.ipify.org) echo '2606:4700:4700::1111' ;;
+ v6:*) exit 1 ;;
+ *) echo '8.8.4.4' ;;
+esac
+'''
+    tool("curl", fetch_body)
     def run(addresses="", choice="", expression="public_addresses", ok=True, **settings):
-        env = dict(os.environ, PATH=str(tools), ADDRESSES=addresses, IFCONFIG="", CHOICE=choice)
+        fetch_log.write_text("")
+        env = dict(os.environ, PATH=str(tools), ADDRESSES=addresses, IFCONFIG="", CHOICE=choice,
+                   FETCH_LOG=str(fetch_log), FETCH_MODE="success")
         env.update(settings)
-        script = '\n'.join(function(n) for n in ("public_addresses", "select_bind", "bind_endpoint", "firewall_plan", "open_firewall"))
-        script += '\nfail() { printf "%s\\n" "$*" >&2; exit 1; }\nask() { printf "%s\\n" "$1" >&2; ANSWER=${CHOICE:-$2}; }\n'
-        script += 'BIND=; PORT=9527; MODE=1; LISTEN=yes; YES=0; INIT=${TEST_INIT:-systemd}\n' + expression
+        script = '\n'.join(function(n) for n in ("public_addresses", "valid_public_ip", "discover_public_ip", "resolve_public_ip", "select_bind", "bind_endpoint", "firewall_plan", "open_firewall"))
+        script += '\nfail() { printf "%s\\n" "$*" >&2; exit 1; }\nask() { printf "%s\\n" "$1" >&2; ANSWER=$(printf "%s\\n" "$CHOICE" | awk "NR==1 {print;exit}"); CHOICE=$(printf "%s\\n" "$CHOICE" | awk "NR>1"); ANSWER=${ANSWER:-$2}; }\n'
+        script += 'BIND=${TEST_BIND:-}; PUBLIC_IP=${TEST_PUBLIC_IP:-}; PORT=9527; MODE=1; LISTEN=yes; YES=0; INIT=${TEST_INIT:-systemd}\n' + expression
         result = subprocess.run([*shell, "-c", script], env=env, text=True, capture_output=True, timeout=5)
         assert (result.returncode == 0) == ok, result.stderr
         return result
     one = "2: eth0 inet 8.8.4.4/24 scope global eth0"
     selected = 'select_bind; printf "%s|%s|%s|" "$MODE" "$LISTEN" "$BIND"; bind_endpoint'
     result = run(one, expression=selected)
-    assert result.stdout == "1|yes|8.8.4.4|8.8.4.4:9527"
-    assert "检测到公网地址 8.8.4.4（网卡 eth0）" in result.stderr
-    result = run(one + "\n3: eth1 inet6 2001:db8::7/64 scope global", "2", selected)
-    assert result.stdout.endswith("2001:db8::7|[2001:db8::7]:9527")
-    assert run(one + "\n3: eth1 inet 9.9.9.9/24", "0", selected).stdout.endswith("0.0.0.0|0.0.0.0:9527")
-    run(one + "\n3: eth1 inet 9.9.9.9/24", "4", selected, ok=False)
+    assert result.stdout.endswith("1|yes|8.8.4.4|8.8.4.4:9527")
+    assert "这台机器有公网 IP 吗" in result.stderr and "云服务器的外部 IP/弹性 IP 也算" in result.stderr
     excluded = "10.1.2.3 172.16.0.1 172.31.255.254 192.168.5.2 100.64.0.1 100.127.255.254 127.1.2.3 169.254.2.3 0.1.2.3 224.0.0.1 255.255.255.255 ::1 :: fe80::1 febf::1 fc00::1 fdff::1 ff02::1".split()
     for address in excluded:
         assert not run(f"2: eth0 {'inet6' if ':' in address else 'inet'} {address}/64").stdout, address
     for address in "172.15.0.1 172.32.0.1 100.63.255.254 100.128.0.1 2001:db8::1".split():
         assert run(f"2: eth0 {'inet6' if ':' in address else 'inet'} {address}/24").stdout.strip() == address + " eth0", address
-    assert run("2: eth0 inet 100.90.0.2/24", expression=selected).stdout.endswith("4|no||0.0.0.0:9527")
-    assert run("", "1", selected).stdout.endswith("0.0.0.0|0.0.0.0:9527")
+    assert run("2: eth0 inet 100.90.0.2/24", expression=selected).stdout.endswith("1|yes|0.0.0.0|0.0.0.0:9527")
+    assert run(one, "n", selected).stdout.endswith("4|no||0.0.0.0:9527")
+    assert run("", "n\n1", selected).stdout.endswith("0.0.0.0|0.0.0.0:9527")
     fixture = "eth0 Link encap:Ethernet\n          inet addr:8.8.8.8 Bcast:8.8.8.255\nen0: flags=8863\n\tinet6 2001:db8::8 prefixlen 64\n"
     assert run(IP_FAIL="1", IFCONFIG=fixture).stdout.splitlines() == ["8.8.8.8 eth0", "2001:db8::8 en0"]
-    print("PASS interface fixtures: single/multiple/none, IPv4 exclusions and CGNAT boundaries, IPv6 public/link-local/ULA/multicast, ip and BusyBox/BSD ifconfig; IPv6 binding; NAT defaults to relay")
+    print("PASS interface hints: ip/BusyBox/BSD ifconfig, excluded ranges; NIC presence never decides public reachability; No recommends relay with direct override")
+    for client in ("curl", "wget"):
+        if client == "wget":
+            (tools / "curl").unlink()
+            tool("wget", fetch_body)
+        for fetch_mode in ("success", "first-fail", "v6", "all-fail", "invalid", "private"):
+            choice = "y\n9.9.9.9" if fetch_mode in ("all-fail", "invalid", "private") else ""
+            result = run("2: eth0 inet 10.128.0.2/24", choice, selected, FETCH_MODE=fetch_mode)
+            expected = "[::]:9527" if fetch_mode == "v6" else "0.0.0.0:9527"
+            assert result.stdout.endswith(expected), result
+            calls = fetch_log.read_text()
+            assert "-T 4" in calls if client == "wget" else "--max-time 4" in calls
+            if fetch_mode == "first-fail": assert "https://ifconfig.me/ip" in calls
+            if fetch_mode == "v6":
+                assert "https://api6.ipify.org" in calls
+                if client == "curl": assert "-6" in calls and "-4" in calls
+            if fetch_mode in ("all-fail", "invalid", "private"):
+                assert "查询失败" in result.stdout
+                run(expression='YES=1; PUBLIC_IP=auto; select_bind', FETCH_MODE=fetch_mode, ok=False)
+        assert run(one, "y\n9.9.9.9", selected).stdout.endswith("0.0.0.0:9527")
+        assert run(expression='YES=1; PUBLIC_IP=auto; select_bind; printf "%s" "$PUBLIC_IP"').stdout == "8.8.4.4"
+        run(choice="y\n192.168.1.1", expression=selected, ok=False)
+    for address in excluded + ["999.1.1.1", "8.8.8", "08.8.8.8", "1.1.1.1 extra", "<html>", "3::1", "2606:::1", "2606:1:2:3:4:5:6:7:8", "2606:gg::1", "2001:db8::1"]:
+        run(expression='valid_public_ip "$CHECK_IP"', CHECK_IP=address, ok=False)
+    for address in ("8.8.8.8", "2606:4700:4700::1111", "2606:4700:4700:0:0:0:0:1111"):
+        run(expression='valid_public_ip "$CHECK_IP"', CHECK_IP=address)
+    assert run("2: eth0 inet6 2606:4700:4700::1111/64", expression=selected, TEST_PUBLIC_IP="2606:4700:4700::1111").stdout.endswith("[2606:4700:4700::1111]:9527")
+    assert run(expression=selected, TEST_BIND="127.0.0.1").stdout.endswith("127.0.0.1:9527")
+    print("PASS fake curl/BusyBox wget discovery: success, first endpoint failure, all fail/manual, invalid/private rejection, IPv4-first/IPv6 fallback, auto failure, explicit override and non-local wildcard/local binding")
     for name, body, expected in [
         ("iptables", "exit 0", "iptables -I INPUT -p tcp --dport 9527 -j ACCEPT"),
         ("nft", "exit 0", "nft add rule inet npulse input tcp dport 9527 accept"),

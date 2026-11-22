@@ -83,7 +83,7 @@ def isolated_tools(exclude=()):
 
 
 def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_env=False,
-                mode=1, arch="x86_64", init="systemd", flavor=None, flavor_flag=None, flavor_answer=""):
+                mode=1, arch="x86_64", init="systemd", flavor=None, flavor_flag=None, flavor_answer="", public_answer="y"):
     tools = root / "tools"; tools.mkdir()
     firewall = tools / "ufw"
     firewall.write_text('#!/bin/sh\n[ "$1" = status ] || exit 99\nprintf "Status: active\\n"\n')
@@ -98,6 +98,7 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
     env = {k: v for k, v in os.environ.items() if not k.startswith("NPULSE_")}
     env.update(DESTDIR=str(root), DRY_RUN="1", NPULSE_INIT="systemd", NPULSE_ARCH="x86_64", NPULSE_MIRROR=BASE, NPULSE_INSECURE="1", NPULSE_BIND="0.0.0.0")
     env.update(NPULSE_MODE=str(mode), NPULSE_ARCH=arch, NPULSE_INIT=init)
+    if mode == 1: env["NPULSE_PUBLIC_IP"] = "8.8.4.4"
     if flavor: env["NPULSE_FLAVOR"] = flavor
     if keys_via_env: env["NPULSE_ADMIN_KEYS"] = preset_keys
     env["PATH"] = str(tools) + os.pathsep + env["PATH"]
@@ -108,6 +109,16 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
     if mode in (1, 5):
         prompts += ["TCP 监听端口"]
         responses += [""]
+    if mode == 1:
+        prompts += ["这台机器有公网 IP 吗"]
+        responses += [public_answer]
+        if public_answer == "n":
+            prompts += ["切换到共享中继模式 4"]
+            responses += [""]
+            mode = 4
+        else:
+            prompts += ["公网 IP（留空确认"]
+            responses += [""]
     if mode in (2, 5):
         prompts += ["HTTP 回环端口" if mode == 2 else "开启 HTTP /api/relay"]
         responses += [""]
@@ -304,6 +315,32 @@ try:
     assert "flavor=full\n" in (root / "etc/npulse/install.state").read_text()
     run(root, "uninstall", "--yes", "--purge")
     print("PASS simulated low free space still defaults full")
+
+    for address, bind in (("8.8.4.4", "0.0.0.0:9000"), ("2606:4700:4700::1111", "[::]:9000")):
+        root = new_root()
+        result = run(root, "--yes", "--public-ip", address)
+        assert config(root)["listen"] == bind
+        assert f"App 参考地址：{address}" in result.stdout
+        assert "gcloud compute firewall-rules create" in result.stdout
+        advertised = root / "etc/npulse/public-ip"
+        assert advertised.read_text().strip() == address and advertised.stat().st_mode & 0o777 == 0o600
+        run(root, "upgrade", "--yes")
+        assert advertised.read_text().strip() == address
+        run(root, "pair", "--yes")
+        run(root, "uninstall", "--yes", "--purge")
+        assert not advertised.exists()
+    root = new_root()
+    result = run(root, "--yes", "--bind", "127.0.0.1", NPULSE_PUBLIC_IP="8.8.4.4")
+    assert config(root)["listen"] == "127.0.0.1:9000" and "App 参考地址：8.8.4.4" in result.stdout
+    run(root, "uninstall", "--yes", "--purge")
+    run(new_root(), "--yes", "--public-ip", "10.0.0.1", ok=False)
+    print("PASS cloud external IPv4/IPv6: wildcard listener, public App address, cloud firewall note, private response rejected, --bind override, persisted pair host survives upgrade and is purged")
+    root = new_root()
+    interactive(root, public_answer="n")
+    assert "relay_upstream" in config(root) and "listen" not in config(root)
+    assert not (root / "etc/npulse/public-ip").exists()
+    run(root, "uninstall", "--yes", "--purge")
+    print("PASS interactive No public IP switches into complete shared-relay flow by default")
 
     (tools / "ip").write_text('#!/bin/sh\nprintf "inet 192.0.2.10/24 scope global fixture\\n"\n')
     (tools / "ip").chmod(0o755)

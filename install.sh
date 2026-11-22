@@ -12,8 +12,9 @@ NodePulse 安装器（需要 root；POSIX sh / OpenWrt ash）
   --mode 1|2|3|4|5       直连 / HTTP+Nginx / 旧式上报 / E2E上报 / 纯共享中继
   --arch ARCH            x86_64,i386,aarch64,armv7,armv7-soft,mips,mipsel
   --full | --lite        完整版 / 精简版（精简版不能管理，也不能转发管理管道）
+  --public-ip ADDR|auto  公网配对地址（云外部/弹性 IP）；auto 通过 HTTPS 查询
   --port PORT            直连或纯中继端口（默认 9000）
-  --bind ADDR            直连绑定地址；交互时默认检测公网网卡，--yes 默认 0.0.0.0
+  --bind ADDR            显式覆盖监听地址；云外部 IP 不在本机时默认通配监听
   --open-firewall        同意为直连 TCP 端口添加防火墙规则（DRY_RUN 不执行）
   --http-port PORT       HTTP 模式端口（默认 9001）；纯中继设置后开启 HTTP
   --upstream HOST:PORT   模式 3/4 上游（IPv6 用 [地址]:端口）
@@ -28,6 +29,7 @@ NodePulse 安装器（需要 root；POSIX sh / OpenWrt ash）
 NPULSE_PORT, NPULSE_HTTP_PORT, NPULSE_UPSTREAM, NPULSE_NAME, NPULSE_ADMIN_KEYS,
 NPULSE_ADMIN=yes|no|pair（pair 等价 --admin-via-pair）, NPULSE_ALSO_RELAY=yes|no, NPULSE_PURGE=yes|no。
 NPULSE_BIND 与 --bind 等价；NPULSE_OPEN_FIREWALL=yes 与 --open-firewall 等价。
+NPULSE_PUBLIC_IP 与 --public-ip 等价；公网地址用于配对/二维码，不要求配置在本机网卡上。
 pair 停止服务、临时运行 SAS 配对、保存明确授权的管理公钥后重启服务。
 密钥仅通过环境变量传入：NPULSE_SECRET, NPULSE_TOKEN, NPULSE_GROUP_SECRET。
 未提供的密钥自动安全生成 32 个字符。已有上游时必须填写与上游匹配的密钥。
@@ -54,6 +56,7 @@ ARCH=${NPULSE_ARCH:-}
 FLAVOR=${NPULSE_FLAVOR:-}
 PORT=${NPULSE_PORT:-9000}
 BIND=${NPULSE_BIND:-}
+PUBLIC_IP=${NPULSE_PUBLIC_IP:-}
 OPEN_FIREWALL=${NPULSE_OPEN_FIREWALL:-no}
 HTTP_PORT=${NPULSE_HTTP_PORT:-}
 UPSTREAM=${NPULSE_UPSTREAM:-}
@@ -85,11 +88,12 @@ while [ "$#" -gt 0 ]; do
         --purge) PURGE=yes; shift ;;
         --open-firewall) OPEN_FIREWALL=yes; shift ;;
         --admin-via-pair) ADMIN=pair; shift ;;
-        --mode|--arch|--port|--bind|--http-port|--upstream|--name|--admin-keys)
+        --mode|--arch|--port|--bind|--public-ip|--http-port|--upstream|--name|--admin-keys)
             [ "$#" -ge 2 ] || fail "$1 缺少参数"
             case "$1" in
                 --mode) MODE=$2 ;; --arch) ARCH=$2 ;; --port) PORT=$2 ;;
                 --bind) BIND=$2 ;;
+                --public-ip) PUBLIC_IP=$2 ;;
                 --http-port) HTTP_PORT=$2 ;; --upstream) UPSTREAM=$2 ;;
                 --name) NAME=$2 ;; --admin-keys) ADMIN_KEYS=$2 ;;
             esac
@@ -171,24 +175,80 @@ public_addresses() {
         if(public(a) && !seen[a]++) print a,iface
     }}'
 }
+valid_public_ip() {
+    printf '%s\n' "$1" | awk '
+    function hex(s, i,v) {v=0; for(i=1;i<=length(s);i++) v=v*16+index("0123456789abcdef",substr(s,i,1))-1; return v}
+    function groups(s, a,n,i) {
+        if(s=="") return 0
+        n=split(s,a,":"); for(i=1;i<=n;i++) if(length(a[i])<1 || length(a[i])>4 || a[i] ~ /[^0-9a-f]/) return -100
+        return n
+    }
+    function public(s, a,n,i,b,l,r) {
+        s=tolower(s)
+        if(index(s,":")) {
+            if(index(s,":")!=5 || s !~ /^[23][0-9a-f]*:/ || s ~ /[^0-9a-f:]/) return 0
+            if(index(s,"::")) {n=split(s,b,"::"); if(n!=2) return 0; l=groups(b[1]); r=groups(b[2]); if(l<0 || r<0 || l+r>=8) return 0}
+            else if(groups(s)!=8) return 0
+            split(s,a,":"); return !(hex(a[1])==8193 && hex(a[2])==3512)
+        }
+        n=split(s,a,"."); if(n!=4) return 0
+        for(i=1;i<=4;i++) if(a[i] !~ /^[0-9]+$/ || length(a[i])>3 || a[i]+0>255 || (length(a[i])>1 && substr(a[i],1,1)=="0")) return 0
+        return !(a[1]==0 || a[1]==10 || a[1]==127 || a[1]>=224 || (a[1]==172 && a[2]>=16 && a[2]<=31) || (a[1]==192 && (a[2]==168 || (a[2]==0 && (a[3]==0 || a[3]==2)))) || (a[1]==100 && a[2]>=64 && a[2]<=127) || (a[1]==169 && a[2]==254) || (a[1]==198 && (a[2]==18 || a[2]==19 || (a[2]==51 && a[3]==100))) || (a[1]==203 && a[2]==0 && a[3]==113))
+    }
+    {if(NR!=1 || !public($0)) bad=1} END {exit (NR!=1 || bad)}'
+}
+discover_public_ip() {
+    for url in https://api.ipify.org https://ifconfig.me/ip https://icanhazip.com https://api6.ipify.org; do
+        if command -v curl >/dev/null 2>&1; then
+            family=-4; if [ "$url" = https://api6.ipify.org ]; then family=-6; fi
+            found=$(curl "$family" -fsS --connect-timeout 2 --max-time 4 --max-filesize 128 "$url" 2>/dev/null) || found=
+        elif command -v wget >/dev/null 2>&1; then
+            wget_help=$(wget --help 2>&1 || :)
+            printf '%s' "$wget_help" | grep -e '-T' -e '--timeout' >/dev/null || return 1
+            family=
+            if printf '%s' "$wget_help" | grep -e '-4' >/dev/null; then
+                family=-4; if [ "$url" = https://api6.ipify.org ]; then family=-6; fi
+            fi
+            found=$(wget ${family:+"$family"} -q -T 4 -t 1 -O - "$url" 2>/dev/null | head -c 129) || found=
+        else return 1; fi
+        if [ "$url" != https://api6.ipify.org ]; then case "$found" in *:*) continue ;; esac; fi
+        if valid_public_ip "$found"; then printf '%s' "$found"; return 0; fi
+    done
+    return 1
+}
+resolve_public_ip() {
+    if [ -z "$PUBLIC_IP" ] || [ "$PUBLIC_IP" = auto ]; then
+        PUBLIC_IP=$(discover_public_ip) || PUBLIC_IP=
+        if [ -z "$PUBLIC_IP" ]; then printf '公网 IP 查询失败，请手动填写云控制台的外部/弹性 IP。\n'; fi
+    fi
+    if [ "$YES" = 0 ]; then
+        ask "公网 IP（留空确认 $PUBLIC_IP，或输入其他公网 IP）：" "$PUBLIC_IP"; PUBLIC_IP=$ANSWER
+    fi
+    valid_public_ip "$PUBLIC_IP" || fail '请输入有效公网 IPv4/IPv6；可使用 --public-ip ADDR'
+}
 select_bind() {
-    if [ -n "$BIND" ]; then return; fi
     candidates=$(public_addresses)
-    if [ "$YES" = 1 ]; then BIND=0.0.0.0; return; fi
-    count=$(printf '%s\n' "$candidates" | awk 'NF {n++} END {print n+0}')
-    case "$count" in
-        0) printf '未检测到公网地址，可能位于 NAT 后；推荐共享中继（模式 4），无需公网 IP。\n'
-           ask '切换到共享中继模式 4，或输入 1 继续监听 0.0.0.0？[4/1，默认 4]' 4
-           case "$ANSWER" in 4) MODE=4; LISTEN=no ;; 1) BIND=0.0.0.0 ;; *) fail '请选择 4 或 1' ;; esac ;;
-        1) address=${candidates%% *}; iface=${candidates#* }
-           ask "检测到公网地址 $address（网卡 $iface），在 $address:$PORT 上启用探针？[Y/n]" y
-           case "$ANSWER" in y|Y|yes) BIND=$address ;; n|N|no) BIND=0.0.0.0 ;; *) fail '请输入 y 或 n' ;; esac ;;
-        *) printf '检测到多个公网地址：\n'; printf '%s\n' "$candidates" | awk '{printf "%d. %s（网卡 %s）\n",NR,$1,$2}'
-           printf '0. 0.0.0.0（所有 IPv4 网卡）\n'; ask '请选择地址编号 [默认 0]：' 0
-           case "$ANSWER" in ''|*[!0-9]*) fail '地址编号无效' ;; esac
-           [ "$ANSWER" -le "$count" ] || fail '地址编号无效'
-           if [ "$ANSWER" = 0 ]; then BIND=0.0.0.0; else BIND=$(printf '%s\n' "$candidates" | awk -v n="$ANSWER" 'NR==n {print $1}'); fi ;;
-    esac
+    if [ "$YES" = 0 ]; then
+        if [ -n "$candidates" ]; then printf '网卡地址提示（不代表外部可达）：\n%s\n' "$candidates"; fi
+        ask '这台机器有公网 IP 吗？（云服务器的外部 IP/弹性 IP 也算）[Y/n]' y
+        case "$ANSWER" in
+            y|Y|yes|YES) ;;
+            n|N|no|NO)
+                printf '没有公网 IP 时，外网手机无法直连；推荐共享中继（模式 4），无需公网 IP。\n'
+                ask '切换到共享中继模式 4，或输入 1 仍使用直连？[4/1，默认 4]' 4
+                case "$ANSWER" in 4) MODE=4; LISTEN=no; BIND=; PUBLIC_IP= ;; 1) PUBLIC_IP=; BIND=${BIND:-0.0.0.0} ;; *) fail '请选择 4 或 1' ;; esac
+                return ;;
+            *) fail '请输入 y 或 n' ;;
+        esac
+        resolve_public_ip
+    elif [ -n "$PUBLIC_IP" ]; then resolve_public_ip
+    fi
+    if [ -n "$BIND" ]; then return; fi
+    BIND=0.0.0.0
+    if [ -n "$PUBLIC_IP" ]; then
+        case "$PUBLIC_IP" in *:*) BIND=:: ;; esac
+        if printf '%s\n' "$candidates" | awk -v ip="$PUBLIC_IP" 'tolower($1)==tolower(ip) {found=1} END {exit !found}'; then BIND=$PUBLIC_IP; fi
+    fi
 }
 bind_endpoint() {
     case "$BIND" in *:*) printf '[%s]:%s' "$BIND" "$PORT" ;; *) printf '%s:%s' "${BIND:-0.0.0.0}" "$PORT" ;; esac
@@ -232,6 +292,7 @@ firewall_plan() {
     esac
 }
 open_firewall() {
+    printf '云服务器还须在安全组/云防火墙放行 TCP %s，例如 GCP：gcloud compute firewall-rules create nodepulse --allow=tcp:%s（请按需限制来源和目标实例）。\n' "$PORT" "$PORT"
     firewall_plan
     [ "$FW" != none ] || return 0
     if [ "$OPEN_FIREWALL" != yes ]; then ask '是否现在执行？[y/N]' n; case "$ANSWER" in y|Y|yes) OPEN_FIREWALL=yes ;; esac; fi
@@ -398,6 +459,9 @@ write_config() {
         if [ -n "$ADMIN_KEYS" ]; then printf 'admin_keys=%s\n' "$ADMIN_KEYS"; fi
     } > "$CONFIG.new"
     chmod 600 "$CONFIG.new"; mv "$CONFIG.new" "$CONFIG"
+    if [ -n "$PUBLIC_IP" ]; then
+        printf '%s\n' "$PUBLIC_IP" > "$DESTDIR/etc/npulse/public-ip"; chmod 600 "$DESTDIR/etc/npulse/public-ip"
+    fi
     printf 'arch=%s\nflavor=%s\ninit=%s\n' "$ARCH" "$FLAVOR" "$INIT" > "$STATE"
     chmod 600 "$STATE"
 }
@@ -463,7 +527,7 @@ HARDEN
 }
 summary() {
     printf '\nNodePulse 已安装：%s / %s；配置 /etc/npulse/npulse.conf\n' "$ARCH" "$FLAVOR"
-    address=$BIND
+    address=${PUBLIC_IP:-$BIND}
     case "$address" in 0.0.0.0|::) address= ;; esac
     if [ -z "$address" ] && command -v ip >/dev/null 2>&1; then
         address=$(ip -4 addr show scope global 2>/dev/null | awk '$1 == "inet" {split($2,a,"/"); print a[1]; exit}')
@@ -532,7 +596,7 @@ pair_installed() {
             else printf 'listen=%s\nsecret=%s\n' "$(bind_endpoint)" "$SECRET"; fi
         } > "$WORK/pair.conf"
         pair_status=0
-        "$pair_binary" -P -c "$WORK/pair.conf" > "$WORK/pair-output" || pair_status=$?
+        NPULSE_PAIR_HOST=${PUBLIC_IP:-} "$pair_binary" -P -c "$WORK/pair.conf" > "$WORK/pair-output" || pair_status=$?
         if [ "$pair_status" = 0 ]; then paired=yes; break; fi
         if [ "$pair_status" != 3 ] || [ "$MODE" != 4 ]; then break; fi
         printf '中转密码错误或无法连接。\n'
@@ -581,6 +645,10 @@ if [ "$ACTION" != install ]; then
                       group_secret) GROUP=$value ;; secret) SECRET=$value ;; name) NAME=$value ;; esac
               done < "$CONFIG"
               [ -n "$BIND" ] || [ "$MODE" = 4 ] || fail '此安装没有可配对的直连或中转配置'
+              if [ "$MODE" != 4 ]; then
+                  if [ -z "$PUBLIC_IP" ] && [ -f "$DESTDIR/etc/npulse/public-ip" ]; then IFS= read -r PUBLIC_IP < "$DESTDIR/etc/npulse/public-ip"; fi
+                  if [ -n "$PUBLIC_IP" ]; then resolve_public_ip; fi
+              fi
               if [ "$MODE" = 4 ] && [ -z "$GROUP" ]; then GROUP=$SECRET; fi
               PRIVILEGED_PORT=no; if [ "$PORT" -lt 1024 ]; then PRIVILEGED_PORT=yes; fi
               pair_installed; summary; exit ;;
@@ -596,7 +664,7 @@ if [ "$ACTION" != install ]; then
             service reload
             if [ "$PURGE" != yes ]; then ask '同时删除配置和密钥？[yes/no，默认 no]' no; PURGE=$ANSWER; fi
             if [ "$PURGE" != yes ]; then PURGE=no; fi
-            if [ "$PURGE" = yes ]; then rm -f "$CONFIG"; rmdir "$DESTDIR/etc/npulse" 2>/dev/null || :; fi
+            if [ "$PURGE" = yes ]; then rm -f "$CONFIG" "$DESTDIR/etc/npulse/public-ip"; rmdir "$DESTDIR/etc/npulse" 2>/dev/null || :; fi
             printf '已卸载；配置删除：%s。\n' "$PURGE"; exit ;;
     esac
 fi
@@ -618,7 +686,7 @@ elif [ "$MODE" != 5 ]; then
     case "$ALSO_RELAY" in yes) LISTEN=yes ;; no) ;; *) fail '中继选项须为 yes 或 no' ;; esac
 fi
 if [ "$LISTEN" = yes ] || [ "$MODE" = 5 ]; then ask "TCP 监听端口 [默认 $PORT]：" "$PORT"; PORT=$ANSWER; port "$PORT"; fi
-if [ "$MODE" = 1 ]; then select_bind; fi
+if [ "$MODE" = 1 ]; then select_bind; else PUBLIC_IP=; fi
 if [ -n "$BIND" ]; then safe_value "$BIND" 128; case "$BIND" in *[!0-9a-fA-F:.%_-]*) fail '绑定地址须为 IP 地址' ;; esac; fi
 if [ "$MODE" = 2 ]; then
     ask "HTTP 回环端口 [默认 ${HTTP_PORT:-9001}]：" "${HTTP_PORT:-9001}"; HTTP_PORT=$ANSWER; port "$HTTP_PORT"

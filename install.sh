@@ -226,6 +226,11 @@ resolve_public_ip() {
     fi
     valid_public_ip "$PUBLIC_IP" || fail '请输入有效公网 IPv4/IPv6；可使用 --public-ip ADDR'
 }
+persist_public_ip() {
+    printf '%s\n' "$PUBLIC_IP" > "$DESTDIR/etc/npulse/public-ip.new"
+    chmod 600 "$DESTDIR/etc/npulse/public-ip.new"
+    mv "$DESTDIR/etc/npulse/public-ip.new" "$DESTDIR/etc/npulse/public-ip"
+}
 select_bind() {
     candidates=$(public_addresses)
     if [ "$YES" = 0 ]; then
@@ -460,7 +465,7 @@ write_config() {
     } > "$CONFIG.new"
     chmod 600 "$CONFIG.new"; mv "$CONFIG.new" "$CONFIG"
     if [ -n "$PUBLIC_IP" ]; then
-        printf '%s\n' "$PUBLIC_IP" > "$DESTDIR/etc/npulse/public-ip"; chmod 600 "$DESTDIR/etc/npulse/public-ip"
+        persist_public_ip
     fi
     printf 'arch=%s\nflavor=%s\ninit=%s\n' "$ARCH" "$FLAVOR" "$INIT" > "$STATE"
     chmod 600 "$STATE"
@@ -647,7 +652,7 @@ if [ "$ACTION" != install ]; then
               [ -n "$BIND" ] || [ "$MODE" = 4 ] || fail '此安装没有可配对的直连或中转配置'
               if [ "$MODE" != 4 ]; then
                   if [ -z "$PUBLIC_IP" ] && [ -f "$DESTDIR/etc/npulse/public-ip" ]; then IFS= read -r PUBLIC_IP < "$DESTDIR/etc/npulse/public-ip"; fi
-                  if [ -n "$PUBLIC_IP" ]; then resolve_public_ip; fi
+                  if [ -n "$PUBLIC_IP" ]; then resolve_public_ip; persist_public_ip; fi
               fi
               if [ "$MODE" = 4 ] && [ -z "$GROUP" ]; then GROUP=$SECRET; fi
               PRIVILEGED_PORT=no; if [ "$PORT" -lt 1024 ]; then PRIVILEGED_PORT=yes; fi

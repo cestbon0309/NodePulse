@@ -82,6 +82,35 @@ def isolated_tools(exclude=()):
     return path
 
 
+def interactive_pair(root, expected, answer="", ok=True):
+    command = "cat " + shlex.quote(str(ROOT / "install.sh")) + " | " + shlex.join([*SHELL, "-s", "--", "pair"])
+    argv = (["script", "-q", "/dev/null", "/bin/sh", "-c", command] if sys.platform == "darwin" else
+            ["script", "-q", "-e", "-c", command, "/dev/null"])
+    env = {k: v for k, v in os.environ.items() if not k.startswith("NPULSE_")}
+    env.update(DESTDIR=str(root), DRY_RUN="1")
+    proc = subprocess.Popen(argv, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, start_new_session=True)
+    transcript, deadline, sent = b"", time.monotonic() + 15, False
+    prompt = f"公网 IP（留空确认 {expected}，或输入其他公网 IP）：".encode()
+    try:
+        while time.monotonic() < deadline:
+            if select.select([proc.stdout], [], [], 0.2)[0]:
+                chunk = os.read(proc.stdout.fileno(), 65536)
+                if not chunk: break
+                transcript += chunk
+            elif proc.poll() is not None: break
+            if not sent and prompt in transcript:
+                proc.stdin.write((answer + "\n").encode()); proc.stdin.flush(); sent = True
+        assert sent, transcript.decode(errors="replace")
+        proc.wait(timeout=5)
+        assert (proc.returncode == 0) == ok, transcript.decode(errors="replace")
+        return transcript.decode(errors="replace")
+    finally:
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGTERM); proc.wait(timeout=5)
+        proc.stdin.close(); proc.stdout.close()
+
+
 def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_env=False,
                 mode=1, arch="x86_64", init="systemd", flavor=None, flavor_flag=None, flavor_answer="", public_answer="y"):
     tools = root / "tools"; tools.mkdir()
@@ -335,6 +364,22 @@ try:
     run(root, "uninstall", "--yes", "--purge")
     run(new_root(), "--yes", "--public-ip", "10.0.0.1", ok=False)
     print("PASS cloud external IPv4/IPv6: wildcard listener, public App address, cloud firewall note, private response rejected, --bind override, persisted pair host survives upgrade and is purged")
+    root = new_root()
+    run(root, "--yes", "--public-ip", "8.8.4.4")
+    original_config = (root / "etc/npulse/npulse.conf").read_bytes()
+    original_unit = (root / "etc/systemd/system/npulse.service").read_bytes()
+    advertised = root / "etc/npulse/public-ip"
+    changed = interactive_pair(root, "8.8.4.4", "9.9.9.9")
+    assert advertised.read_text() == "9.9.9.9\n" and advertised.stat().st_mode & 0o777 == 0o600
+    confirmed = interactive_pair(root, "9.9.9.9")
+    assert "App 参考地址：9.9.9.9" in changed and "App 参考地址：9.9.9.9" in confirmed
+    invalid = interactive_pair(root, "9.9.9.9", "10.0.0.1", ok=False)
+    assert "有效公网" in invalid and advertised.read_text() == "9.9.9.9\n"
+    assert (root / "etc/npulse/npulse.conf").read_bytes() == original_config
+    assert (root / "etc/systemd/system/npulse.service").read_bytes() == original_unit
+    assert "[DRY_RUN] systemd" not in changed + confirmed + invalid
+    run(root, "uninstall", "--yes", "--purge")
+    print("PASS pair public-IP change persists mode-0600 advertised config; next pair defaults to new IP; Enter retains it, invalid/private input leaves it unchanged, listener/service config untouched")
     root = new_root()
     interactive(root, public_answer="n")
     assert "relay_upstream" in config(root) and "listen" not in config(root)

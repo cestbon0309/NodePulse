@@ -3,6 +3,17 @@ import CryptoKit
 @testable import NodePulse
 
 final class GroupRelayTests: XCTestCase {
+    func testHTTPResponseLimits() async throws {
+        func stream(_ count: Int) -> AsyncStream<UInt8> { AsyncStream { c in for _ in 0..<count { c.yield(0) }; c.finish() } }
+        let empty = try await HTTPSClient.boundedData(stream(0), expectedLength: 0)
+        XCTAssertTrue(empty.isEmpty)
+        let limit = HTTPSClient.responseLimit
+        let full = try await HTTPSClient.boundedData(stream(limit), expectedLength: Int64(limit))
+        XCTAssertEqual(full.count, limit)
+        for (count, length) in [(0, Int64(limit + 1)), (limit + 1, -1)] {
+            do { _ = try await HTTPSClient.boundedData(stream(count), expectedLength: length); XCTFail("accepted oversized response") } catch {}
+        }
+    }
     private struct Vector: Decodable {
         let S: String
         let seed: String

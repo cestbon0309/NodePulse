@@ -117,16 +117,26 @@ struct HTTPSClient {
         let session = URLSession(configuration: config, delegate: NoRedirect(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         do {
-            let (data, response) = try await session.data(for: request)
+            let (bytes, response) = try await session.bytes(for: request)
             guard let response = response as? HTTPURLResponse else { throw ProbeError.parse }
             if response.statusCode == 404 { throw ProbeError.transport("密钥错误或路径不对") }
             guard response.statusCode == 200 else { throw ProbeError.transport("HTTP 错误：\(response.statusCode)") }
-            return data
+            return try await boundedData(bytes, expectedLength: response.expectedContentLength)
         } catch let error as URLError {
             if error.code == .timedOut { throw ProbeError.timeout }
             if error.code == .cannotConnectToHost { throw ProbeError.refused }
             throw ProbeError.transport("连接失败：\(error.localizedDescription)")
         }
+    }
+    static let responseLimit = 262144 + 32
+    static func boundedData<S: AsyncSequence>(_ bytes: S, expectedLength: Int64) async throws -> Data where S.Element == UInt8 {
+        guard expectedLength <= responseLimit else { throw ProbeError.transport("响应过大") }
+        var data = Data()
+        for try await byte in bytes {
+            guard data.count < responseLimit else { throw ProbeError.transport("响应过大") }
+            data.append(byte)
+        }
+        return data
     }
 }
 

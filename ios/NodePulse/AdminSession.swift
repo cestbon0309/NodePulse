@@ -177,7 +177,7 @@ actor AdminSession {
         try Task.checkCancellation()
         let id = nextID; nextID += 1
         var json = fields; json["t"] = type; json["id"] = id
-        let frame = try tx.seal(JSONSerialization.data(withJSONObject: json))
+        let frame = try tx.seal(JSONSerialization.data(withJSONObject: json, options: [.withoutEscapingSlashes]))
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 pending[id] = continuation

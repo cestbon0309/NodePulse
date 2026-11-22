@@ -75,7 +75,7 @@ final class AdminTests: XCTestCase {
             do {
                 let listing = try await session.request("ls", ["path": root])
                 XCTAssertEqual((listing["entries"] as? [[String: Any]])?.count, 0)
-                let data = Data((0..<(200 * 1024)).map { UInt8(truncatingIfNeeded: $0) })
+                let data = Data(repeating: 0xff, count: 200 * 1024)
                 let upload = try await session.request("put_begin", ["path": root + "/roundtrip.bin", "size": data.count, "overwrite": false])
                 let handle = try XCTUnwrap(upload["handle"] as? Int)
                 for offset in stride(from: 0, to: data.count, by: 65536) {

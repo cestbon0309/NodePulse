@@ -46,6 +46,8 @@ jobs:
           python probe/tools/test-installer.py /bin/dash
           python probe/tools/test-installer.py busybox sh
       - name: QEMU encrypted get and real proc metrics
+        env:
+          QEMU_STRACE: '1'
         run: |
           for pair in aarch64:aarch64 armv7:arm armv7-soft:arm mips:mips mipsel:mipsel; do
             arch=${pair%%:*}

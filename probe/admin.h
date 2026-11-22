@@ -13,7 +13,7 @@
 #ifdef __linux__
 #include <sys/reboot.h>
 #endif
-#define ADMIN_FRAME (128 * 1024)
+#define ADMIN_FRAME SESSION_FRAME
 #define ADMIN_HIGH_WATER (256 * 1024)
 #define ADMIN_CHILDREN 128
 static const char *admin_keys_text;
@@ -91,10 +91,6 @@ static void admin_log(Admin *a, const char *op, const char *path, const char *to
   fprintf(stderr, "%s\n", b.s);
   free(b.s);
 }
-static void admin_nonce(uint8_t nonce[12], uint64_t seq) {
-  memset(nonce, 0, 12);
-  for (int i = 0; i < 8; i++) nonce[i] = (uint8_t)(seq >> (8 * i));
-}
 static int admin_queue(Admin *a, const char *json) {
   size_t n = strlen(json), pending = a->outlen - a->sent;
   if (!n || n > ADMIN_FRAME || a->tx_seq == UINT64_MAX || pending > 2 * ADMIN_HIGH_WATER) return -1;
@@ -103,13 +99,7 @@ static int admin_queue(Admin *a, const char *json) {
   uint8_t *p = realloc(a->out, pending + n + 20);
   if (!p) return -1;
   a->out = p; p += pending;
-  uint32_t be = htonl((uint32_t)n);
-  memcpy(p, &be, 4);
-  uint8_t nonce[12]; admin_nonce(nonce, a->tx_seq++);
-  crypto_aead_ctx ctx;
-  crypto_aead_init_ietf(&ctx, a->tx, nonce);
-  crypto_aead_write(&ctx, p + 4, p + 4 + n, p, 4, (const uint8_t *)json, n);
-  crypto_wipe(&ctx, sizeof(ctx));
+  if (session_seal(p, a->tx, &a->tx_seq, json, n)) return -1;
   a->outlen += n + 20; a->queued += n + 20;
   return 0;
 }
@@ -580,12 +570,8 @@ static int admin_io(Admin *a, int fd, short events, struct pollfd *pty_pf) {
         a->in = p; a->want = len + 20;
       } else if (a->have == a->want) {
         size_t len = a->want - 20;
-        uint8_t nonce[12]; admin_nonce(nonce, a->rx_seq);
-        crypto_aead_ctx ctx; crypto_aead_init_ietf(&ctx, a->rx, nonce);
-        int bad = crypto_aead_read(&ctx, a->in + 4, a->in + 4 + len, a->in, 4, a->in + 4, len);
-        crypto_wipe(&ctx, sizeof(ctx));
-        if (bad || a->rx_seq == UINT64_MAX || memchr(a->in + 4, 0, len)) return -1;
-        a->rx_seq++; a->in[4 + len] = 0;
+        if (session_open(a->in, a->want, a->rx, &a->rx_seq) < 0 || memchr(a->in + 4, 0, len)) return -1;
+        a->in[4 + len] = 0;
         if (admin_request(a, (char *)a->in + 4)) return -1;
         a->have = 0; a->want = 4;
       }

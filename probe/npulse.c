@@ -32,6 +32,7 @@ static void stop(int sig) {
   (void)sig;
   running = 0;
 }
+#include "session.h"
 typedef struct {
   char *json, *id;
   time_t seen;
@@ -161,19 +162,19 @@ static char *unframe(const uint8_t *p, size_t total, const uint8_t transport_key
 }
 #if ADMIN
 #include "admin.h"
-#include "pipe.h"
-#define ADMIN_POLLS (CLIENTS * 4 + PIPE_SOCKETS + PIPE_PROBES)
-#else
-#define ADMIN_POLLS 0
 #endif
+#include "pipe.h"
+#define ADMIN_POLLS (PIPE_SOCKETS + (ADMIN ? CLIENTS * 4 + PIPE_PROBES : 0))
+#include "pairing.h"
 typedef struct {
   int fd, http, relay;
   uint8_t *in, *out;
   size_t have, want, sent, outlen, body;
   double deadline;
+  int taken;
 #if ADMIN
   Admin *admin;
-  int taken, pipe_hello;
+  int pipe_hello;
 #endif
 } Client;
 static char *nodes_json(const char *rid) {
@@ -236,12 +237,13 @@ static char *request(uint8_t *p, size_t total, int relay, Client *client) {
   nonce_seen[nonce_pos] = now;
   nonce_pos = (nonce_pos + 1) % 256;
   if (relay) {
-#if ADMIN
     if (client) {
-      int result = pipe_request(&j, stamp, now, client->fd, &response);
+      int result = pair_pipe_request(&j, now, client->fd);
+#if ADMIN
+      if (result < 0) result = pipe_request(&j, stamp, now, client->fd, &response);
+#endif
       if (result >= 0) { client->taken = result; goto done; }
     }
-#endif
     response = group_request(&j, stamp, now);
     goto done;
   }
@@ -510,6 +512,7 @@ static void config(const char *path) {
   fclose(f);
 }
 static void usage(void) {
+  puts("Temporary pairing: -P (-l addr:port -k SECRET | -R relay:port -T TOKEN -G GROUP) [-n NAME] [-W seconds (default 600)] [-Q ascii]");
   puts("npulse 0.1.0\nUsage: npulse [-k SECRET] [-l [addr:]port] [-H "
        "[addr:]port]\n              [-u host:port] [-i seconds] [-n NAME] [-c "
        "config] [-h]\nDirect listen defaults to 0.0.0.0; HTTP defaults to "
@@ -525,23 +528,41 @@ static void usage(void) {
 #endif
 }
 int main(int argc, char **argv) {
-  int opt;
+  int opt, pairing = 0, qr_ascii = 0;
+  unsigned pair_timeout = 600;
   for (int i = 1; i < argc; i++)
     if (!strcmp(argv[i], "-h")) {
       usage();
       return 0;
     }
-  while ((opt = getopt(argc, argv, "k:l:H:u:i:n:c:S:T:G:R:" ADMIN_FLAGS "h")) != -1)
+  while ((opt = getopt(argc, argv, "Pk:l:H:u:i:n:c:S:T:G:R:W:Q:" ADMIN_FLAGS "h")) != -1)
     if (opt == 'c')
       config(optarg);
   optind = 1;
-  while ((opt = getopt(argc, argv, "k:l:H:u:i:n:c:S:T:G:R:" ADMIN_FLAGS "h")) != -1) {
+  while ((opt = getopt(argc, argv, "Pk:l:H:u:i:n:c:S:T:G:R:W:Q:" ADMIN_FLAGS "h")) != -1) {
     if (opt == 'c')
       continue;
     if (opt == '?')
       return 2;
+    if (opt == 'P') { pairing = 1; continue; }
+    if (opt == 'Q') { if (strcmp(optarg, "ascii")) { fprintf(stderr, "-Q accepts ascii\n"); return 2; } qr_ascii = 1; continue; }
+    if (opt == 'W') {
+      char *end; errno = 0; unsigned long value = strtoul(optarg, &end, 10);
+      if (errno || *end || !value || value > 86400) { fprintf(stderr, "invalid pairing timeout (1..86400)\n"); return 2; }
+      pair_timeout = (unsigned)value; continue;
+    }
     char k[2] = {(char)opt, 0};
     option(k, optarg);
+  }
+  if (pairing) {
+    if (optind != argc || http_addr || upstream || relay_addr ||
+        (group_upstream ? listen_addr || !relay_token || !*relay_token || !group_secret || !*group_secret : !listen_addr || !secret || !*secret)) {
+      usage(); return 2;
+    }
+    if (group_upstream) { uint8_t hash[64]; crypto_sha512(hash, (const uint8_t *)relay_token, strlen(relay_token)); memcpy(relay_key, hash, 32); crypto_wipe(hash, sizeof(hash)); }
+    metrics_init(display);
+    if (!display) display = hostname_buf;
+    return pair_run(pair_timeout, qr_ascii);
   }
   int relay_http = relay_addr || (relay_token && !secret);
   int collect = listen_addr || upstream || group_upstream || (http_addr && !relay_http);
@@ -573,9 +594,7 @@ int main(int argc, char **argv) {
     if (!display) display = hostname_buf;
     sample();
   }
-#if ADMIN
   pipe_init();
-#endif
   signal(SIGPIPE, SIG_IGN);
   signal(SIGINT, stop);
   signal(SIGTERM, stop);
@@ -595,9 +614,7 @@ int main(int argc, char **argv) {
     clients[i].fd = -1;
   double next_sample = monotime() + 1, next_push = monotime();
   while (running) {
-#if ADMIN
     pipe_tick(monotime());
-#endif
     struct pollfd pf[CLIENTS + 3 + ADMIN_POLLS];
     int count = CLIENTS + 3;
 #if ADMIN
@@ -618,15 +635,13 @@ int main(int argc, char **argv) {
       }
 #endif
     }
-#if ADMIN
     int pipe_base = count;
     count += pipe_poll(pf + count);
-#endif
     poll(pf, (nfds_t)count, 100);
     double now = monotime();
+    pipe_io(pf + pipe_base);
 #if ADMIN
     admin_tick(now);
-    pipe_io(pf + pipe_base);
     int accepted;
     while ((accepted = probe_take()) >= 0) {
       Client *c = NULL;
@@ -771,9 +786,7 @@ int main(int argc, char **argv) {
         } else
 #endif
           s = c->http ? http_response((char *)c->in) : request(c->in, c->have, c->relay, c);
-#if ADMIN
         if (c->taken) { c->fd = -1; discard(c); continue; }
-#endif
         if (!s) {
           discard(c);
           continue;
@@ -804,8 +817,8 @@ int main(int argc, char **argv) {
   for (int i = 0; i < 3; i++)
     if (listeners[i] >= 0)
       close(listeners[i]);
-#if ADMIN
   pipe_shutdown();
+#if ADMIN
   admin_shutdown();
 #endif
   return 0;

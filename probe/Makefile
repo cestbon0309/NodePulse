@@ -1,10 +1,11 @@
 CC = cc
 ADMIN ?= 1
+QR ?= 1
 HOST_OUT ?= npulse-host
-CPPFLAGS += -DADMIN=$(ADMIN)
+CPPFLAGS += -DADMIN=$(ADMIN) -DQR=$(QR)
 CFLAGS ?= -Os -flto -std=gnu99 -Wall -Wextra -ffunction-sections -fdata-sections
-SOURCES = npulse.c vendor/monocypher.c vendor/monocypher-ed25519.c
-HEADERS = json.h metrics.h group.h admin.h pipe.h vendor/monocypher.h vendor/monocypher-ed25519.h
+SOURCES = npulse.c vendor/monocypher.c vendor/monocypher-ed25519.c vendor/qrcodegen.c
+HEADERS = json.h metrics.h group.h admin.h pipe.h session.h pairing.h vendor/monocypher.h vendor/monocypher-ed25519.h vendor/qrcodegen.h
 LDFLAGS ?= -static -Wl,--gc-sections -s
 
 npulse: $(SOURCES) $(HEADERS)

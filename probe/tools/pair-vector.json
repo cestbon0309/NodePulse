@@ -1,0 +1,14 @@
+{
+  "sk_c": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+  "sk_p": "2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40",
+  "epk_c": "07a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c",
+  "epk_p": "5869aff450549732cbaaed5e5df9b30a6da31cb0e5742bad5ad4a1a768f1a67b",
+  "commit": "6b0be6f8c7411429a85f5879dd9f59a14854f97be9a4380eabe827598dcb53e1",
+  "k": "a9489eee28244491c0b6d7fc0b1140d8abe52a40b2d9f5954649c9631381512c77e8d208c12965ada1ab55fed7a6ee484c6fb00bd7141480b0899d9418ece177",
+  "sas": "7305d7a9d5b2562498614609fee78ce8",
+  "art": "+---[NodePulse]---+\n|          oo**.+.|\n|         . =+ =.o|\n|          . .o + |\n|           o. o  |\n|        S . ...  |\n|         o . =   |\n|          . . o  |\n|         .       |\n|          E      |\n+-----[PAIR]------+\n",
+  "code": "762 729",
+  "psk": "000102030405060708090a0b0c0d0e0f",
+  "k_psk": "cbd4e9a896a8c41ca73263edc2339ca2546e22c96cb2ec0078ac050ff49561c9c0d99df94863ffbf9ea9c91df8a38978a418a96d3f327118b25134f788bed883",
+  "sas_psk": "d93650d95950d78c6b0388c455c718e4"
+}

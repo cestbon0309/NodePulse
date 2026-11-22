@@ -1,5 +1,114 @@
 # NodePulse
 
+## Linux / OpenWrt 部署
+
+以下命令在仓库根目录执行。先运行 `probe/build.sh`，或下载 CI / Release 的静态二进制；
+按目标机器架构选择文件（OpenWrt 的 mips / mipsel 还需核对字节序及 CPU 指令集）。
+示例端口为 TCP 9000（加密直连）、9001（本机 HTTP）、443（公网 HTTPS）。
+
+### 安装服务
+
+Linux（systemd 247+，通过服务凭据把 root-only 配置交给动态用户，不需要 root 常驻）：
+
+```sh
+sudo install -m 0755 probe/dist/npulse-linux-x86_64 /usr/local/bin/npulse
+sudo install -m 0600 probe/deploy/npulse.conf /etc/npulse.conf
+SECRET=$(openssl rand -hex 32)
+sudo sed -i "s/CHANGE-ME/$SECRET/" /etc/npulse.conf
+sudo install -m 0644 probe/deploy/npulse.service /etc/systemd/system/npulse.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now npulse
+sudo systemctl status npulse
+```
+
+在 iOS 接入点中填入 `/etc/npulse.conf` 的 `secret`，不要公开此文件或提交真实密钥。
+修改配置后执行 `sudo systemctl restart npulse`，查看日志用 `sudo journalctl -u npulse -f`。
+DynamicUser 不能读到部分受限指标时会保留默认值；不要为此盲目授予 root 权限。
+
+OpenWrt（把选好的二进制和 `probe/deploy/` 中两个文件复制到路由器后执行，以下以 mipsel 为例）：
+
+```sh
+install -m 0755 npulse-linux-mipsel /usr/bin/npulse
+cp npulse.conf /etc/npulse.conf
+chmod 600 /etc/npulse.conf
+SECRET=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+sed -i "s/CHANGE-ME/$SECRET/" /etc/npulse.conf
+cp npulse.init /etc/init.d/npulse
+chmod 755 /etc/init.d/npulse
+/etc/init.d/npulse enable
+/etc/init.d/npulse start
+```
+
+配置变更后执行 `/etc/init.d/npulse restart`，日志用 `logread -e npulse`。
+
+### 直连
+
+默认配置 `listen=0.0.0.0:9000` 即可；iOS 选择「直连 TCP」，填写机器地址、9000 和密钥。
+仅放行 TCP 9000（可进一步限制来源 IP），不要开放 HTTP 9001。使用 UFW 的 Linux：
+
+```sh
+sudo ufw allow 9000/tcp
+```
+
+OpenWrt 默认 LAN 可访问；确需从 WAN 直连时，显式添加规则（公网风险请自行评估）：
+
+```sh
+uci set firewall.npulse=rule
+uci set firewall.npulse.name='NodePulse'
+uci set firewall.npulse.src='wan'
+uci set firewall.npulse.proto='tcp'
+uci set firewall.npulse.dest_port='9000'
+uci set firewall.npulse.target='ACCEPT'
+uci commit firewall
+/etc/init.d/firewall reload
+```
+
+### HTTP + Nginx
+
+让 HTTP 只监听本机，并保留本机直连监听：**自身节点仅在启用 listen 时出现在列表**。
+以下替换默认 listen 配置，勿让探针明文 HTTP 暴露公网：
+
+```sh
+sudo sed -i 's/^listen=.*/listen=127.0.0.1:9000/; s/^# http=.*/http=127.0.0.1:9001/' /etc/npulse.conf
+sudo systemctl restart npulse
+sudo apt-get install -y nginx certbot
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo systemctl stop nginx
+sudo certbot certonly --standalone -d probe.example.com
+sudo install -m 0644 probe/deploy/nginx-probe.conf /etc/nginx/conf.d/npulse.conf
+sudo nginx -t
+sudo systemctl start nginx
+```
+
+先把域名解析到服务器，并把命令和配置里的 `probe.example.com` 都换成自己的域名。
+80 端口用于上述 standalone 证书验证；续期需配置停止/启动 Nginx 的 certbot hooks，
+或改用 webroot / DNS 验证。公网只需 443（及证书验证所需 80），不要开放 9000/9001；
+若之前已放行 9000，请删除该防火墙规则。iOS 选择 HTTPS，填 `https://probe.example.com`。
+Nginx 保留 Authorization，其他路径返回 404；避免在 URL 中放密钥，以免进入访问日志。
+
+### 中继
+
+上游采用直连配置并开放 TCP 9000；下游只主动连出，不需要任何入站防火墙规则。
+下游的 secret 必须与上游相同；共享密钥意味着任一成员可向上游推送节点，应只用于同一信任域。
+在下游配置中移除 listen/http，加入 upstream（替换域名）：
+
+```sh
+sudo sed -i '/^listen=/d; /^http=/d; s/^# upstream=.*/upstream=relay.example.com:9000/' /etc/npulse.conf
+sudo systemctl restart npulse
+```
+
+OpenWrt 使用同样的配置键，编辑后运行 `/etc/init.d/npulse restart`。
+上游可同时运行 Nginx HTTPS，iOS 连接上游即可看到中继节点。
+
+### CI / 发布
+
+`.github/workflows/probe.yml` 使用 Zig 0.17.1，运行真实 Linux 原生集成测试及
+aarch64、armv7（硬/软浮点）、mips、mipsel 的 QEMU 加密 get 测试，并输出指标断言和快照。
+QEMU 用户态测试共用宿主的 /proc 与网络，验证的是目标 ELF/系统调用/协议，不替代真实设备测试。
+工作流上传 `npulse-linux` artifact；推送 `v*` 标签才会创建/更新 Release 并附加验证后的二进制。
+`.github/workflows/ios.yml` 动态选择 iOS 17+ iPhone 模拟器，使用 ad-hoc 签名运行 XCTest（含真实 Keychain）。
+
 ## iOS app core
 
 Requires Xcode and XcodeGen, no third-party packages. Generate the project with

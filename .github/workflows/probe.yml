@@ -1,0 +1,65 @@
+name: Probe
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install cryptography
+      - name: Cross-build static musl binaries
+        run: probe/build.sh
+      - name: Native Linux integration and real proc metrics
+        env:
+          NPULSE_ASSERT_LINUX: '1'
+        run: python probe/tools/test-probe.py probe/dist/npulse-linux-x86_64
+      - name: Install QEMU user emulation
+        run: sudo apt-get update && sudo apt-get install -y qemu-user-static
+      - name: QEMU encrypted get and real proc metrics
+        run: |
+          for pair in aarch64:aarch64 armv7:arm armv7-soft:arm mips:mips mipsel:mipsel; do
+            arch=${pair%%:*}
+            emulator=${pair#*:}
+            python probe/tools/linux_metrics.py "qemu-${emulator}-static" "probe/dist/npulse-linux-${arch}"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npulse-linux
+          path: probe/dist/npulse-linux-*
+          if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: linux
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: npulse-linux
+          path: dist
+      - name: Attach verified binaries to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$TAG"; then
+            gh release create "$TAG" --verify-tag --generate-notes
+          fi
+          gh release upload "$TAG" dist/npulse-linux-* --clobber

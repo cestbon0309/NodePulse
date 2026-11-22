@@ -1,0 +1,46 @@
+name: iOS
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Pick available iPhone simulator (iOS 17+)
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          devices = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devices', 'available', '-j']))['devices']
+          choices = [(tuple(map(int, runtime.rsplit('iOS-', 1)[1].split('-'))), device['udid'])
+                     for runtime, entries in devices.items() if 'iOS-' in runtime
+                     for device in entries if device['name'].startswith('iPhone') and device['isAvailable']]
+          version, udid = max(choice for choice in choices if choice[0][0] >= 17)
+          print(f'Using iOS {version}: {udid}', flush=True)
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write(f'SIMULATOR_ID={udid}\n')
+          PY
+      - name: Generate project
+        working-directory: ios
+        run: xcodegen
+      - name: Build and test (ad-hoc signed, real Keychain)
+        working-directory: ios
+        run: |
+          xcodebuild test -scheme NodePulse \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath build -parallel-testing-enabled NO
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-test-results
+          path: ios/build/Logs/Test/*.xcresult
+          if-no-files-found: warn

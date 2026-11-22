@@ -88,6 +88,9 @@ try:
     assert set(node) == set(expected), set(expected) - set(node)
     assert node["name"] == 'self"\\\n雪' and node["relay"] is False
     assert len(node["load"]) == 3 and node["version"] == "0.1.0"
+    if os.environ.get("NPULSE_ASSERT_LINUX") == "1":
+        from linux_metrics import check
+        check(node)
     print("PASS direct get: complete snapshot schema, JSON escaping and CryptoKit-compatible IETF AEAD")
     request = {"op": "get", "ts": int(time.time())}
     silent(direct, client.encode("wrong", request))

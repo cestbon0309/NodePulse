@@ -1,4 +1,13 @@
 #define _GNU_SOURCE
+#ifndef ADMIN
+#define ADMIN 1
+#endif
+#if ADMIN
+#define _FILE_OFFSET_BITS 64
+#define ADMIN_FLAGS "A:"
+#else
+#define ADMIN_FLAGS ""
+#endif
 #include "json.h"
 #include "metrics.h"
 #include "vendor/monocypher-ed25519.h"
@@ -82,6 +91,9 @@ static int endpoint(const char *s, const char *def, int server) {
     fd = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
     if (fd < 0)
       continue;
+#if ADMIN
+    fcntl(fd, F_SETFD, FD_CLOEXEC);
+#endif
     fcntl(fd, F_SETFL, O_NONBLOCK);
     int one = 1;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
@@ -127,6 +139,10 @@ static uint8_t *frame(const char *s, size_t *size, const uint8_t transport_key[3
   *size = n + 32;
   return p;
 }
+typedef struct Admin Admin;
+#if ADMIN
+#include "admin.h"
+#endif
 static char *nodes_json(const char *rid) {
   Buffer b = buffer();
   add(&b, "{\"ok\":true,");
@@ -159,7 +175,10 @@ static char *nodes_json(const char *rid) {
   add(&b, "]}");
   return b.s;
 }
-static char *request(uint8_t *p, size_t total, int relay) {
+static char *request(uint8_t *p, size_t total, int relay, Admin **session) {
+#if !ADMIN
+  (void)session;
+#endif
   if (total < 32) return NULL;
   uint32_t be;
   memcpy(&be, p, 4);
@@ -203,6 +222,12 @@ static char *request(uint8_t *p, size_t total, int relay) {
     response = group_request(&j, stamp, now);
     goto done;
   }
+#if ADMIN
+  if (eq(&j, op, "admin")) {
+    if (session) response = admin_hello(&j, stamp, now, session);
+    goto done;
+  }
+#endif
   if (eq(&j, op, "get")) {
     int token = field(&j, 0, "rid");
     char *rid = token >= 0 ? string(&j, token) : NULL;
@@ -319,8 +344,14 @@ typedef struct {
   uint8_t *in, *out;
   size_t have, want, sent, outlen, body;
   double deadline;
+#if ADMIN
+  Admin *admin;
+#endif
 } Client;
 static void discard(Client *c) {
+#if ADMIN
+  if (c->admin) admin_free(c->admin);
+#endif
   close(c->fd);
   free(c->in);
   free(c->out);
@@ -403,6 +434,9 @@ static void http_not_found(Client *c) {
   else discard(c);
 }
 static void option(const char *k, const char *v) {
+#if ADMIN
+  if (!strcmp(k, "admin_keys") || !strcmp(k, "A")) { admin_keys_text = strdup(v); return; }
+#endif
   if (!strcmp(k, "relay_listen") || !strcmp(k, "S")) relay_addr = strdup(v);
   else if (!strcmp(k, "token") || !strcmp(k, "T")) relay_token = strdup(v);
   else if (!strcmp(k, "group_secret") || !strcmp(k, "G")) group_secret = strdup(v);
@@ -472,6 +506,9 @@ static void usage(void) {
        "Publish E2E snapshots: -R host:port -T TOKEN [-G SECRET (default -k)]\n"
        "HTTP-only relay: -H [addr:]port -T TOKEN (without -k).\n"
        "Config keys: relay_listen, token, group_secret, relay_upstream (or S/T/G/R).");
+#if ADMIN
+  puts("Direct admin (disabled by default): -A ED25519_PUBKEY[,PUBKEY...] (requires -l).\nConfig key: admin_keys. Session idle timeout: 600 seconds.");
+#endif
 }
 int main(int argc, char **argv) {
   int opt;
@@ -480,11 +517,11 @@ int main(int argc, char **argv) {
       usage();
       return 0;
     }
-  while ((opt = getopt(argc, argv, "k:l:H:u:i:n:c:S:T:G:R:h")) != -1)
+  while ((opt = getopt(argc, argv, "k:l:H:u:i:n:c:S:T:G:R:" ADMIN_FLAGS "h")) != -1)
     if (opt == 'c')
       config(optarg);
   optind = 1;
-  while ((opt = getopt(argc, argv, "k:l:H:u:i:n:c:S:T:G:R:h")) != -1) {
+  while ((opt = getopt(argc, argv, "k:l:H:u:i:n:c:S:T:G:R:" ADMIN_FLAGS "h")) != -1) {
     if (opt == 'c')
       continue;
     if (opt == '?')
@@ -512,6 +549,10 @@ int main(int argc, char **argv) {
     memcpy(relay_key, hash, 32);
   }
   if (group_upstream) group_init();
+#if ADMIN
+  if (admin_init()) { fprintf(stderr, "invalid admin_keys or missing -l\n"); return 2; }
+  signal(SIGCHLD, admin_sigchld);
+#endif
   crypto_wipe(hash, sizeof(hash));
   if (collect) {
     metrics_init(display);
@@ -537,14 +578,31 @@ int main(int argc, char **argv) {
     clients[i].fd = -1;
   double next_sample = monotime() + 1, next_push = monotime();
   while (running) {
-    struct pollfd pf[CLIENTS + 3];
+    struct pollfd pf[CLIENTS + 3 + (ADMIN ? CLIENTS * 4 : 0)];
+    int count = CLIENTS + 3;
+#if ADMIN
+    int pty_base[CLIENTS];
+#endif
     for (int i = 0; i < 3; i++)
       pf[i] = (struct pollfd){listeners[i], POLLIN, 0};
-    for (int i = 0; i < CLIENTS; i++)
+    for (int i = 0; i < CLIENTS; i++) {
       pf[i + 3] =
           (struct pollfd){clients[i].fd, clients[i].out ? POLLOUT : POLLIN, 0};
-    poll(pf, CLIENTS + 3, 100);
+#if ADMIN
+      Admin *a = clients[i].admin;
+      pty_base[i] = count;
+      if (a && !clients[i].out) {
+        pf[i + 3].events = admin_events(a);
+        admin_poll(a, pf + count);
+        count += 4;
+      }
+#endif
+    }
+    poll(pf, (nfds_t)count, 100);
     double now = monotime();
+#if ADMIN
+    admin_tick(now);
+#endif
     if (collect && now >= next_sample) {
       sample();
       next_sample = now + 1;
@@ -567,6 +625,9 @@ int main(int argc, char **argv) {
             close(fd);
           else {
             fcntl(fd, F_SETFL, O_NONBLOCK);
+#if ADMIN
+            fcntl(fd, F_SETFD, FD_CLOEXEC);
+#endif
             Client *c = &clients[slot];
             c->fd = fd;
             c->http = i == 1;
@@ -583,6 +644,12 @@ int main(int argc, char **argv) {
       Client *c = &clients[i];
       if (c->fd < 0)
         continue;
+#if ADMIN
+      if (c->admin && !c->out) {
+        if (admin_io(c->admin, c->fd, pf[i + 3].revents, pf + pty_base[i])) discard(c);
+        continue;
+      }
+#endif
       if (monotime() > c->deadline ||
           (pf[i + 3].revents & (POLLERR | POLLNVAL))) {
         discard(c);
@@ -593,8 +660,15 @@ int main(int argc, char **argv) {
           ssize_t n = send(c->fd, c->out + c->sent, c->outlen - c->sent, 0);
           if (n > 0) {
             c->sent += (size_t)n;
-            if (c->sent == c->outlen)
-              discard(c);
+            if (c->sent == c->outlen) {
+#if ADMIN
+              if (c->admin) {
+                free(c->out); c->out = NULL;
+                free(c->in); c->in = NULL;
+              } else
+#endif
+                discard(c);
+            }
           } else if (n == 0 || (errno != EAGAIN && errno != EINTR))
             discard(c);
         }
@@ -636,7 +710,7 @@ int main(int argc, char **argv) {
                           : c->have == c->want;
       if (ready) {
         if (c->http && c->relay) {
-          char *json = request(c->in + c->body, c->have - c->body, 1);
+          char *json = request(c->in + c->body, c->have - c->body, 1, NULL);
           if (!json) { discard(c); continue; }
           size_t len = 0;
           uint8_t *body = frame(json, &len, relay_key);
@@ -651,8 +725,12 @@ int main(int argc, char **argv) {
           if (!c->out) discard(c);
           continue;
         }
+        Admin **session = NULL;
+#if ADMIN
+        if (!c->http && !c->relay) session = &c->admin;
+#endif
         char *s =
-            c->http ? http_response((char *)c->in) : request(c->in, c->have, c->relay);
+            c->http ? http_response((char *)c->in) : request(c->in, c->have, c->relay, session);
         if (!s) {
           discard(c);
           continue;
@@ -676,5 +754,8 @@ int main(int argc, char **argv) {
   for (int i = 0; i < 3; i++)
     if (listeners[i] >= 0)
       close(listeners[i]);
+#if ADMIN
+  admin_shutdown();
+#endif
   return 0;
 }

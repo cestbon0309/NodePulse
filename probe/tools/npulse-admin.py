@@ -318,6 +318,7 @@ def main():
         sub.add_parser(command).add_argument("path")
     rm = sub.add_parser("rm"); rm.add_argument("path"); rm.add_argument("--recursive", action="store_true")
     mv = sub.add_parser("mv"); mv.add_argument("from_path"); mv.add_argument("to")
+    mv.add_argument("--force", "-f", action="store_true", help="replace an existing destination")
     get = sub.add_parser("get"); get.add_argument("path"); get.add_argument("local", type=Path)
     put = sub.add_parser("put"); put.add_argument("local", type=Path); put.add_argument("path"); put.add_argument("--overwrite", action="store_true")
     sub.add_parser("shell")
@@ -358,6 +359,7 @@ def main():
             fields = {k: getattr(args, k) for k in ("path", "to", "recursive", "action") if hasattr(args, k)}
             if args.command == "mv":
                 fields["from"] = args.from_path
+                fields["overwrite"] = args.force
             result = client.request(args.command, **fields)
         print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0

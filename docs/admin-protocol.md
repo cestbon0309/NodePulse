@@ -34,7 +34,7 @@ npulse -k 'PROBE_SECRET' -l 9000 -A '64_LOWERCASE_HEX_PUBLIC_KEY'
 python3 probe/tools/npulse-admin.py --host PROBE_HOST --port 9000 \
   --secret 'PROBE_SECRET' --key "$HOME/nodepulse-admin.json" info
 # Other subcommands: ls PATH, stat PATH, get REMOTE LOCAL, put LOCAL REMOTE
-# [--overwrite], rm PATH [--recursive], mkdir PATH, mv FROM TO, shell,
+# [--overwrite], rm PATH [--recursive], mkdir PATH, mv FROM TO [--force|-f], shell,
 # power reboot|poweroff. Power actually acts on the machine: use with care.
 ```
 

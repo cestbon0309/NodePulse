@@ -582,6 +582,7 @@ remove_link() {
     if [ "$LINK" = 1 ] && [ -L "$link" ] && [ "$(readlink "$link")" = /usr/local/bin/npulse ]; then rm -f "$link"; fi
 }
 download() {
+    case "$1" in file:///*) cp "${1#file://}" "$2" 2>/dev/null || fail "$(msg '离线包缺少文件' 'Offline bundle is missing a file')"; return ;; esac
     if command -v curl >/dev/null 2>&1; then
         curl -fLsS --connect-timeout 15 --max-time 180 "$1" -o "$2" 2>/dev/null || fail "$(msg '下载失败，请检查版本、网络或镜像' 'Download failed; check the version, network or mirror')"
     elif command -v wget >/dev/null 2>&1; then
@@ -599,7 +600,7 @@ fetch_binary() {
     if [ -n "$VERSION" ]; then base=$base/download/$VERSION; else base=$base/latest/download; fi
     base=${NPULSE_MIRROR:-$base}; base=${base%/}
     case "$base" in
-        https://*) ;;
+        https://*|file:///*) ;;
         http://*) [ "${NPULSE_INSECURE:-0}" = 1 ] || fail "$(msg '拒绝 HTTP 镜像；仅可信测试可设置 NPULSE_INSECURE=1' 'HTTP mirror refused; only trusted tests may set NPULSE_INSECURE=1')"
             say '警告：NPULSE_INSECURE=1，HTTP 镜像可被中间人替换二进制及校验清单！\n' 'Warning: NPULSE_INSECURE=1; an HTTP mirror permits interception and replacement of both binaries and checksums!\n' >&2 ;;
         *) fail "$(msg '下载目录必须为 HTTPS URL' 'Download directory must be an HTTPS URL')" ;;

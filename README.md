@@ -102,6 +102,19 @@ full 内嵌同版本安装器；lite 下载并校验自身发行版的安装器�
 记录的防火墙规则，不动已有或旧安装未记录的规则；默认保留配置。发行版新增 `VERSION` 元数据。
 
 <a id="pairing"></a>
+### 批量无人值守部署
+
+`mkdeploy.sh` 在自己的电脑上生成一个单文件部署脚本，内含探针、安装器、中继地址、中继令牌和组密钥：
+
+```sh
+curl -fsSLO https://github.com/cestbon0309/NodePulse/releases/latest/download/mkdeploy.sh
+sh mkdeploy.sh --relay relay.example:9001 --token '中继令牌' --group '组密钥' --arch x86_64
+```
+
+缺少的参数会逐项询问；可选 `--lite`、`--version vX.Y.Z`、`--interval 秒`、`--admin-keys 公钥`、`--output 文件`。
+把生成的 `npulse-deploy-<架构>.sh` 拷到目标机器，以 root 运行 `sh npulse-deploy-<架构>.sh` 即完成安装、开机自启并连接中继，
+不提问、不联网下载。已安装时不做改动，`--force` 会清除旧配置后重装。**生成的文件含密钥，不要公开。**
+
 ## 配对：扫码只是开始
 
 1. 服务器运行 `npulse pair`（自动停止 / 恢复服务），或安装末尾直接配对。

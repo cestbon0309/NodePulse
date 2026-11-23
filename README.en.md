@@ -106,6 +106,21 @@ recorded firewall rules; preexisting/unrecorded firewall rules remain. Configura
 retained unless purged. New releases publish `VERSION` alongside `SHA256SUMS`.
 
 <a id="pairing"></a>
+### Unattended fleet deployment
+
+`mkdeploy.sh` runs on your own computer and produces one self-contained deploy file holding the probe,
+the installer, the relay address, the relay token and the group key:
+
+```sh
+curl -fsSLO https://github.com/cestbon0309/NodePulse/releases/latest/download/mkdeploy.sh
+sh mkdeploy.sh --relay relay.example:9001 --token 'relay-token' --group 'group-key' --arch x86_64
+```
+
+Missing values are prompted for; optional `--lite`, `--version vX.Y.Z`, `--interval SECONDS`, `--admin-keys KEYS`, `--output FILE`.
+Copy the generated `npulse-deploy-<arch>.sh` to the target and run `sh npulse-deploy-<arch>.sh` as root: it installs,
+enables boot start and connects to the relay with no questions and no downloads. An existing installation is left
+untouched; `--force` purges it and reinstalls. **The generated file contains secrets: keep it private.**
+
 ## Pairing: scanning is only the start
 
 1. Run `npulse pair` on the server (stops/restores the service), or pair at installation's end.

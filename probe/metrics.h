@@ -231,6 +231,7 @@ static void sample(void) {
   double now = monotime(), dt = now - previous_time;
   FILE *f = metric_cpu_file;
   if (f) {
+    fflush(f);
     rewind(f);
     unsigned long long a = 0, b = 0, c = 0, d = 0, e = 0, g = 0, h = 0, i = 0;
     if (fscanf(f, "cpu %llu %llu %llu %llu %llu %llu %llu %llu", &a, &b, &c, &d,

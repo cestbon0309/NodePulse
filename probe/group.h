@@ -3,6 +3,17 @@
 #define GROUPS 256
 #define GROUP_SLOTS 32
 #define MAX_BLOB 7168
+#define HISTORY_SLOTS 64
+#define HISTORY_BLOB 384
+typedef struct { uint32_t seq; char blob[HISTORY_BLOB + 1]; } OpaqueSample;
+typedef struct {
+  char epoch[17];
+  uint32_t seq;
+  unsigned count, next;
+  OpaqueSample samples[HISTORY_COUNT];
+} OpaqueHistory;
+static unsigned history_slots;
+typedef char HistoryFrameBudget[(GROUP_SLOTS * (MAX_BLOB + HISTORY_COUNT * (HISTORY_BLOB + 32) + 256) < MAX_FRAME) ? 1 : -1];
 typedef char GroupFrameBudget[(GROUP_SLOTS * (MAX_BLOB + 128) + 256 < MAX_FRAME) ? 1 : -1];
 typedef char GroupSnapshotBudget[(4 * ((MAX_NODE_JSON + 28 + 2) / 3) < MAX_BLOB) ? 1 : -1];
 static const char *relay_addr, *relay_token, *group_secret, *group_upstream;
@@ -12,6 +23,8 @@ typedef struct {
   char slot[33];
   char *blob;
   time_t seen;
+  time_t snapshot_seen;
+  OpaqueHistory *history;
 } GroupSlot;
 typedef struct {
   char gid[65];
@@ -94,11 +107,12 @@ static void group_expire(time_t now) {
     int live = 0;
     for (int j = 0; j < GROUP_SLOTS; j++) {
       GroupSlot *s = &groups[i].slots[j];
-      if (s->blob && now - s->seen > 600) {
+      if (s->slot[0] && now - s->seen > 600) {
         free(s->blob);
+        if (s->history) { free(s->history); history_slots--; }
         memset(s, 0, sizeof(*s));
       }
-      live |= s->blob != NULL;
+      live |= s->slot[0] != 0;
     }
     if (!live) groups[i].gid[0] = 0;
   }
@@ -118,20 +132,39 @@ static char *group_request(Json *j, long long stamp, time_t now) {
   char *rid = string(j, field(j, 0, "rid"));
   char *sig = string(j, field(j, 0, "sig"));
   char *slot = NULL, *blob = NULL, *response = NULL;
+  char *epoch = NULL;
+  uint32_t sequence = 0;
   uint8_t pub[32], signature[64], rid_bytes[16], slot_bytes[16];
   int push = eq(j, field(j, 0, "op"), "gpush");
-  if (!push && !eq(j, field(j, 0, "op"), "gget")) goto done;
+  int hpush = eq(j, field(j, 0, "op"), "hpush");
+  int since_map = field(j, 0, "since");
+  if (!push && !hpush && !eq(j, field(j, 0, "op"), "gget")) goto done;
   if (hex_decode(pub, gid, 32) || hex_decode(signature, sig, 64) || hex_decode(rid_bytes, rid, 16)) goto done;
   Buffer message = buffer();
-  if (push) {
+  if (push || hpush) {
     slot = string(j, field(j, 0, "slot"));
     blob = string(j, field(j, 0, "blob"));
     if (hex_decode(slot_bytes, slot, 16) || !valid_blob(blob)) {
       free(message.s);
       goto done;
     }
-    add(&message, "npulse-gpush\n%s\n%s\n%lld\n%s\n%s", gid, slot, stamp, rid, blob);
-  } else add(&message, "npulse-gget\n%s\n%lld\n%s", gid, stamp, rid);
+    if (hpush) {
+      epoch = string(j, field(j, 0, "epoch"));
+      int token = field(j, 0, "seq"); char *end;
+      if (!epoch || strlen(epoch) != 16 || strspn(epoch, "0123456789abcdef") != 16 ||
+          token < 0 || j->t[token].type == '"' || strlen(blob) > HISTORY_BLOB) { free(message.s); goto done; }
+      unsigned long long n = strtoull(j->s + j->t[token].start, &end, 10);
+      if (end != j->s + j->t[token].end || n > UINT32_MAX) { free(message.s); goto done; }
+      sequence = (uint32_t)n;
+      add(&message, "npulse-hpush\n%s\n%s\n%lld\n%s\n%s\n%u\n%s", gid, slot, stamp, rid, epoch, sequence, blob);
+    } else add(&message, "npulse-gpush\n%s\n%s\n%lld\n%s\n%s", gid, slot, stamp, rid, blob);
+  } else {
+    add(&message, "npulse-gget\n%s\n%lld\n%s", gid, stamp, rid);
+    if (since_map >= 0) {
+      if (j->t[since_map].type != '{' || j->t[since_map].next - since_map > 257) { free(message.s); goto done; }
+      add(&message, "\n%.*s", j->t[since_map].end - j->t[since_map].start, j->s + j->t[since_map].start);
+    }
+  }
   int bad = crypto_ed25519_check(signature, pub, (const uint8_t *)message.s, message.n);
   free(message.s);
   if (bad) goto done;
@@ -142,74 +175,122 @@ static char *group_request(Json *j, long long stamp, time_t now) {
     if (!groups[i].gid[0] && !empty) empty = &groups[i];
     if (!strcmp(groups[i].gid, gid)) g = &groups[i];
   }
-  if (push) {
+  if (push || hpush) {
     if (!g) g = empty;
     if (!g) goto done;
     GroupSlot *entry = NULL;
     for (int i = 0; i < GROUP_SLOTS; i++)
-      if (g->slots[i].blob && !strcmp(g->slots[i].slot, slot)) entry = &g->slots[i];
+      if (g->slots[i].slot[0] && !strcmp(g->slots[i].slot, slot)) entry = &g->slots[i];
     if (!entry)
       for (int i = 0; i < GROUP_SLOTS; i++)
-        if (!g->slots[i].blob) { entry = &g->slots[i]; break; }
+        if (!g->slots[i].slot[0]) { entry = &g->slots[i]; break; }
     if (!entry) goto done;
-    free(entry->blob);
-    entry->blob = blob;
-    blob = NULL;
+    if (hpush) {
+      if (!entry->history) {
+        if (history_slots >= HISTORY_SLOTS || !(entry->history = calloc(1, sizeof(OpaqueHistory)))) goto done;
+        history_slots++;
+      }
+      OpaqueHistory *h = entry->history;
+      if (strcmp(h->epoch, epoch)) { memset(h, 0, sizeof(*h)); snprintf(h->epoch, sizeof(h->epoch), "%s", epoch); }
+      if (!h->count || (sequence != h->seq && (uint32_t)(sequence - h->seq) < UINT32_C(0x80000000))) {
+        OpaqueSample *s = &h->samples[h->next]; s->seq = sequence;
+        snprintf(s->blob, sizeof(s->blob), "%s", blob);
+        h->next = (h->next + 1) % HISTORY_COUNT;
+        if (h->count < HISTORY_COUNT) h->count++;
+        h->seq = sequence;
+      }
+    } else {
+      free(entry->blob); entry->blob = blob; blob = NULL; entry->snapshot_seen = now;
+    }
     entry->seen = now;
     snprintf(entry->slot, sizeof(entry->slot), "%s", slot);
     snprintf(g->gid, sizeof(g->gid), "%s", gid);
   }
   Buffer b = buffer();
   add(&b, "{\"ok\":true,\"rid\":\"%s\"", rid);
-  if (!push) {
+  if (!push && !hpush) {
     add(&b, ",\"blobs\":[");
     int comma = 0;
     if (g) for (int i = 0; i < GROUP_SLOTS; i++) {
       GroupSlot *s = &g->slots[i];
-      if (s->blob) add(&b, "%s{\"slot\":\"%s\",\"blob\":\"%s\",\"age\":%lld}",
-                       comma++ ? "," : "", s->slot, s->blob, (long long)(now - s->seen));
+      if (s->blob) {
+        add(&b, "%s{\"slot\":\"%s\",\"blob\":\"%s\",\"age\":%lld",
+            comma++ ? "," : "", s->slot, s->blob, (long long)(now - s->snapshot_seen));
+        OpaqueHistory *h = s->history;
+        if (since_map >= 0 && h && h->count) {
+          uint64_t epoch_value = 0; uint32_t cursor = 0;
+          int valid = history_cursor(j, field(j, since_map, s->slot), &epoch_value, &cursor);
+          unsigned first = (h->next + HISTORY_COUNT - h->count) % HISTORY_COUNT;
+          int full = !valid || epoch_value != strtoull(h->epoch, NULL, 16) ||
+              (uint32_t)(h->seq - cursor) > (uint32_t)(h->seq - h->samples[first].seq + 1);
+          add(&b, ",\"history\":{\"epoch\":\"%s\",\"seq\":%u,\"full\":%s,\"samples\":[", h->epoch, h->seq, full ? "true" : "false");
+          int separator = 0;
+          for (unsigned k = 0; k < h->count; k++) {
+            OpaqueSample *r = &h->samples[(first + k) % HISTORY_COUNT];
+            if (full || (r->seq != cursor && (uint32_t)(r->seq - cursor) < UINT32_C(0x80000000)))
+              add(&b, "%s[%u,\"%s\"]", separator++ ? "," : "", r->seq, r->blob);
+          }
+          add(&b, "]}");
+        }
+        add(&b, "}");
+      }
     }
     add(&b, "]");
   }
   add(&b, "}");
   response = b.s;
 done:
-  free(gid); free(rid); free(sig); free(slot); free(blob);
+  free(gid); free(rid); free(sig); free(slot); free(blob); free(epoch);
   return response;
 }
-static char *group_push_json(const char *snapshot_json) {
-  Json j;
-  if (parse(&j, snapshot_json)) return NULL;
-  char *id = string(&j, field(&j, 0, "id"));
-  if (!id) return NULL;
-  char slot[33], rid[33], sig[129];
+static char *group_publish_json(const char *plain, const char *slot, const HistorySample *sample) {
+  char rid[33], sig[129], epoch[17];
   uint8_t random[16], signature[64];
-  group_slot(slot, id);
-  free(id);
-  size_t n = strlen(snapshot_json);
+  snprintf(epoch, sizeof(epoch), "%016llx", (unsigned long long)history.epoch);
+  size_t n = strlen(plain);
   uint8_t *sealed = malloc(n + 28);
   if (!sealed) return NULL;
   if (random_bytes(sealed, 12) || random_bytes(random, 16)) { free(sealed); return NULL; }
   hex_encode(rid, random, 16);
   Buffer ad = buffer();
-  add(&ad, "%s:%s", group_id, slot);
+  if (sample) add(&ad, "npulse-history-v1:%s:%s:%s:%u", group_id, slot, epoch, sample->seq);
+  else add(&ad, "%s:%s", group_id, slot);
   crypto_aead_ctx ctx;
   crypto_aead_init_ietf(&ctx, enc_key, sealed);
-  crypto_aead_write(&ctx, sealed + 12, sealed + 12 + n, (const uint8_t *)ad.s, ad.n, (const uint8_t *)snapshot_json, n);
+  crypto_aead_write(&ctx, sealed + 12, sealed + 12 + n, (const uint8_t *)ad.s, ad.n, (const uint8_t *)plain, n);
   crypto_wipe(&ctx, sizeof(ctx));
   free(ad.s);
   char *blob = base64_encode(sealed, n + 28);
   free(sealed);
-  if (!valid_blob(blob)) { free(blob); return NULL; }
+  if (!valid_blob(blob) || (sample && strlen(blob) > HISTORY_BLOB)) { free(blob); return NULL; }
   long long stamp = (long long)time(NULL);
   Buffer message = buffer();
-  add(&message, "npulse-gpush\n%s\n%s\n%lld\n%s\n%s", group_id, slot, stamp, rid, blob);
+  add(&message, "npulse-%s\n%s\n%s\n%lld\n%s\n", sample ? "hpush" : "gpush", group_id, slot, stamp, rid);
+  if (sample) add(&message, "%s\n%u\n", epoch, sample->seq);
+  add(&message, "%s", blob);
   crypto_ed25519_sign(signature, signing_key, (const uint8_t *)message.s, message.n);
   free(message.s);
   hex_encode(sig, signature, 64);
   Buffer b = buffer();
-  add(&b, "{\"op\":\"gpush\",\"ts\":%lld,\"rid\":\"%s\",\"gid\":\"%s\",\"slot\":\"%s\",\"blob\":\"%s\",\"sig\":\"%s\"}", stamp, rid, group_id, slot, blob, sig);
+  add(&b, "{\"op\":\"%s\",\"ts\":%lld,\"rid\":\"%s\",\"gid\":\"%s\",\"slot\":\"%s\"", sample ? "hpush" : "gpush", stamp, rid, group_id, slot);
+  if (sample) add(&b, ",\"epoch\":\"%s\",\"seq\":%u", epoch, sample->seq);
+  add(&b, ",\"blob\":\"%s\",\"sig\":\"%s\"}", blob, sig);
   free(blob);
   return b.s;
+}
+static char *group_push_json(const char *snapshot_json) {
+  Json j;
+  if (parse(&j, snapshot_json)) return NULL;
+  char *id = string(&j, field(&j, 0, "id")), slot[33];
+  if (!id) return NULL;
+  group_slot(slot, id); free(id);
+  return group_publish_json(snapshot_json, slot, NULL);
+}
+static char *group_history_json(const HistorySample *s) {
+  char slot[33], epoch[17];
+  group_slot(slot, node_id); snprintf(epoch, sizeof(epoch), "%016llx", (unsigned long long)history.epoch);
+  Buffer plain = buffer(); add(&plain, "{\"epoch\":\"%s\",\"sample\":", epoch); history_array(&plain, s); add(&plain, "}");
+  char *json = group_publish_json(plain.s, slot, s);
+  free(plain.s); return json;
 }
 #endif

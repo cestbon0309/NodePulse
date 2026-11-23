@@ -28,4 +28,8 @@
   },
   "gget_message": "npulse-gget\n8e7bc0a364bc283bfb3d6c459310feb91aeda19344e86c6927f4b83ec0ece0e1\n1700000000\n00112233445566778899aabbccddeeff",
   "gget_signature": "1b840fb2e939dfe2076e39dabda0ce34cb000fd04c2d4f62850c12be8950b2ffb287c83c7970f42e05f33d1c547d01de5aaa291331d36aa6074abc52538c8006"
+,
+  "history_message":"npulse-gget\u000a8e7bc0a364bc283bfb3d6c459310feb91aeda19344e86c6927f4b83ec0ece0e1\u000a1700000000\u000a00112233445566778899aabbccddeeff\u000a{\"20b59f4be54d6f3c8c3251e7eb6efe05\":{\"epoch\":\"1234567890abcdef\",\"since\":1}}",
+  "history_signature":"6c7106736bbd9d892a1235409b3ffa75c496cd66d2f86ce7ec3ace0866a6ee7fe384f819d452ccdf919945500b0d3f70636596850369fc3a9dae2efb53dbce06",
+  "history_request":"{\"op\":\"gget\",\"ts\":1700000000,\"rid\":\"00112233445566778899aabbccddeeff\",\"gid\":\"8e7bc0a364bc283bfb3d6c459310feb91aeda19344e86c6927f4b83ec0ece0e1\",\"since\":{\"20b59f4be54d6f3c8c3251e7eb6efe05\":{\"epoch\":\"1234567890abcdef\",\"since\":1}},\"sig\":\"6c7106736bbd9d892a1235409b3ffa75c496cd66d2f86ce7ec3ace0866a6ee7fe384f819d452ccdf919945500b0d3f70636596850369fc3a9dae2efb53dbce06\"}"
 }

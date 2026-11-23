@@ -71,6 +71,7 @@ int main(int argc, char **argv) {
     free(message);
   }
   groups[0].slots[0].blob = strdup("expired");
+  strcpy(groups[0].slots[0].slot, slot);
   groups[0].slots[0].seen = 1;
   strcpy(groups[0].gid, group_id);
   group_expire(602);

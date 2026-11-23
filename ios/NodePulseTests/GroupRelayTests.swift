@@ -25,6 +25,9 @@ final class GroupRelayTests: XCTestCase {
         let signature: String
         let gget_message: String
         let gget_signature: String
+        let history_message: String
+        let history_signature: String
+        let history_request: String
         let gpush: Request
         struct Request: Decodable { let ts: Int; let rid: String }
     }
@@ -60,6 +63,22 @@ final class GroupRelayTests: XCTestCase {
         XCTAssertEqual(json["gid"] as? String, v.gid)
         XCTAssertEqual(json["rid"] as? String, v.gpush.rid)
         print("PASS CryptoKit C/Python vector: seed, gid, slot, blob, reference signatures and generated gget signature verification")
+    }
+    func testCHistorySignatureVector() throws {
+        let v = try vector(), crypto = try GroupCrypto(secret: v.S)
+        let publicKey = try Curve25519.Signing.PublicKey(rawRepresentation: bytes(v.gid))
+        XCTAssertTrue(publicKey.isValidSignature(bytes(v.history_signature), for: Data(v.history_message.utf8)))
+        let request = try crypto.getRequest(timestamp: v.gpush.ts, requestID: v.gpush.rid,
+                                            since: [v.slot: HistoryCursor(epoch: "1234567890abcdef", since: 1)])
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: request.json) as? [String: Any])
+        let map = try JSONSerialization.data(withJSONObject: json["since"]!, options: [.sortedKeys, .withoutEscapingSlashes])
+        let message = Data("npulse-gget\n\(v.gid)\n\(v.gpush.ts)\n\(v.gpush.rid)\n".utf8) + map
+        XCTAssertEqual(message, Data(v.history_message.utf8))
+        XCTAssertTrue(publicKey.isValidSignature(bytes(json["sig"] as! String), for: message))
+        let reference = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(v.history_request.utf8)) as? [String: Any])
+        XCTAssertEqual(reference["sig"] as? String, v.history_signature)
+        print("PASS C-generated/verified history vector: identical signed bytes and valid C/CryptoKit signatures")
+        print("HISTORY_APP_REQUEST \(request.json.base64EncodedString())")
     }
     func testInvalidBlobsAreDroppedAndCounted() throws {
         let v = try vector(), crypto = try GroupCrypto(secret: v.S)

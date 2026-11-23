@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 
 struct ProbeCrypto {
-    static let maxLength = 256 * 1024
+    static let maxLength = 2 * 1024 * 1024
     let key: SymmetricKey
     init(secret: String) { key = SymmetricKey(data: Data(SHA512.hash(data: Data(secret.utf8))).prefix(32)) }
     func seal(json: Data) throws -> Data {

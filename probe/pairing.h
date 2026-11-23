@@ -219,8 +219,30 @@ static char *pair_outer(int fd, double deadline) {
   if (!n || n > PAIR_FRAME || pair_io(fd, data + 4, n + 28, 0, deadline)) return NULL;
   return unframe(data, n + 32, relay_key);
 }
+static int pair_relay_connect(double deadline) {
+  unsigned generation = 0, next = 0;
+  int fd = -1; double attempt = 0;
+  while (running && monotime() < deadline) {
+    double now = monotime(); upstream_tick(now, group_upstream);
+    if (generation != upstream_generation) { generation = upstream_generation; next = 0; }
+    if (fd >= 0) {
+      struct pollfd pf = {fd, POLLOUT, 0};
+      int ready = poll(&pf, 1, 100);
+      if (ready > 0) {
+        int error = 0; socklen_t size = sizeof(error);
+        if (!getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &size) && !error) return fd;
+      } else if (now < attempt) continue;
+      close(fd); fd = -1;
+    }
+    if (next < upstream_addresses.count) {
+      fd = upstream_socket(&upstream_addresses.entries[next++]); attempt = now + 3;
+    } else { upstream_failed(); poll(NULL, 0, 100); }
+  }
+  if (fd >= 0) close(fd);
+  upstream_failed(); return -1;
+}
 static int pair_relay_open(FILE *tty, double deadline, const char *psk, int ascii) {
-  int fd = endpoint(group_upstream, "127.0.0.1", 0);
+  int fd = pair_relay_connect(deadline);
   if (fd < 0) return -1;
   uint8_t rid[16]; char hex[33];
   if (random_bytes(rid, 16)) { close(fd); return -1; }
@@ -294,6 +316,7 @@ static int pair_run(unsigned timeout, int ascii) {
   if (tty != stderr) fclose(tty);
   if (input != STDIN_FILENO) close(input);
   if (listener >= 0) close(listener);
+  upstream_shutdown();
   crypto_wipe(psk, sizeof(psk)); crypto_wipe(psk_text, strlen(psk_text)); free(psk_text);
   return result;
 }

@@ -5,6 +5,11 @@
 #ifndef PAIR
 #define PAIR ADMIN
 #endif
+#if PAIR
+#define PAIR_FLAGS "W:Q:"
+#else
+#define PAIR_FLAGS ""
+#endif
 #if ADMIN
 #define _FILE_OFFSET_BITS 64
 #define ADMIN_FLAGS "A:"
@@ -13,6 +18,8 @@
 #endif
 #include "json.h"
 #include "metrics.h"
+#include "history.h"
+static History history;
 #include "vendor/monocypher-ed25519.h"
 #include "vendor/monocypher.h"
 #include <errno.h>
@@ -21,8 +28,39 @@
 #include <poll.h>
 #include <signal.h>
 #include <sys/socket.h>
-#define MAX_FRAME (256 * 1024)
+#define MAX_FRAME (2 * 1024 * 1024)
+#define MAX_REQUEST (256 * 1024)
 static int random_bytes(void *p, size_t n);
+static void history_array(Buffer *b, const HistorySample *s) {
+  add(b, "[%u,%llu,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f]", s->seq,
+      (unsigned long long)s->ts, s->cpu, s->mem, s->swap, s->disk,
+      s->load[0], s->load[1], s->load[2], s->rx, s->tx);
+}
+static __attribute__((noinline)) double metric_percent(unsigned long long used, unsigned long long total) {
+  return total ? 100.0 * used / total : 0;
+}
+static void record_sample(void) {
+  HistorySample s = {0}; s.ts = (uint64_t)time(NULL);
+  s.cpu = bounded_metric(cpu_usage);
+  s.mem = metric_percent(metric_mu, metric_mt);
+  s.swap = metric_percent(metric_su, metric_st);
+  s.disk = metric_percent(metric_used, metric_disk);
+  for (int i = 0; i < 3; i++) s.load[i] = bounded_metric(metric_loads[i]);
+  s.rx = bounded_metric(rx_rate); s.tx = bounded_metric(tx_rate);
+  history_append(&history, s);
+}
+static int history_cursor(Json *j, int root, uint64_t *epoch, uint32_t *seq) {
+  int token = field(j, root, "since");
+  char *s = string(j, field(j, root, "epoch")), *end;
+  int good = token >= 0 && j->t[token].type != '"' && s && strlen(s) == 16 &&
+      strspn(s, "0123456789abcdef") == 16;
+  if (good) {
+    unsigned long long n = strtoull(j->s + j->t[token].start, &end, 10);
+    good = end == j->s + j->t[token].end && n <= UINT32_MAX;
+    if (good) { *epoch = strtoull(s, NULL, 16); *seq = (uint32_t)n; }
+  }
+  free(s); return good;
+}
 #include "group.h"
 #define CLIENTS 32
 static uint8_t key[32];
@@ -125,6 +163,7 @@ static int endpoint(const char *s, const char *def, int server) {
   return fd;
 }
 #include "egress.h"
+#include "upstream.h"
 static uint8_t *frame(const char *s, size_t *size, const uint8_t transport_key[32]) {
   size_t n = strlen(s);
   if (!n || n > MAX_FRAME)
@@ -182,7 +221,7 @@ typedef struct {
   int pipe_hello;
 #endif
 } Client;
-static char *nodes_json(const char *rid) {
+static char *nodes_json_since(const char *rid, uint64_t epoch, uint32_t since) {
   Buffer b = buffer();
   add(&b, "{\"ok\":true,");
   if (rid) {
@@ -197,7 +236,18 @@ static char *nodes_json(const char *rid) {
     add(&b, "%s,\"relay\":false}", s);
     free(s);
   }
-  add(&b, "]}");
+  add(&b, "]");
+  if (history.count) {
+    int full; unsigned count = history_since(&history, epoch, since, &full);
+    add(&b, ",\"history\":{\"epoch\":\"%016llx\",\"seq\":%u,\"full\":%s,\"samples\":[",
+        (unsigned long long)history.epoch, history.seq, full ? "true" : "false");
+    for (unsigned i = history.count - count; i < history.count; i++) {
+      if (i != history.count - count) add(&b, ",");
+      history_array(&b, history_at(&history, i));
+    }
+    add(&b, "]}");
+  }
+  add(&b, "}");
   return b.s;
 }
 static char *request(uint8_t *p, size_t total, int relay, Client *client) {
@@ -255,7 +305,9 @@ static char *request(uint8_t *p, size_t total, int relay, Client *client) {
       free(rid);
       goto done;
     }
-    response = nodes_json(rid);
+    uint64_t epoch = 0; uint32_t since = 0;
+    history_cursor(&j, 0, &epoch, &since);
+    response = nodes_json_since(rid, epoch, since);
     free(rid);
   }
 done:
@@ -272,6 +324,7 @@ static int same_secret(const char *s, size_t n) {
   return diff == 0;
 }
 static char *http_response(char *s) {
+  uint64_t epoch = 0; uint32_t since = 0;
   char *e = strstr(s, "\r\n");
   int auth = 0, route = 0;
   if (e) {
@@ -303,12 +356,16 @@ static char *http_response(char *s) {
         if (!strncmp(v, "Bearer ", 7))
           auth |= same_secret(v + 7, strlen(v + 7));
       }
+      if (!strncasecmp(line, "X-Npulse-History:", 17)) {
+        Json j;
+        if (!parse(&j, line + 17)) history_cursor(&j, 0, &epoch, &since);
+      }
       line = next + 2;
     }
   }
   Buffer b = buffer();
   if (route && auth) {
-    char *json = nodes_json(NULL);
+    char *json = nodes_json_since(NULL, epoch, since);
     add(&b,
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
         "%zu\r\nConnection: close\r\n\r\n%s",
@@ -329,32 +386,52 @@ static void discard(Client *c) {
   memset(c, 0, sizeof(*c));
   c->fd = -1;
 }
-static void send_push(const char *address, const char *json, const uint8_t transport_key[32]) {
-  int fd = endpoint(address, "127.0.0.1", 0);
-  if (fd < 0)
-    return;
-  size_t len = 0;
-  uint8_t *p = frame(json, &len, transport_key);
-  double deadline = monotime() + 1;
-  size_t off = 0;
-  while (p && off < len && monotime() < deadline) {
-    struct pollfd pf = {fd, POLLOUT, 0};
-    if (poll(&pf, 1, 100) <= 0)
-      continue;
-    ssize_t n = send(fd, p + off, len - off, 0);
-    if (n > 0)
-      off += (size_t)n;
-    else if (errno != EAGAIN && errno != EINTR)
-      break;
+typedef struct { int fd; uint8_t *frame; size_t length, sent; double deadline; uint32_t seq; unsigned address, generation; } Publisher;
+static Publisher publishers[2] = {{.fd = -1}, {.fd = -1}};
+static uint32_t published_seq;
+static void publish_close(Publisher *p) {
+  if (p->fd >= 0) close(p->fd);
+  free(p->frame); p->frame = NULL; p->fd = -1;
+}
+static void publish_failed(Publisher *p) {
+  if (p->generation == upstream_generation && p->address == publish_next) publish_next++;
+  upstream_failed(); publish_close(p);
+}
+static void queue_push(int channel, const char *json, uint32_t seq) {
+  Publisher *p = &publishers[channel];
+  if (!json || p->frame || !upstream_addresses.count) return;
+  p->address = publish_next; p->generation = upstream_generation;
+  const UpstreamAddress *a = &upstream_addresses.entries[publish_next % upstream_addresses.count];
+  int fd = upstream_socket(a);
+  if (fd < 0) { publish_failed(p); return; }
+  p->frame = frame(json, &p->length, relay_key);
+  if (!p->frame) { close(fd); return; }
+  p->fd = fd; p->sent = 0; p->seq = seq; p->deadline = monotime() + 2;
+}
+static void publish_tick(double now) {
+  for (int i = 0; i < 2; i++) {
+    Publisher *p = &publishers[i];
+    if (!p->frame) continue;
+    struct pollfd pf = {p->fd, POLLOUT, 0};
+    if (now >= p->deadline) { publish_failed(p); continue; }
+    if (poll(&pf, 1, 0) <= 0) continue;
+    ssize_t n = send(p->fd, p->frame + p->sent, p->length - p->sent, 0);
+    if (n > 0) p->sent += (size_t)n;
+    else if (!n || (errno != EAGAIN && errno != EINTR)) { publish_failed(p); continue; }
+    if (p->sent == p->length) { if (i) published_seq = p->seq; publish_close(p); }
   }
-  free(p);
-  close(fd);
+  if (group_upstream && upstream_addresses.count && !publishers[1].frame && history.count && published_seq != history.seq) {
+    uint32_t pending = history.seq - published_seq;
+    unsigned offset = pending > history.count ? 0 : history.count - pending;
+    const HistorySample *s = history_at(&history, offset);
+    char *json = group_history_json(s); queue_push(1, json, s->seq); free(json);
+  }
 }
 static void push(void) {
   char *s = snapshot(display);
   if (group_upstream) {
     char *json = group_push_json(s);
-    if (json) { send_push(group_upstream, json, relay_key); free(json); }
+    if (json) { queue_push(0, json, 0); free(json); }
   }
   free(s);
 }
@@ -375,7 +452,7 @@ static int relay_http_header(Client *c) {
       while (*value == ' ' || *value == '\t') value++;
       char *tail;
       unsigned long n = strtoul(value, &tail, 10);
-      if (!isdigit((unsigned char)*value) || *tail || n < 33 || n > MAX_FRAME + 32) route = 0;
+      if (!isdigit((unsigned char)*value) || *tail || n < 33 || n > MAX_REQUEST + 32) route = 0;
       length = (size_t)n;
       lengths++;
     } else if (!strncasecmp(line, "Transfer-Encoding:", 18)) route = 0;
@@ -478,6 +555,11 @@ static void config(const char *path) {
   fclose(f);
 }
 static void usage(void) {
+#if !ADMIN && !PAIR
+  puts("npulse lite: -l addr:port -k KEY | -H addr:port -k KEY\n"
+       "Relay: -S addr:port -T TOKEN; publish: -R host:port -T TOKEN -G GROUP\n"
+       "Options: -i seconds -n name -c config -h. Docs: README.md");
+#else
   puts("Egress IP (full builds): -E http://host/path[,http://fallback/path] (default enabled).\nConfig: egress_service=off disables discovery; lite omits it. HTTP discovery is unauthenticated.");
 #if PAIR
   puts("Temporary pairing: -P (-l addr:port -k SECRET | -R relay:port -T TOKEN -G GROUP) [-n NAME] [-W seconds (default 600)] [-Q ascii]");
@@ -497,31 +579,37 @@ static void usage(void) {
 #if ADMIN
   puts("Admin (disabled by default): -A ED25519_PUBKEY[,PUBKEY...] (requires -l or -R).\nConfig key: admin_keys. Session idle timeout: 600 seconds.");
 #endif
+#endif
 }
 int main(int argc, char **argv) {
-  int opt, pairing = 0, qr_ascii = 0;
+  int opt, pairing = 0;
+#if PAIR
+  int qr_ascii = 0;
   unsigned pair_timeout = 600;
+#endif
   for (int i = 1; i < argc; i++)
     if (!strcmp(argv[i], "-h")) {
       usage();
       return 0;
     }
-  while ((opt = getopt(argc, argv, "PE:k:l:H:ui:n:c:S:T:G:R:W:Q:" ADMIN_FLAGS "h")) != -1)
+  while ((opt = getopt(argc, argv, "PE:k:l:H:ui:n:c:S:T:G:R:" PAIR_FLAGS ADMIN_FLAGS "h")) != -1)
     if (opt == 'c')
       config(optarg);
   optind = 1;
-  while ((opt = getopt(argc, argv, "PE:k:l:H:ui:n:c:S:T:G:R:W:Q:" ADMIN_FLAGS "h")) != -1) {
+  while ((opt = getopt(argc, argv, "PE:k:l:H:ui:n:c:S:T:G:R:" PAIR_FLAGS ADMIN_FLAGS "h")) != -1) {
     if (opt == 'c')
       continue;
     if (opt == '?')
       return 2;
     if (opt == 'P') { pairing = 1; continue; }
+#if PAIR
     if (opt == 'Q') { if (strcmp(optarg, "ascii")) { fprintf(stderr, "-Q accepts ascii\n"); return 2; } qr_ascii = 1; continue; }
     if (opt == 'W') {
       char *end; errno = 0; unsigned long value = strtoul(optarg, &end, 10);
       if (errno || *end || !value || value > 86400) { fprintf(stderr, "invalid pairing timeout (1..86400)\n"); return 2; }
       pair_timeout = (unsigned)value; continue;
     }
+#endif
     char k[2] = {(char)opt, 0};
     option(k, optarg);
   }
@@ -536,8 +624,7 @@ int main(int argc, char **argv) {
     if (!display) display = hostname_buf;
     return pair_run(pair_timeout, qr_ascii);
 #else
-    (void)pair_timeout; (void)qr_ascii;
-    fprintf(stderr, "此构建不支持配对（PAIR=0）；lite 版请运行 install.sh pair，临时使用完整版配对。\n");
+    fprintf(stderr, "PAIR=0; use install.sh pair\n");
     return 2;
 #endif
   }
@@ -560,16 +647,22 @@ int main(int argc, char **argv) {
     crypto_sha512(hash, (const uint8_t *)relay_token, strlen(relay_token));
     memcpy(relay_key, hash, 32);
   }
-  if (group_upstream) group_init();
+  if (group_upstream) {
+    group_init();
+  }
 #if ADMIN
   if (admin_init()) { fprintf(stderr, "invalid admin_keys or missing -l/-R\n"); return 2; }
   signal(SIGCHLD, admin_sigchld);
 #endif
   crypto_wipe(hash, sizeof(hash));
   if (collect) {
+    if (random_bytes(&history.epoch, sizeof(history.epoch)) || !history.epoch) {
+      fprintf(stderr, "cannot initialize history epoch\n"); return 1;
+    }
     metrics_init(display);
     if (!display) display = hostname_buf;
     sample();
+    record_sample();
   }
 #if ADMIN || PAIR
   pipe_init();
@@ -593,6 +686,7 @@ int main(int argc, char **argv) {
     clients[i].fd = -1;
   double next_sample = monotime() + 1, next_push = monotime();
   while (running) {
+    upstream_tick(monotime(), group_upstream);
     egress_tick(monotime(), collect);
 #if ADMIN || PAIR
     pipe_tick(monotime());
@@ -623,6 +717,7 @@ int main(int argc, char **argv) {
 #endif
     poll(pf, (nfds_t)count, 100);
     double now = monotime();
+    publish_tick(now);
 #if ADMIN || PAIR
     pipe_io(pf + pipe_base);
 #endif
@@ -640,9 +735,11 @@ int main(int argc, char **argv) {
 #endif
     if (collect && now >= next_sample) {
       sample();
-      next_sample = now + 1;
+      record_sample();
+      next_sample += 1;
+      if (next_sample <= now) next_sample = now + 1;
     }
-    if (group_upstream && now >= next_push) {
+    if (group_upstream && upstream_addresses.count && now >= next_push) {
       push();
       next_push = now + interval;
     }
@@ -723,7 +820,7 @@ int main(int argc, char **argv) {
         uint32_t be;
         memcpy(&be, c->in, 4);
         size_t len = ntohl(be);
-        if (!len || len > MAX_FRAME) {
+        if (!len || len > MAX_REQUEST) {
           discard(c);
           continue;
         }
@@ -798,6 +895,7 @@ int main(int argc, char **argv) {
     }
   }
   egress_shutdown();
+  upstream_shutdown();
   for (int i = 0; i < CLIENTS; i++)
     if (clients[i].fd >= 0)
       discard(&clients[i]);

@@ -153,8 +153,9 @@ struct NodeDetail: View {
             }.chartForegroundStyleScale([L10n.text("下行"): theme.ink, L10n.text("上行"): theme.secondaryInk])
                 .chartLegend(metric == L10n.text("网络") ? .visible : .hidden)
                 .chartXSelection(value: $selection)
+                .chartXScale(domain: (item.history.last?.date ?? Date()).addingTimeInterval(-120)...(item.history.last?.date ?? Date()))
                 .chartYScale(domain: metric == L10n.text("网络") ? 0...max(1000, item.history.flatMap { [$0.rxRate, $0.txRate] }.max() ?? 1000) : 0...100)
-                .chartXAxis { AxisMarks(values: .automatic(desiredCount: 3)) { _ in AxisValueLabel(format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)); AxisGridLine() } }
+                .chartXAxis { AxisMarks(values: .stride(by: .second, count: 30)) { _ in AxisValueLabel(format: .dateTime.minute(.twoDigits).second(.twoDigits)); AxisGridLine() } }
                 .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { _ in AxisValueLabel(); AxisGridLine() } }
                 .frame(height: 170).accessibilityIdentifier("resource-chart")
             Text(L10n.text("轻触或拖动图表，查看采样数值")).font(.caption2).foregroundStyle(.tertiary)

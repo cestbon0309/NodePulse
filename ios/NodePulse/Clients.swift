@@ -3,16 +3,23 @@ import Network
 
 struct DirectClient {
     func fetch(_ endpoint: Endpoint, secret: String) async throws -> [NodeSnapshot] {
+        try await fetchHistory(endpoint, secret: secret).snapshots
+    }
+    func fetchHistory(_ endpoint: Endpoint, secret: String, cursor: HistoryCursor? = nil) async throws -> ProbeFetch {
         guard case let .direct(host, port) = endpoint.kind, port > 0,
               let nwPort = NWEndpoint.Port(rawValue: port) else { throw ProbeError.refused }
         let rid = (0..<16).map { _ in String(format: "%02x", UInt8.random(in: .min ... .max)) }.joined()
-        let request = try JSONSerialization.data(withJSONObject: ["op": "get", "ts": Int(Date().timeIntervalSince1970), "rid": rid])
+        var object: [String: Any] = ["op": "get", "ts": Int(Date().timeIntervalSince1970), "rid": rid]
+        if let cursor { object["since"] = cursor.since; object["epoch"] = cursor.epoch }
+        let request = try JSONSerialization.data(withJSONObject: object)
         let crypto = ProbeCrypto(secret: secret)
         let operation = DirectOperation(host: host, port: nwPort, frame: try crypto.seal(json: request))
         let response = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { operation.start($0) }
         } onCancel: { operation.cancel() }
-        return try Self.decodeResponse(crypto.open(frame: response), requestID: rid)
+        let data = try crypto.open(frame: response)
+        _ = try Self.decodeResponse(data, requestID: rid)
+        return try ProbeFetch.direct(data)
     }
     static func decodeResponse(_ data: Data, requestID: String) throws -> [NodeSnapshot] {
         guard let response = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -105,11 +112,18 @@ struct HTTPSClient {
         return url
     }
     func fetch(_ endpoint: Endpoint, secret: String) async throws -> [NodeSnapshot] {
+        try await fetchHistory(endpoint, secret: secret).snapshots
+    }
+    func fetchHistory(_ endpoint: Endpoint, secret: String, cursor: HistoryCursor? = nil) async throws -> ProbeFetch {
         guard case let .https(input) = endpoint.kind else { throw ProbeError.invalidURL }
         var request = URLRequest(url: try Self.nodesURL(input))
         request.timeoutInterval = 8
         request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
-        return try ProbeResponse.decode(await Self.data(for: request))
+        if let cursor {
+            let data = try JSONEncoder().encode(cursor)
+            request.setValue(String(decoding: data, as: UTF8.self), forHTTPHeaderField: "X-Npulse-History")
+        }
+        return try ProbeFetch.direct(await Self.data(for: request))
     }
     static func data(for request: URLRequest) async throws -> Data {
         let config = URLSessionConfiguration.ephemeral
@@ -128,7 +142,7 @@ struct HTTPSClient {
             throw ProbeError.transport(L10n.text("连接失败：%@", String(describing: error.localizedDescription)))
         }
     }
-    static let responseLimit = 262144 + 32
+    static let responseLimit = ProbeCrypto.maxLength + 32
     static func boundedData<S: AsyncSequence>(_ bytes: S, expectedLength: Int64) async throws -> Data where S.Element == UInt8 {
         guard expectedLength <= responseLimit else { throw ProbeError.transport(L10n.text("响应过大")) }
         var data = Data()
@@ -148,9 +162,19 @@ private final class NoRedirect: NSObject, URLSessionTaskDelegate {
 
 struct GroupClient {
     static func relayURL(_ input: String) throws -> URL { try HTTPSClient.apiURL(input, path: "/api/relay") }
-    func fetch(_ endpoint: Endpoint, token: String, groupSecret: String) async throws -> ProbeFetch {
+    func fetch(_ endpoint: Endpoint, token: String, groupSecret: String,
+               cursors: [String: HistoryCursor] = [:], history: Bool = true) async throws -> ProbeFetch {
+        do { return try await fetchOnce(endpoint, token: token, groupSecret: groupSecret, cursors: cursors, history: history) }
+        catch {
+            if Task.isCancelled || !history { throw error }
+            return try await fetchOnce(endpoint, token: token, groupSecret: groupSecret, cursors: cursors, history: false)
+        }
+    }
+    private func fetchOnce(_ endpoint: Endpoint, token: String, groupSecret: String,
+                           cursors: [String: HistoryCursor], history: Bool) async throws -> ProbeFetch {
         let group = try GroupCrypto(secret: groupSecret)
-        let request = try group.getRequest()
+        let slots = Dictionary(uniqueKeysWithValues: cursors.map { (group.slot(for: $0.key), $0.value) })
+        let request = try group.getRequest(since: history ? slots : nil)
         let transport = ProbeCrypto(secret: token)
         let frame = try transport.seal(json: request.json)
         let response: Data
@@ -169,16 +193,19 @@ struct GroupClient {
             response = try await HTTPSClient.data(for: request)
         default: throw ProbeError.parse
         }
-        return try group.decodeResponse(transport.open(frame: response), requestID: request.rid)
+        var result = try group.decodeResponse(transport.open(frame: response), requestID: request.rid)
+        result.legacyRelay = !history
+        return result
     }
 }
 
-func fetchProbe(_ endpoint: Endpoint, secret: String, groupSecret: String? = nil) async throws -> ProbeFetch {
+func fetchProbe(_ endpoint: Endpoint, secret: String, groupSecret: String? = nil,
+                cursors: [String: HistoryCursor] = [:], history: Bool = true) async throws -> ProbeFetch {
     switch endpoint.kind {
-    case .direct: return ProbeFetch(snapshots: try await DirectClient().fetch(endpoint, secret: secret))
-    case .https: return ProbeFetch(snapshots: try await HTTPSClient().fetch(endpoint, secret: secret))
+    case .direct: return try await DirectClient().fetchHistory(endpoint, secret: secret, cursor: cursors.values.first)
+    case .https: return try await HTTPSClient().fetchHistory(endpoint, secret: secret, cursor: cursors.values.first)
     case .groupTCP, .groupHTTPS:
         guard let groupSecret, !groupSecret.isEmpty else { throw ProbeError.missingSecret }
-        return try await GroupClient().fetch(endpoint, token: secret, groupSecret: groupSecret)
+        return try await GroupClient().fetch(endpoint, token: secret, groupSecret: groupSecret, cursors: cursors, history: history)
     }
 }

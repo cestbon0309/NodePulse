@@ -964,7 +964,7 @@ if [ -n "$ALSO_RELAY" ] && [ "$ALSO_RELAY" -lt 1024 ]; then PRIVILEGED_PORT=yes;
 fetch_binary
 replace_binary; write_config; write_unit
 service enable
-if [ "$MODE" = 4 ]; then (BIND=0.0.0.0; open_firewall) || exit 1; fi
+if [ "$MODE" = 4 ]; then relay_bind=$BIND; BIND=0.0.0.0; open_firewall; BIND=$relay_bind; fi
 if [ "$LISTEN" = yes ] || [ "$MODE" = 3 ]; then
     if [ "$MODE" = 1 ]; then
         open_firewall

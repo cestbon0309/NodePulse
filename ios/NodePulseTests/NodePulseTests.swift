@@ -180,6 +180,65 @@ final class NodePulseTests: XCTestCase {
         XCTAssertNil(HistorySample.displayed(in: [], at: nil))
         XCTAssertNil(HistorySample.displayed(in: [], at: start))
     }
+    func testChartClockSlidesBetweenSamplesWithoutResettingEachPoll() {
+        let now = Date(timeIntervalSince1970: 1000)
+        var clock = HistoryChartClock()
+        clock.observe(nil, now: now)
+        XCTAssertEqual(clock.end(at: now).timeIntervalSince1970, 999)
+        clock.observe(Date(timeIntervalSince1970: 900), now: now)
+        XCTAssertEqual(clock.end(at: now).timeIntervalSince1970, 899)
+        XCTAssertEqual(clock.end(at: now.addingTimeInterval(0.5)).timeIntervalSince1970, 899.5)
+        clock.observe(Date(timeIntervalSince1970: 901), now: now.addingTimeInterval(1.2))
+        XCTAssertEqual(clock.end(at: now.addingTimeInterval(1.2)).timeIntervalSince1970, 900.2, accuracy: 0.0001)
+        clock.observe(Date(timeIntervalSince1970: 800), now: now.addingTimeInterval(2))
+        XCTAssertEqual(clock.end(at: now.addingTimeInterval(2)).timeIntervalSince1970, 799)
+    }
+    func testChartMarksAreAbsoluteAndKeepTheirTextBetweenSeconds() {
+        let first = HistoryChartClock.marks(ending: Date(timeIntervalSince1970: 1001))
+        let second = HistoryChartClock.marks(ending: Date(timeIntervalSince1970: 1002))
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(first.map(\.timeIntervalSince1970), [900, 930, 960, 990])
+        let boundary = HistoryChartClock.marks(ending: Date(timeIntervalSince1970: 1020))
+        XCTAssertEqual(boundary.map(\.timeIntervalSince1970), [900, 930, 960, 990, 1020])
+        let after = HistoryChartClock.marks(ending: Date(timeIntervalSince1970: 1020.1))
+        XCTAssertEqual(after.map(\.timeIntervalSince1970), [930, 960, 990, 1020])
+        XCTAssertTrue(after.allSatisfy { $0.timeIntervalSince1970.truncatingRemainder(dividingBy: 30) == 0 })
+    }
+    func testChartScaleRoundsAndHoldsBeforeShrinking() {
+        let now = Date(timeIntervalSince1970: 1000)
+        var scale = HistoryChartScale()
+        for invalid in [Double.nan, .infinity, -1, 0] { scale.observe(peak: invalid, now: now) }
+        XCTAssertEqual(scale.upper, 1000)
+        scale.observe(peak: 1800, now: now)
+        XCTAssertEqual(scale.upper, 5000)
+        for peak in [1700.0, 1900, 1801] { scale.observe(peak: peak, now: now) }
+        XCTAssertEqual(scale.upper, 5000)
+        scale.observe(peak: 900, now: now.addingTimeInterval(1))
+        scale.observe(peak: 900, now: now.addingTimeInterval(30.9))
+        XCTAssertEqual(scale.upper, 5000)
+        scale.observe(peak: 900, now: now.addingTimeInterval(31))
+        XCTAssertEqual(scale.upper, 2000)
+        scale.observe(peak: 100_000, now: now.addingTimeInterval(32))
+        XCTAssertEqual(scale.upper, 200_000)
+        scale.observe(peak: 1000, now: now.addingTimeInterval(33))
+        scale.observe(peak: 100_000, now: now.addingTimeInterval(60))
+        scale.observe(peak: 1000, now: now.addingTimeInterval(61))
+        scale.observe(peak: 1000, now: now.addingTimeInterval(62))
+        XCTAssertEqual(scale.upper, 200_000)
+        XCTAssertTrue(HistoryChartScale.roundedCeiling(Double.greatestFiniteMagnitude).isFinite)
+    }
+    func testChartIdentitySurvivesRingEvictionAndValueCorrection() {
+        let start = Date(timeIntervalSince1970: 1000)
+        let points = (0..<120).map { HistorySample(date: start.addingTimeInterval(Double($0)), cpu: 1, memPercent: 2, rxRate: 3, txRate: 4, seq: UInt32($0)) }
+        let rolled = Array(points.dropFirst())
+        XCTAssertEqual(points[1].chartID, rolled[0].chartID)
+        var corrected = points[1]; corrected.cpu = 50
+        XCTAssertEqual(corrected.chartID, points[1].chartID)
+        corrected.seq = nil
+        XCTAssertNotEqual(corrected.chartID, points[1].chartID)
+        var legacy = corrected; legacy.rxRate = 100
+        XCTAssertEqual(legacy.chartID, corrected.chartID)
+    }
 
     @MainActor func testEncryptionBadgeMatchesEndpointTransport() {
         let suite = "Encryption-\(UUID())", defaults = UserDefaults(suiteName: suite)!

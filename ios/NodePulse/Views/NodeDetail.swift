@@ -5,8 +5,6 @@ struct NodeDetail: View {
     @Environment(\.pulseTheme) private var theme
     var store: MonitorStore
     var nodeKey: String
-    @State private var metric = "CPU"
-    @State private var selection: Date?
     @State private var copied = false
     @State private var deleting: NodeItem?
     @State private var showingEgressIP = false
@@ -124,42 +122,150 @@ struct NodeDetail: View {
         }.padding(.vertical, 8)
     }
     private func chart(_ item: NodeItem) -> some View {
+        ResourceHistoryChart(history: item.history)
+    }
+}
+
+struct HistoryChartPointID: Hashable {
+    var seq: UInt32?
+    var date: Date
+}
+extension HistorySample {
+    var chartID: HistoryChartPointID { HistoryChartPointID(seq: seq, date: date) }
+}
+
+struct HistoryChartClock {
+    private var offset: TimeInterval?
+    private var lastSample: Date?
+    mutating func observe(_ latest: Date?, now: Date) {
+        guard let latest else { return }
+        let desired = latest.timeIntervalSince(now) - 1
+        if offset == nil || latest < (lastSample ?? latest) || abs(desired - (offset ?? desired)) > 10 {
+            offset = desired
+        }
+        lastSample = latest
+    }
+    func end(at now: Date) -> Date { now.addingTimeInterval(offset ?? -1) }
+    static func marks(ending end: Date) -> [Date] {
+        let start = ceil((end.timeIntervalSince1970 - 120) / 30) * 30
+        return (0...4).map { Date(timeIntervalSince1970: start + Double($0) * 30) }.filter { $0 <= end }
+    }
+}
+
+struct HistoryChartScale {
+    private(set) var upper: Double = 1000
+    private var lowSince: Date?
+    static func roundedCeiling(_ value: Double) -> Double {
+        guard value.isFinite, value > 1000 else { return 1000 }
+        let magnitude = pow(10, floor(log10(value)))
+        let step = [1.0, 2, 5, 10].first { value / magnitude <= $0 } ?? 10
+        return min(Double.greatestFiniteMagnitude, step * magnitude)
+    }
+    mutating func observe(peak: Double, now: Date) {
+        let safe = peak.isFinite ? max(0, min(peak, Double.greatestFiniteMagnitude / 1.2)) : 0
+        let desired = Self.roundedCeiling(safe * 1.15)
+        if desired > upper { upper = desired; lowSince = nil }
+        else if desired <= upper / 2 {
+            if let lowSince, now.timeIntervalSince(lowSince) >= 30 { upper = desired; self.lowSince = nil }
+            else if lowSince == nil { lowSince = now }
+        } else { lowSince = nil }
+    }
+}
+
+private struct ResourceHistoryChart: View {
+    @Environment(\.pulseTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var history: [HistorySample]
+    @State private var metric = "CPU"
+    @State private var selection: Date?
+    @State private var clock = HistoryChartClock()
+    @State private var scale = HistoryChartScale()
+    private var network: Bool { metric == L10n.text("网络") }
+    private var download: Color { theme == .default ? .blue : theme.ink }
+    private var upload: Color {
+        Color(uiColor: UIColor { traits in
+            if theme == .grayscale { return UIColor(white: traits.userInterfaceStyle == .dark ? 0.48 : 0.55, alpha: 1) }
+            return traits.userInterfaceStyle == .dark ? .systemOrange : UIColor(red: 0.76, green: 0.30, blue: 0.03, alpha: 1)
+        })
+    }
+    var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Text(L10n.text("资源趋势")).font(.headline); Spacer(); Text(L10n.text("最近 %@ 次采样", String(describing: item.history.count))).font(.caption).foregroundStyle(.secondary) }
+            HStack { Text(L10n.text("资源趋势")).font(.headline); Spacer(); Text(L10n.text("最近 %@ 次采样", String(describing: history.count))).font(.caption).foregroundStyle(.secondary) }
             Picker(L10n.text("趋势指标"), selection: $metric) { ForEach(["CPU", L10n.text("内存"), L10n.text("网络")], id: \.self) { Text($0) } }.pickerStyle(.segmented)
-            let sample = HistorySample.displayed(in: item.history, at: selection)
+            let sample = HistorySample.displayed(in: history, at: selection)
             HStack {
-                Text(sample.map { metric == L10n.text("网络") ? "↓ \(PulseFormat.rate($0.rxRate))   ↑ \(PulseFormat.rate($0.txRate))" : String(format: "%.1f%%", metric == "CPU" ? $0.cpu : $0.memPercent) } ?? "—")
-                    .foregroundStyle(theme.ink).contentTransition(.numericText())
+                if network {
+                    Text(sample.map { "↓ \(PulseFormat.rate($0.rxRate))" } ?? "—").foregroundStyle(download)
+                    Text(sample.map { "↑ \(PulseFormat.rate($0.txRate))" } ?? "—").foregroundStyle(upload)
+                } else {
+                    Text(sample.map { String(format: "%.1f%%", metric == "CPU" ? $0.cpu : $0.memPercent) } ?? "—").foregroundStyle(theme.ink)
+                }
                 Spacer(minLength: 8)
                 Text(sample.map { $0.date.formatted(date: .omitted, time: .standard) } ?? "—").foregroundStyle(.secondary)
             }.font(.caption.monospacedDigit()).lineLimit(1).minimumScaleFactor(0.7).frame(height: 24)
                 .accessibilityIdentifier("chart-readout")
-            Chart(Array(item.history.enumerated()), id: \.offset) { _, sample in
-                if metric == L10n.text("网络") {
-                    AreaMark(x: .value(L10n.text("时间"), sample.date), y: .value(L10n.text("速率"), sample.rxRate), stacking: .unstacked)
-                        .foregroundStyle(LinearGradient(colors: [theme.ink.opacity(0.18), .clear], startPoint: .top, endPoint: .bottom)).interpolationMethod(.catmullRom)
-                    LineMark(x: .value(L10n.text("时间"), sample.date), y: .value(L10n.text("速率"), sample.rxRate), series: .value(L10n.text("方向"), L10n.text("下行")))
-                        .foregroundStyle(by: .value(L10n.text("方向"), L10n.text("下行"))).interpolationMethod(.catmullRom)
-                    LineMark(x: .value(L10n.text("时间"), sample.date), y: .value(L10n.text("速率"), sample.txRate), series: .value(L10n.text("方向"), L10n.text("上行")))
-                        .foregroundStyle(by: .value(L10n.text("方向"), L10n.text("上行"))).interpolationMethod(.catmullRom)
-                } else {
-                    AreaMark(x: .value(L10n.text("时间"), sample.date), y: .value(L10n.text("使用率"), metric == "CPU" ? sample.cpu : sample.memPercent))
-                        .foregroundStyle(LinearGradient(colors: [theme.ink.opacity(0.28), theme.ink.opacity(0.01)], startPoint: .top, endPoint: .bottom)).interpolationMethod(.catmullRom)
-                    LineMark(x: .value(L10n.text("时间"), sample.date), y: .value(L10n.text("使用率"), metric == "CPU" ? sample.cpu : sample.memPercent))
-                        .foregroundStyle(theme.ink).interpolationMethod(.catmullRom)
-                }
-                if let selection { RuleMark(x: .value(L10n.text("时间"), selection)).foregroundStyle(.secondary.opacity(0.4)) }
-            }.chartForegroundStyleScale([L10n.text("下行"): theme.ink, L10n.text("上行"): theme.secondaryInk])
-                .chartLegend(metric == L10n.text("网络") ? .visible : .hidden)
-                .chartXSelection(value: $selection)
-                .chartXScale(domain: (item.history.last?.date ?? Date()).addingTimeInterval(-120)...(item.history.last?.date ?? Date()))
-                .chartYScale(domain: metric == L10n.text("网络") ? 0...max(1000, item.history.flatMap { [$0.rxRate, $0.txRate] }.max() ?? 1000) : 0...100)
-                .chartXAxis { AxisMarks(values: .stride(by: .second, count: 30)) { _ in AxisValueLabel(format: .dateTime.minute(.twoDigits).second(.twoDigits)); AxisGridLine() } }
-                .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { _ in AxisValueLabel(); AxisGridLine() } }
-                .frame(height: 170).accessibilityIdentifier("resource-chart")
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+                plot(ending: reduceMotion ? (history.last?.date ?? context.date) : clock.end(at: context.date))
+            }
+            if network {
+                HStack(spacing: 20) {
+                    legend(L10n.text("下行"), color: download, dashed: false)
+                    legend(L10n.text("上行"), color: upload, dashed: true)
+                }.font(.caption2)
+            }
             Text(L10n.text("轻触或拖动图表，查看采样数值")).font(.caption2).foregroundStyle(.tertiary)
         }
+        .onChange(of: history, initial: true) { _, points in
+            let now = Date()
+            clock.observe(points.last?.date, now: now)
+            scale.observe(peak: points.flatMap { [$0.rxRate, $0.txRate] }.filter(\.isFinite).max() ?? 0, now: now)
+        }
+        .transaction { $0.animation = nil }
+    }
+    private func legend(_ title: String, color: Color, dashed: Bool) -> some View {
+        HStack(spacing: 5) {
+            Path { path in path.move(to: .zero); path.addLine(to: CGPoint(x: 20, y: 0)) }
+                .stroke(color, style: StrokeStyle(lineWidth: 2, dash: dashed ? [5, 3] : []))
+                .frame(width: 20, height: 2)
+            Text(title).foregroundStyle(color)
+        }
+    }
+    private func plot(ending end: Date) -> some View {
+        Chart(history, id: \.chartID) { sample in
+            if network {
+                AreaMark(x: .value(L10n.text("时间"), sample.date), y: .value(L10n.text("速率"), sample.rxRate), stacking: .unstacked)
+                    .foregroundStyle(LinearGradient(colors: [download.opacity(0.18), .clear], startPoint: .top, endPoint: .bottom)).interpolationMethod(.linear)
+                LineMark(x: .value(L10n.text("时间"), sample.date), y: .value(L10n.text("速率"), sample.rxRate), series: .value(L10n.text("方向"), L10n.text("下行")))
+                    .foregroundStyle(download).lineStyle(StrokeStyle(lineWidth: 2)).interpolationMethod(.linear)
+                LineMark(x: .value(L10n.text("时间"), sample.date), y: .value(L10n.text("速率"), sample.txRate), series: .value(L10n.text("方向"), L10n.text("上行")))
+                    .foregroundStyle(upload).lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 3])).interpolationMethod(.linear)
+            } else {
+                AreaMark(x: .value(L10n.text("时间"), sample.date), y: .value(L10n.text("使用率"), metric == "CPU" ? sample.cpu : sample.memPercent))
+                    .foregroundStyle(LinearGradient(colors: [theme.ink.opacity(0.28), theme.ink.opacity(0.01)], startPoint: .top, endPoint: .bottom)).interpolationMethod(.linear)
+                LineMark(x: .value(L10n.text("时间"), sample.date), y: .value(L10n.text("使用率"), metric == "CPU" ? sample.cpu : sample.memPercent))
+                    .foregroundStyle(theme.ink).interpolationMethod(.linear)
+            }
+            if let selection { RuleMark(x: .value(L10n.text("时间"), selection)).foregroundStyle(.secondary.opacity(0.4)) }
+        }.chartLegend(.hidden)
+            .chartXSelection(value: $selection)
+            .chartXScale(domain: end.addingTimeInterval(-120)...end)
+            .chartYScale(domain: network ? 0...scale.upper : 0...100)
+            .chartPlotStyle { $0.clipped() }
+            .chartXAxis { AxisMarks(values: HistoryChartClock.marks(ending: end)) { value in
+                AxisValueLabel {
+                    Text(value.as(Date.self)?.formatted(.dateTime.minute(.twoDigits).second(.twoDigits)) ?? "")
+                        .font(.caption2.monospacedDigit()).fixedSize()
+                }
+                AxisGridLine()
+            } }
+            .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
+                AxisValueLabel {
+                    Text(value.as(Double.self).map { network ? PulseFormat.compactRate($0) : String(format: "%.0f", $0) } ?? "")
+                        .font(.caption2.monospacedDigit()).frame(width: 50, alignment: .trailing)
+                }
+                AxisGridLine()
+            } }
+            .frame(height: 170).accessibilityIdentifier("resource-chart")
     }
 }
 

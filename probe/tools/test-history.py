@@ -2,6 +2,7 @@
 """History integration. Run with host probe + test-history-server binaries."""
 import base64
 import copy
+import http.client
 import importlib.util
 import json
 import os
@@ -48,6 +49,19 @@ def get(p, **fields):
     return c.exchange("127.0.0.1", p, TOKEN, {"op": "get", "ts": int(time.time()), **fields})
 
 
+def http_get(p, cursor=None, token=TOKEN):
+    connection = http.client.HTTPConnection("127.0.0.1", p, timeout=3)
+    headers = {"Authorization": "Bearer " + token}
+    if cursor is not None:
+        headers["X-Npulse-History"] = cursor if isinstance(cursor, str) else json.dumps(cursor)
+    try:
+        connection.request("GET", "/api/nodes", headers=headers)
+        response = connection.getresponse()
+        return response.status, response.read()
+    finally:
+        connection.close()
+
+
 def sign(obj, secret=SECRET):
     obj["sig"] = c.group_keys(secret)[2].sign(c.group_message(obj)).hex()
     return obj
@@ -83,8 +97,8 @@ def record(slot, seq, epoch=EPOCH):
 
 try:
     host, fixture = map(lambda s: str(Path(s).resolve()), sys.argv[1:3])
-    direct, relay = port(), port()
-    start(fixture, "--prefill", "-l", f"127.0.0.1:{direct}", "-k", TOKEN, "-E", "off")
+    direct, relay, http_port = port(), port(), port()
+    start(fixture, "--prefill", "-l", f"127.0.0.1:{direct}", "-H", f"127.0.0.1:{http_port}", "-k", TOKEN, "-E", "off")
     first = wait(lambda: get(direct))
     h = first["history"]
     assert first["ok"] and first["nodes"] and h["full"] and len(h["samples"]) == 120
@@ -100,6 +114,22 @@ try:
     latest = later["history"]["samples"][-1]
     assert abs(latest[2] - later["nodes"][0]["cpu_usage"]) < .02
     print("PASS direct history: full 120, incremental, empty, start-1, stale/future epoch recovery, latest snapshot and old-client nodes shape")
+
+    status, body = http_get(http_port)
+    old = json.loads(body)
+    assert status == 200 and old["nodes"] and old["history"]["full"]
+    cursor = {"epoch": old["history"]["epoch"], "since": old["history"]["seq"]}
+    status, body = http_get(http_port, cursor)
+    increment = json.loads(body)["history"]
+    assert status == 200 and not increment["full"]
+    assert all(row[0] > cursor["since"] for row in increment["samples"])
+    status, body = http_get(http_port, {"epoch": cursor["epoch"], "since": increment["seq"]})
+    assert status == 200 and not json.loads(body)["history"]["samples"]
+    for invalid in ("{", {"since": 1}, {"epoch": "ffffffffffffffff", "since": 1}):
+        status, body = http_get(http_port, invalid)
+        assert status == 200 and json.loads(body)["history"]["full"]
+    assert http_get(http_port, cursor, token="wrong") == (404, b"")
+    print("PASS HTTP history header: full, incremental/empty, malformed/missing/changed epoch recovery, old shape and unauthenticated empty 404")
 
     start(host, "-S", f"127.0.0.1:{relay}", "-T", TOKEN, "-E", "off")
     wait(lambda: exchange(relay, request()))

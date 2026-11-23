@@ -77,6 +77,7 @@ try:
     for binary, name in ((full, "full"), (lite, "lite")):
         state = root / f"unit-{name}"
         subprocess.run([binary, "--dns-unit"], env=dict(os.environ, NPULSE_TEST_DNS=str(state)), check=True, timeout=20)
+        subprocess.run([binary, "--refresh-affinity"], env=dict(os.environ, NPULSE_TEST_DNS=str(root / f"refresh-{name}")), check=True, timeout=20)
 
     relay_port, pair_port = port(), port()
     old, _ = start(root, host, "-S", f"127.0.0.1:{relay_port}", "-T", TOKEN)

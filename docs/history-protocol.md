@@ -42,6 +42,8 @@ not blocking connects in the sampling loop. There is no durable delivery ACK: a
 failed/dropped sample can leave a gap, which the app detects and refreshes in full.
 Both publisher channels stay on the same address candidate and advance only on
 failure, so independent DNS backends do not receive round-robin fragments of history.
+DNS refresh preserves that candidate by address value if still present, otherwise
+it resets to the first address in the new list.
 
 Snapshot/history and admin/pair pipe connections share up to eight resolved IPv4/IPv6
 addresses. Connection errors/timeouts request a fresh lookup, at most once every
@@ -144,7 +146,7 @@ proxy address as the shell script's fourth argument; its default duration is 130
 
 Lite retains history, but omits unused C unwind tables and uses shorter help. All
 seven builds remain below 200,000 bytes; measured MIPS/MIPSel with DNS refresh:
-193,696 / 192,624 bytes.
+193,920 / 192,928 bytes.
 
 ## Regression vectors
 

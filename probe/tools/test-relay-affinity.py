@@ -67,8 +67,20 @@ try:
         recovered = wait(lambda: get("::1", port, group))
         latest = recovered[0]["history"]["seq"]
         wait(lambda: get("::1", port, group)[0]["history"]["seq"] > latest + 2)
+        start(root, host, "-S", f"127.0.0.1:{port}", "-T", "affinity")
+        wait(lambda: m.exchange("127.0.0.1", port, "affinity", m.group_request(group)))
+        assert not get("127.0.0.1", port, group)
+        state.write_text("0 reverse")
+        calls = Path(str(state) + ".calls")
+        wait(lambda: len(calls.read_text().splitlines()) >= 2, seconds=40)
+        assert calls.read_text().splitlines()[-1].endswith("reverse")
+        before = get("::1", port, group)[0]["history"]["seq"]
+        time.sleep(4)
+        a, b = get("127.0.0.1", port, group), get("::1", port, group)
+        assert not a and b[0]["history"]["seq"] >= before + 2, "DNS reorder abandoned working B for the restored independent A"
         assert publisher.poll() is None
         print(f"PASS {Path(binary).name}: co-located snapshots/complete 1 Hz history, shared failover and continued increments", flush=True)
+        print(f"PASS {Path(binary).name}: actual 30s DNS refresh [A,B] -> [B,A] retained working B; restored A received no publisher data", flush=True)
     print("ALL RELAY AFFINITY CHECKS PASSED")
 finally:
     for process in reversed(processes):

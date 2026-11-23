@@ -388,7 +388,6 @@ static void discard(Client *c) {
 }
 typedef struct { int fd; uint8_t *frame; size_t length, sent; double deadline; uint32_t seq; unsigned address, generation; } Publisher;
 static Publisher publishers[2] = {{.fd = -1}, {.fd = -1}};
-static unsigned publish_next;
 static uint32_t published_seq;
 static void publish_close(Publisher *p) {
   if (p->fd >= 0) close(p->fd);

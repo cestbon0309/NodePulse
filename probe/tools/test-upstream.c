@@ -21,11 +21,12 @@ static int fixture_getaddrinfo(const char *host, const char *service,
   }
   sleep(delay);
   if (fields != 2 || !strcmp(address, "fail")) return EAI_AGAIN;
-  if (!strcmp(address, "both")) {
+  if (!strcmp(address, "both") || !strcmp(address, "reverse")) {
     struct addrinfo *other = NULL;
-    int error = getaddrinfo("127.0.0.1", service, hints, result);
+    int reverse = !strcmp(address, "reverse");
+    int error = getaddrinfo(reverse ? "::1" : "127.0.0.1", service, hints, result);
     if (error) return error;
-    error = getaddrinfo("::1", service, hints, &other);
+    error = getaddrinfo(reverse ? "127.0.0.1" : "::1", service, hints, &other);
     if (error) { freeaddrinfo(*result); return error; }
     struct addrinfo *last = *result;
     while (last->ai_next) last = last->ai_next;
@@ -49,6 +50,52 @@ static void resolved(void) {
     upstream_tick(monotime(), "relay.test:9001"); usleep(1000);
   }
   assert(upstream_fd < 0 && !upstream_pid);
+}
+static void refreshed(const char *answer) {
+  state(answer); upstream_failed();
+  double now = monotime();
+  upstream_tick(upstream_next > now ? upstream_next : now, "relay.test:9001"); resolved();
+}
+static void refresh_affinity(void) {
+  refreshed("0 both");
+  assert(upstream_addresses.count == 2 && upstream_addresses.entries[0].address.ss_family == AF_INET);
+  publish_next = 0;
+  Publisher *p = &publishers[0]; p->address = publish_next; p->generation = upstream_generation;
+  publish_failed(p);
+  assert(publish_next == 1 && upstream_addresses.entries[1].address.ss_family == AF_INET6);
+  publish_next += 2;
+  refreshed("0 both");
+  assert(publish_next % upstream_addresses.count == 1);
+  refreshed("0 reverse");
+  unsigned selected = publish_next % upstream_addresses.count;
+  printf("reordered refresh: selected family=%d, working B family=%d\n",
+         upstream_addresses.entries[selected].address.ss_family, AF_INET6); fflush(stdout);
+  assert(upstream_addresses.entries[selected].address.ss_family == AF_INET6);
+  UpstreamAddress b = upstream_addresses.entries[selected], other = b;
+  ((struct sockaddr_in6 *)&other.address)->sin6_scope_id++;
+  assert(!upstream_address_equal(&b, &other));
+  other = b; ((struct sockaddr_in6 *)&other.address)->sin6_port ^= htons(1);
+  assert(!upstream_address_equal(&b, &other));
+  other = b; ((struct sockaddr_in6 *)&other.address)->sin6_flowinfo = htonl(1);
+  assert(upstream_address_equal(&b, &other));
+  refreshed("0 ::1");
+  assert(publish_next == 0 && upstream_addresses.count == 1 && upstream_address_equal(&b, &upstream_addresses.entries[0]));
+  refreshed("0 both");
+  assert(publish_next == 1 && upstream_address_equal(&b, &upstream_addresses.entries[1]));
+  refreshed("0 fail");
+  assert(publish_next == 1 && upstream_addresses.count == 2 && upstream_address_equal(&b, &upstream_addresses.entries[1]));
+  refreshed("");
+  assert(publish_next == 1 && upstream_addresses.count == 2 && upstream_address_equal(&b, &upstream_addresses.entries[1]));
+  refreshed("0 127.0.0.1");
+  assert(publish_next == 0 && upstream_addresses.count == 1);
+  UpstreamAddress a = upstream_addresses.entries[0]; other = a;
+  memset(((struct sockaddr_in *)&other.address)->sin_zero, 255, sizeof(((struct sockaddr_in *)&other.address)->sin_zero));
+  assert(upstream_address_equal(&a, &other));
+  other = a; ((struct sockaddr_in *)&other.address)->sin_port ^= htons(1);
+  assert(!upstream_address_equal(&a, &other));
+  other = a; ((struct sockaddr_in *)&other.address)->sin_addr.s_addr ^= htonl(1);
+  assert(!upstream_address_equal(&a, &other));
+  puts("PASS refresh affinity: unchanged/reordered/resized lists retain B by value; failed/empty DNS preserves B; missing B resets to first; ports/scopes distinguish addresses, padding/flowinfo do not");
 }
 static void unit(void) {
   state(""); upstream_tick(monotime(), "relay.test:9001"); resolved();
@@ -93,6 +140,7 @@ static void unit(void) {
   puts("PASS publisher affinity unit: simultaneous channel failures advance once; stale-generation failure cannot change candidate; empty cache skips connect");
 }
 int main(int argc, char **argv) {
+  if (argc == 2 && !strcmp(argv[1], "--refresh-affinity")) { refresh_affinity(); return 0; }
   if (argc == 2 && !strcmp(argv[1], "--dns-unit")) { unit(); return 0; }
 #if PAIR
   if (argc == 3 && !strcmp(argv[1], "--pair-dns")) {

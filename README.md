@@ -115,6 +115,15 @@ sh mkdeploy.sh --relay relay.example:9001 --token '中继令牌' --group '组密
 把生成的 `npulse-deploy-<架构>.sh` 拷到目标机器，以 root 运行 `sh npulse-deploy-<架构>.sh` 即完成安装、开机自启并连接中继，
 不提问、不联网下载。已安装时不做改动，`--force` 会清除旧配置后重装。**生成的文件含密钥，不要公开。**
 
+OpenWrt 上只依赖固件自带的 BusyBox 命令，不需要 curl、wget、opkg 或额外软件包；空间紧张时用 `--lite`。
+路由器没有 sftp 时这样传并运行：
+
+```sh
+ssh root@192.168.1.1 'cat > /tmp/d.sh && sh /tmp/d.sh; rm -f /tmp/d.sh' < npulse-deploy-mipsel.sh
+```
+
+架构不符、存储空间不足或探针无法运行时会直接报错，不留下半装的文件。
+
 ## 配对：扫码只是开始
 
 1. 服务器运行 `npulse pair`（自动停止 / 恢复服务），或安装末尾直接配对。

@@ -125,14 +125,43 @@ FORCE=0
 for option in "$@"; do
     case "$option" in --force) FORCE=1 ;; *) fail "usage: sh $0 [--force]" ;; esac
 done
-[ "${DRY_RUN:-0}" = 1 ] || [ "$(id -u)" = 0 ] || fail 'run as root'
+for tool in awk cat chmod df id mkdir rm tail uname; do
+    command -v "$tool" >/dev/null 2>&1 || fail "required command $tool is missing (BusyBox applet)"
+done
+DRY=${DRY_RUN:-0}
+[ "$DRY" = 1 ] || [ "$(id -u)" = 0 ] || fail 'run as root'
+if [ "$DRY" != 1 ]; then
+    machine=$(uname -m)
+    case "$ARCH:$machine" in
+        x86_64:x86_64|x86_64:amd64|i386:i?86|i386:x86_64|aarch64:aarch64|aarch64:arm64|armv7*:arm*|armv7*:aarch64|mips*:mips*) ;;
+        *) fail "this file is for $ARCH but this machine is $machine; generate one for the right architecture" ;;
+    esac
+fi
 root=${DESTDIR:-}
-work=$(mktemp -d "${TMPDIR:-/tmp}/npulse-deploy.XXXXXX") || fail 'cannot create a temporary directory'
+if command -v mktemp >/dev/null 2>&1; then
+    work=$(mktemp -d "${TMPDIR:-/tmp}/npulse-deploy.XXXXXX") || fail 'cannot create a temporary directory'
+else
+    work=${TMPDIR:-/tmp}/npulse-deploy.$$
+    (umask 077; mkdir "$work") || fail 'cannot create a temporary directory'
+fi
 trap 'rm -rf "$work"' EXIT
 trap 'exit 1' HUP INT TERM
+if ! command -v mktemp >/dev/null 2>&1; then
+    # Minimal stand-in for BusyBox builds without the mktemp applet.
+    mkdir "$work/bin"
+    cat > "$work/bin/mktemp" <<'NPULSE_MKTEMP_END'
+#!/bin/sh
+for last in "$@"; do :; done
+dir=${last%XXXXXX}$$
+(umask 077; mkdir "$dir") || exit 1
+printf '%s\n' "$dir"
+NPULSE_MKTEMP_END
+    chmod 700 "$work/bin/mktemp"
+    PATH=$work/bin:$PATH; export PATH
+fi
 start=$(awk '$0 == "__NPULSE_BINARY__" {print NR + 1; exit}' "$0")
 [ -n "$start" ] || fail 'payload is missing; the file is incomplete'
-tail -n +"$start" "$0" > "$work/$ASSET"
+tail -n +"$start" "$0" > "$work/$ASSET" || fail 'cannot unpack; check free space in /tmp'
 cat > "$work/install.sh" <<'NPULSE_INSTALLER_END'
 BODY
     cat "$work/install.sh"
@@ -149,11 +178,26 @@ if [ -e "$root/etc/npulse/npulse.conf" ] || [ -e "$root/usr/bin/npulse" ] || [ -
     fi
     sh "$work/install.sh" uninstall --purge --yes
 fi
+if [ "$DRY" != 1 ]; then
+    for dir in "$root/usr/bin" "$root/usr" "$root/"; do [ ! -d "$dir" ] || break; done
+    free=$(df -k "$dir" 2>/dev/null | awk 'END {print $(NF-2)}') || free=
+    need=$(($(wc -c < "$work/$ASSET") / 1024 + 64))
+    case "$free" in ''|*[!0-9]*) ;; *)
+        [ "$free" -ge "$need" ] || fail "not enough storage: ${need} KB needed, ${free} KB free (a --lite deploy file is smaller)" ;;
+    esac
+fi
 export NPULSE_MODE=3 NPULSE_UPSTREAM="$UPSTREAM" NPULSE_TOKEN="$TOKEN" NPULSE_GROUP_SECRET="$GROUP"
 export NPULSE_ARCH="$ARCH" NPULSE_FLAVOR="$FLAVOR"
 if [ -n "$INTERVAL" ]; then export NPULSE_INTERVAL="$INTERVAL"; fi
 if [ -n "$ADMIN_KEYS" ]; then export NPULSE_ADMIN_KEYS="$ADMIN_KEYS" NPULSE_ADMIN=yes; fi
 sh "$work/install.sh" install --yes > "$work/log" 2>&1 || { cat "$work/log" >&2; fail 'installation failed'; }
+if [ "$DRY" != 1 ]; then
+    for bin in /usr/bin/npulse /usr/local/bin/npulse; do [ ! -x "$bin" ] || break; done
+    if ! "$bin" version >/dev/null 2>&1; then
+        sh "$work/install.sh" uninstall --purge --yes >/dev/null 2>&1 || :
+        fail "the $ARCH probe cannot run on this machine (wrong byte order or float ABI?); nothing was left installed"
+    fi
+fi
 echo "npulse-deploy: installed $RELEASE ($ARCH $FLAVOR), reporting to $UPSTREAM"
 exit 0
 __NPULSE_BINARY__

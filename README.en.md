@@ -121,6 +121,15 @@ Copy the generated `npulse-deploy-<arch>.sh` to the target and run `sh npulse-de
 enables boot start and connects to the relay with no questions and no downloads. An existing installation is left
 untouched; `--force` purges it and reinstalls. **The generated file contains secrets: keep it private.**
 
+On OpenWrt it only needs the stock BusyBox commands: no curl, wget, opkg or extra packages; use `--lite` when flash is tight.
+Without sftp on the router, send and run it like this:
+
+```sh
+ssh root@192.168.1.1 'cat > /tmp/d.sh && sh /tmp/d.sh; rm -f /tmp/d.sh' < npulse-deploy-mipsel.sh
+```
+
+A wrong architecture, insufficient storage or a probe that cannot run is reported and leaves nothing half-installed.
+
 ## Pairing: scanning is only the start
 
 1. Run `npulse pair` on the server (stops/restores the service), or pair at installation's end.

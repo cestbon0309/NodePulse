@@ -25,10 +25,12 @@ typedef struct {
   int phase;
   char rid[33], cid[33];
   double deadline, attempt, last, ping;
-  struct addrinfo *addresses, *next_address;
+  UpstreamAddresses addresses;
+  unsigned next_address;
 } ProbePipe;
 static ProbePipe probe_pipes[PIPE_PROBES];
 static double probe_next;
+static unsigned probe_generation;
 static int probe_backoff = 2;
 #endif
 static int pipe_wire_init(PipeWire *w, int fd) {
@@ -239,7 +241,7 @@ static char *probe_request(const char *op, const char *cid, char rid[33]) {
   add(&b, "}"); return b.s;
 }
 static void probe_drop(int i) {
-  if (probe_pipes[i].addresses) freeaddrinfo(probe_pipes[i].addresses);
+  if (probe_pipes[i].w.fd >= 0 || probe_pipes[i].phase == PP_CONNECT) upstream_failed();
   pipe_wire_clear(&probe_pipes[i].w); memset(&probe_pipes[i], 0, sizeof(probe_pipes[i])); probe_pipes[i].w.fd = -1;
   if (!i) { probe_next = monotime() + probe_backoff; probe_backoff = probe_backoff >= 30 ? 60 : probe_backoff * 2; }
 }
@@ -247,23 +249,18 @@ static int probe_next_address(int i) {
   ProbePipe *p = &probe_pipes[i];
   if (p->w.fd >= 0) close(p->w.fd);
   p->w.fd = -1;
-  while (p->next_address) {
-    struct addrinfo *a = p->next_address; p->next_address = a->ai_next;
-    int fd = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
+  while (p->next_address < p->addresses.count) {
+    int fd = upstream_socket(&p->addresses.entries[p->next_address++]);
     if (fd < 0) continue;
-    fcntl(fd, F_SETFD, FD_CLOEXEC); fcntl(fd, F_SETFL, O_NONBLOCK);
-    int result = connect(fd, a->ai_addr, a->ai_addrlen);
-    if (!result || errno == EINPROGRESS) {
-      p->w.fd = fd; p->attempt = monotime() + 3; return 0;
-    }
-    close(fd);
+    p->w.fd = fd; p->attempt = monotime() + 3; return 0;
   }
   return -1;
 }
 static void probe_open(int i, const char *cid) {
   ProbePipe *p = &probe_pipes[i];
-  if (endpoint_addresses(group_upstream, "127.0.0.1", 0, &p->addresses) || pipe_wire_init(&p->w, -1)) { probe_drop(i); return; }
-  p->next_address = p->addresses;
+  if (!upstream_addresses.count) return;
+  p->addresses = upstream_addresses; p->next_address = 0;
+  if (pipe_wire_init(&p->w, -1)) { probe_drop(i); return; }
   char *json = probe_request(i ? "gaccept" : "glisten", cid, p->rid);
   int bad = !json || pipe_json(&p->w, json); free(json);
   if (bad) { probe_drop(i); return; }
@@ -287,6 +284,10 @@ static void pipe_tick(double now) {
   }
 #if ADMIN
   if (!group_upstream || !admin_key_count) return;
+  if (probe_generation != upstream_generation) {
+    probe_generation = upstream_generation;
+    if (probe_pipes[0].w.fd < 0) { probe_next = now; probe_backoff = 2; }
+  }
   for (int i = 0; i < PIPE_PROBES; i++) {
     ProbePipe *p = &probe_pipes[i];
     if (p->w.fd < 0) continue;
@@ -375,7 +376,7 @@ static void pipe_io(struct pollfd *pf) {
         if (probe_next_address(i)) probe_drop(i);
         continue;
       }
-      freeaddrinfo(p->addresses); p->addresses = p->next_address = NULL;
+      p->addresses.count = p->next_address = 0;
       p->phase = PP_SEND;
     }
     if (events & POLLOUT) {

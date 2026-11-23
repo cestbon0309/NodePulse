@@ -37,9 +37,20 @@ clients accept old snapshot-only responses.
 
 Publishers continue normal `gpush` snapshots at `interval` and send `hpush` once for
 each new sample. The existing relay is one-request-per-connection, so publishers use
-two nonblocking channels with pre-resolved addresses and bounded frames/deadlines,
+two nonblocking channels with a shared asynchronous DNS cache and bounded frames/deadlines,
 not blocking connects in the sampling loop. There is no durable delivery ACK: a
 failed/dropped sample can leave a gap, which the app detects and refreshes in full.
+
+Snapshot/history and admin/pair pipe connections share up to eight resolved IPv4/IPv6
+addresses. Connection errors/timeouts request a fresh lookup, at most once every
+30 seconds, including startup and failed lookups. Resolution runs in one child
+worker, with a five-second alarm and six-second parent deadline; IPC and child
+reaping are nonblocking. Failed DNS preserves the last usable cache. Successful
+refresh lets disconnected admin listeners retry without waiting for old backoff.
+Pairing connections drive the same resolver within the pairing window deadline.
+An initial DNS failure no longer terminates a normal publisher: monitoring continues
+while the worker retries. The injected-resolver fixture is `tools/test-upstream.c`;
+`tools/test-upstream.py` tests address changes without modifying system DNS/hosts.
 
 History plaintext is `{"epoch":"...","sample":[...]}`. Encryption uses the existing
 group key, a fresh ChaCha20-Poly1305 nonce, and distinct authenticated data:
@@ -109,7 +120,8 @@ The detail chart has a fixed 120-second x domain. Demo mode seeds 120 1 Hz point
   and libc overhead. Kernel socket memory and optional admin sessions are additional.
   This is a cap-derived capacity budget, not a measured worst-case RSS.
 
-Measured on Linux aarch64 (Alpine kernel, QEMU TCG, static lite, 4 KiB pages), after
+Before adding the asynchronous DNS cache (~2 KiB cache/IPC storage), measured on
+Linux aarch64 (Alpine kernel, QEMU TCG, static lite, 4 KiB pages), after
 120 seconds: `-l` only **200 KiB RSS**; `-l + -S`, ten actual 1 Hz encrypted publishers,
 **1,460–1,468 KiB RSS**. Server RSS excludes publisher processes. All ten slots were
 verified to retain 120 records. Native macOS full host regression: 1,728 KiB direct,
@@ -129,7 +141,8 @@ Reproduce with `tools/measure-history.sh` on Linux using a lite binary and a
 proxy address as the shell script's fourth argument; its default duration is 130 s.
 
 Lite retains history, but omits unused C unwind tables and uses shorter help. All
-seven builds remain below 200,000 bytes; measured MIPS/MIPSel: 189,360 / 188,336 bytes.
+seven builds remain below 200,000 bytes; measured MIPS/MIPSel with DNS refresh:
+193,344 / 192,320 bytes.
 
 ## Regression vectors
 

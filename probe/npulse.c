@@ -163,6 +163,7 @@ static int endpoint(const char *s, const char *def, int server) {
   return fd;
 }
 #include "egress.h"
+#include "upstream.h"
 static uint8_t *frame(const char *s, size_t *size, const uint8_t transport_key[32]) {
   size_t n = strlen(s);
   if (!n || n > MAX_FRAME)
@@ -387,7 +388,7 @@ static void discard(Client *c) {
 }
 typedef struct { int fd; uint8_t *frame; size_t length, sent; double deadline; uint32_t seq; } Publisher;
 static Publisher publishers[2] = {{.fd = -1}, {.fd = -1}};
-static struct addrinfo *publish_addresses, *publish_next;
+static unsigned publish_next;
 static uint32_t published_seq;
 static void publish_close(Publisher *p) {
   if (p->fd >= 0) close(p->fd);
@@ -395,13 +396,10 @@ static void publish_close(Publisher *p) {
 }
 static void queue_push(int channel, const char *json, uint32_t seq) {
   Publisher *p = &publishers[channel];
-  if (!json || p->frame || !publish_addresses) return;
-  struct addrinfo *a = publish_next ? publish_next : publish_addresses;
-  publish_next = a->ai_next;
-  int fd = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
-  if (fd < 0) return;
-  fcntl(fd, F_SETFL, O_NONBLOCK); fcntl(fd, F_SETFD, FD_CLOEXEC);
-  if (connect(fd, a->ai_addr, a->ai_addrlen) && errno != EINPROGRESS) { close(fd); return; }
+  if (!json || p->frame || !upstream_addresses.count) return;
+  const UpstreamAddress *a = &upstream_addresses.entries[publish_next++ % upstream_addresses.count];
+  int fd = upstream_socket(a);
+  if (fd < 0) { upstream_failed(); return; }
   p->frame = frame(json, &p->length, relay_key);
   if (!p->frame) { close(fd); return; }
   p->fd = fd; p->sent = 0; p->seq = seq; p->deadline = monotime() + 2;
@@ -411,14 +409,14 @@ static void publish_tick(double now) {
     Publisher *p = &publishers[i];
     if (!p->frame) continue;
     struct pollfd pf = {p->fd, POLLOUT, 0};
-    if (now >= p->deadline) { publish_close(p); continue; }
+    if (now >= p->deadline) { upstream_failed(); publish_close(p); continue; }
     if (poll(&pf, 1, 0) <= 0) continue;
     ssize_t n = send(p->fd, p->frame + p->sent, p->length - p->sent, 0);
     if (n > 0) p->sent += (size_t)n;
-    else if (!n || (errno != EAGAIN && errno != EINTR)) { publish_close(p); continue; }
+    else if (!n || (errno != EAGAIN && errno != EINTR)) { upstream_failed(); publish_close(p); continue; }
     if (p->sent == p->length) { if (i) published_seq = p->seq; publish_close(p); }
   }
-  if (group_upstream && !publishers[1].frame && history.count && published_seq != history.seq) {
+  if (group_upstream && upstream_addresses.count && !publishers[1].frame && history.count && published_seq != history.seq) {
     uint32_t pending = history.seq - published_seq;
     unsigned offset = pending > history.count ? 0 : history.count - pending;
     const HistorySample *s = history_at(&history, offset);
@@ -647,9 +645,6 @@ int main(int argc, char **argv) {
   }
   if (group_upstream) {
     group_init();
-    if (endpoint_addresses(group_upstream, "127.0.0.1", 0, &publish_addresses)) {
-      fprintf(stderr, "cannot resolve relay address\n"); return 1;
-    }
   }
 #if ADMIN
   if (admin_init()) { fprintf(stderr, "invalid admin_keys or missing -l/-R\n"); return 2; }
@@ -687,6 +682,7 @@ int main(int argc, char **argv) {
     clients[i].fd = -1;
   double next_sample = monotime() + 1, next_push = monotime();
   while (running) {
+    upstream_tick(monotime(), group_upstream);
     egress_tick(monotime(), collect);
 #if ADMIN || PAIR
     pipe_tick(monotime());
@@ -739,7 +735,7 @@ int main(int argc, char **argv) {
       next_sample += 1;
       if (next_sample <= now) next_sample = now + 1;
     }
-    if (group_upstream && now >= next_push) {
+    if (group_upstream && upstream_addresses.count && now >= next_push) {
       push();
       next_push = now + interval;
     }
@@ -895,6 +891,7 @@ int main(int argc, char **argv) {
     }
   }
   egress_shutdown();
+  upstream_shutdown();
   for (int i = 0; i < CLIENTS; i++)
     if (clients[i].fd >= 0)
       discard(&clients[i]);

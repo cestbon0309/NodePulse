@@ -28,6 +28,7 @@ static History history;
 #include <poll.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include "ctl.h"
 #define MAX_FRAME (2 * 1024 * 1024)
 #define MAX_REQUEST (256 * 1024)
 static int random_bytes(void *p, size_t n);
@@ -566,7 +567,7 @@ static void usage(void) {
 #else
   puts("Pairing unavailable (PAIR=0); use install.sh pair for lite installations.");
 #endif
-  puts("npulse 0.1.0\nUsage: npulse [-k SECRET] [-l [addr:]port] [-H "
+  puts("npulse " NPULSE_VERSION "\nUsage: npulse [-k SECRET] [-l [addr:]port] [-H "
        "[addr:]port]\n              [-i seconds] [-n NAME] [-c "
        "config] [-h]\nDirect listen defaults to 0.0.0.0; HTTP defaults to "
        "127.0.0.1.\nIPv6 endpoints use [address]:port. Config keys: secret, "
@@ -582,6 +583,8 @@ static void usage(void) {
 #endif
 }
 int main(int argc, char **argv) {
+  int management = ctl(argc, argv);
+  if (management >= 0) return management;
   int opt, pairing = 0;
 #if PAIR
   int qr_ascii = 0;

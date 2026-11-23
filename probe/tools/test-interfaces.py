@@ -49,6 +49,7 @@ esac
                    FETCH_LOG=str(fetch_log), FETCH_MODE="success")
         env.update(settings)
         script = '\n'.join(function(n) for n in ("msg", "say", "public_addresses", "valid_public_ip", "discover_public_ip", "resolve_public_ip", "select_bind", "bind_endpoint", "firewall_plan", "open_firewall"))
+        script += '\nrandom() { echo fixture; }\nrecord_firewall() { :; }\n'
         script += '\nfail() { printf "%s\\n" "$*" >&2; exit 1; }\nask() { printf "%s\\n" "$1" >&2; ANSWER=$(printf "%s\\n" "$CHOICE" | awk "NR==1 {print;exit}"); CHOICE=$(printf "%s\\n" "$CHOICE" | awk "NR>1"); ANSWER=${ANSWER:-$2}; }\n'
         script += 'BIND=${TEST_BIND:-}; PUBLIC_IP=${TEST_PUBLIC_IP:-}; PORT=9527; MODE=1; LISTEN=yes; YES=0; INIT=${TEST_INIT:-systemd}\n' + expression
         result = subprocess.run([*shell, "-c", script], env=env, text=True, capture_output=True, timeout=5)
@@ -119,7 +120,7 @@ esac
     def rules(family, table=None, chains=("input",), kind="filter", hook="input"):
         return f"table {family} {table or 'filter_' + family} {{\n" + "".join(f" chain {chain} {{\n type {kind} hook {hook} priority 0; policy drop;\n }}\n" for chain in chains) + "}\n"
     calls = tools / "nft-calls"
-    tool("nft", 'if [ "$1" = list ]; then printf "%s\\n" "$RULESET"; else printf "%s\\n" "$*" >> "$NFT_CALLS"; if [ "$*" = "${NFT_FAIL:-}" ]; then exit 1; fi; fi')
+    tool("nft", 'if [ "$1" = list ]; then printf "%s\\n" "$RULESET"; elif [ "$1" = -a ]; then echo \'tcp dport 9527 accept comment "npulse-fixture" # handle 7\'; else args=$*; args=${args% comment*}; printf "%s\\n" "$args" >> "$NFT_CALLS"; if [ "$args" = "${NFT_FAIL:-}" ]; then exit 1; fi; fi')
     def check_nft(bind, ruleset, expected, **settings):
         calls.write_text("")
         plan = run(expression=f'BIND={bind}; DRY_RUN=0; OPEN_FIREWALL=yes; open_firewall', RULESET=ruleset, NFT_CALLS=str(calls), **settings).stdout

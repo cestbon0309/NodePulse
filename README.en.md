@@ -89,10 +89,26 @@ The summary lists the build, config, ports, relay address/password and next step
 
 See the [installer reference](docs/installer.md) for all options, BusyBox prerequisites, lifecycle and consent. Legacy `upstream=` / `u=` configurations fail before modifying the running service, with shared-relay migration guidance.
 
+### Manage the installed probe
+
+In a root shell: `npulse upgrade`, `npulse upgrade --force`, `npulse pair`,
+`npulse uninstall [--purge]`, `npulse status`, `npulse restart`, `npulse version`,
+or `npulse help`. Installer options pass through to upgrade/pair/uninstall.
+Upgrade preserves configuration and boot enablement, and skips a known current release
+unless forced. Old installations need the latest `sh install.sh upgrade` once to migrate state.
+Full embeds the matching installer; lite downloads and SHA256-verifies its own release's
+installer (dev uses latest). No management script is permanently installed.
+Status/restart/version work offline in either flavor. Lite's other commands need curl/wget
+and sha256sum/shasum/openssl, network access and HTTPS CA certificates; `NPULSE_MIRROR` is supported.
+Systemd installs create `/usr/bin/npulse` only if absent; RHEL sudo PATH may otherwise
+require `/usr/local/bin/npulse`. Uninstall removes only the installer-owned symlink and
+recorded firewall rules; preexisting/unrecorded firewall rules remain. Configuration is
+retained unless purged. New releases publish `VERSION` alongside `SHA256SUMS`.
+
 <a id="pairing"></a>
 ## Pairing: scanning is only the start
 
-1. Run `sh install.sh pair` on the server (stops/restores the service), or pair at installation's end.
+1. Run `npulse pair` on the server (stops/restores the service), or pair at installation's end.
 2. In **Add Endpoint**, choose **Direct Pairing** for public nodes or **Relay Pairing** for NAT; provide relay address, token and one-time code. Alternatively scan the terminal QR or paste its `nodepulse://pair` link.
 3. **Compare the pattern and six-digit SAS on BOTH devices.** Only if identical, enter `y` on the server and tap **Match** on the phone. Cancel any mismatch. QR and pre-shared parameters never replace this check.
 4. For administration, enable phone-side admin authorization and **separately confirm root authorization on the server**. Otherwise only monitoring is enabled. Use `--admin-via-pair`, or provision an existing allowlist with `--admin-keys`.

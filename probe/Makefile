@@ -6,8 +6,14 @@ HOST_OUT ?= npulse-host
 CPPFLAGS += -DADMIN=$(ADMIN) -DPAIR=$(PAIR) -DQR=$(QR)
 CFLAGS ?= -Os -flto -std=gnu99 -Wall -Wextra -ffunction-sections -fdata-sections
 SOURCES = npulse.c vendor/monocypher.c vendor/monocypher-ed25519.c vendor/qrcodegen.c
-HEADERS = json.h metrics.h history.h egress.h upstream.h group.h admin.h pipe.h session.h pairing.h vendor/monocypher.h vendor/monocypher-ed25519.h vendor/qrcodegen.h
+HEADERS = json.h metrics.h history.h egress.h upstream.h group.h admin.h pipe.h session.h pairing.h ctl.h dist/installer.h vendor/monocypher.h vendor/monocypher-ed25519.h vendor/qrcodegen.h
 LDFLAGS ?= -static -Wl,--gc-sections -s
+.DEFAULT_GOAL := npulse
+
+dist/installer.h: ../install.sh ctl-bootstrap.sh tools/embed-installer.py FORCE
+	python3 tools/embed-installer.py
+
+FORCE:
 
 npulse: $(SOURCES) $(HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SOURCES) $(LDFLAGS) -o $@
@@ -25,4 +31,4 @@ history-test: host-test
 	$(CC) -DADMIN=0 -DPAIR=0 -DQR=0 $(CFLAGS) tools/test-history-server.c vendor/monocypher.c vendor/monocypher-ed25519.c vendor/qrcodegen.c -Wl,-dead_strip -o dist/history-server
 	python3 tools/test-history.py ./$(HOST_OUT) ./dist/history-server
 
-.PHONY: npulse host-test history-test clean
+.PHONY: npulse host-test history-test clean FORCE

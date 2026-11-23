@@ -89,10 +89,22 @@ NPULSE_TOKEN='替换为中继令牌' NPULSE_GROUP_SECRET='替换为随机组密�
 
 完整选项、BusyBox 依赖、升级 / 卸载及授权见 [安装器参考](docs/installer.md)。旧式 `upstream=` / `u=` 已移除，升级会在改动服务前拒绝，并提示改用共享中继。
 
+### 用二进制管理探针
+
+在 root shell 使用 `npulse upgrade`、`npulse upgrade --force`、`npulse pair`、
+`npulse uninstall [--purge]`、`npulse status`、`npulse restart`、`npulse version`
+或 `npulse help`；升级 / 配对 / 卸载可继续传入安装器选项。升级保留配置和开机启用状态，
+已知当前版本已是最新时跳过，`--force` 强制执行。旧安装须先用最新 `sh install.sh upgrade` 迁移一次状态。
+full 内嵌同版本安装器；lite 下载并校验自身发行版的安装器（dev 使用 latest），均不永久保存管理脚本。
+状态 / 重启 / 版本命令可离线使用；lite 的其他命令需要 curl/wget、sha256sum/shasum/openssl、
+网络及 HTTPS CA 证书，支持 `NPULSE_MIRROR`。systemd 安装仅在目标不存在时创建 `/usr/bin/npulse`
+软链接；RHEL 的 sudo PATH 可能需要显式 `/usr/local/bin/npulse`。卸载只删除自身创建的软链接和
+记录的防火墙规则，不动已有或旧安装未记录的规则；默认保留配置。发行版新增 `VERSION` 元数据。
+
 <a id="pairing"></a>
 ## 配对：扫码只是开始
 
-1. 服务器运行 `sh install.sh pair`（自动停止 / 恢复服务），或安装末尾直接配对。
+1. 服务器运行 `npulse pair`（自动停止 / 恢复服务），或安装末尾直接配对。
 2. App **添加接入点**：公网节点选「直连配对」；NAT 节点选「中转配对」，填写中继地址、令牌与一次性代码。也可扫描终端二维码或粘贴 `nodepulse://pair` 链接。
 3. **核对两端图案与六位数字（SAS）**。只有完全一致时，服务器输入 `y`，手机点「一致」。不一致立即取消；二维码和预共享参数不能替代确认。
 4. 需要管理时，手机打开「同时授权本机管理」，服务器 **另外确认 root 授权**。未完成则只开监控。也可用 `--admin-via-pair`，或预置 `--admin-keys`。

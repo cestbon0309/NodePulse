@@ -386,7 +386,7 @@ static void discard(Client *c) {
   memset(c, 0, sizeof(*c));
   c->fd = -1;
 }
-typedef struct { int fd; uint8_t *frame; size_t length, sent; double deadline; uint32_t seq; } Publisher;
+typedef struct { int fd; uint8_t *frame; size_t length, sent; double deadline; uint32_t seq; unsigned address, generation; } Publisher;
 static Publisher publishers[2] = {{.fd = -1}, {.fd = -1}};
 static unsigned publish_next;
 static uint32_t published_seq;
@@ -394,12 +394,17 @@ static void publish_close(Publisher *p) {
   if (p->fd >= 0) close(p->fd);
   free(p->frame); p->frame = NULL; p->fd = -1;
 }
+static void publish_failed(Publisher *p) {
+  if (p->generation == upstream_generation && p->address == publish_next) publish_next++;
+  upstream_failed(); publish_close(p);
+}
 static void queue_push(int channel, const char *json, uint32_t seq) {
   Publisher *p = &publishers[channel];
   if (!json || p->frame || !upstream_addresses.count) return;
-  const UpstreamAddress *a = &upstream_addresses.entries[publish_next++ % upstream_addresses.count];
+  p->address = publish_next; p->generation = upstream_generation;
+  const UpstreamAddress *a = &upstream_addresses.entries[publish_next % upstream_addresses.count];
   int fd = upstream_socket(a);
-  if (fd < 0) { upstream_failed(); return; }
+  if (fd < 0) { publish_failed(p); return; }
   p->frame = frame(json, &p->length, relay_key);
   if (!p->frame) { close(fd); return; }
   p->fd = fd; p->sent = 0; p->seq = seq; p->deadline = monotime() + 2;
@@ -409,11 +414,11 @@ static void publish_tick(double now) {
     Publisher *p = &publishers[i];
     if (!p->frame) continue;
     struct pollfd pf = {p->fd, POLLOUT, 0};
-    if (now >= p->deadline) { upstream_failed(); publish_close(p); continue; }
+    if (now >= p->deadline) { publish_failed(p); continue; }
     if (poll(&pf, 1, 0) <= 0) continue;
     ssize_t n = send(p->fd, p->frame + p->sent, p->length - p->sent, 0);
     if (n > 0) p->sent += (size_t)n;
-    else if (!n || (errno != EAGAIN && errno != EINTR)) { upstream_failed(); publish_close(p); continue; }
+    else if (!n || (errno != EAGAIN && errno != EINTR)) { publish_failed(p); continue; }
     if (p->sent == p->length) { if (i) published_seq = p->seq; publish_close(p); }
   }
   if (group_upstream && upstream_addresses.count && !publishers[1].frame && history.count && published_seq != history.seq) {

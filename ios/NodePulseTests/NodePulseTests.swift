@@ -227,6 +227,27 @@ final class NodePulseTests: XCTestCase {
         XCTAssertEqual(scale.upper, 200_000)
         XCTAssertTrue(HistoryChartScale.roundedCeiling(Double.greatestFiniteMagnitude).isFinite)
     }
+    func testChartLabelsKeepClearOfBothEdges() {
+        let end = Date(timeIntervalSince1970: 1000)
+        for age in [0.0, 11.9, 108.1, 120] {
+            XCTAssertFalse(HistoryChartClock.showsLabel(at: end.addingTimeInterval(-age), ending: end))
+        }
+        for age in [12.0, 60, 108] {
+            XCTAssertTrue(HistoryChartClock.showsLabel(at: end.addingTimeInterval(-age), ending: end))
+        }
+    }
+    func testChartTicksUseRoundDisplayUnitsAndStayStable() {
+        let now = Date(timeIntervalSince1970: 1000)
+        var scale = HistoryChartScale()
+        XCTAssertEqual(scale.ticks, [0, 500, 1000])
+        scale.observe(peak: 180_000, now: now)
+        XCTAssertEqual(scale.ticks.map { scale.label(for: $0) }, ["0B/s", "200K/s", "400K/s"])
+        let ticks = scale.ticks
+        scale.observe(peak: 179_000, now: now.addingTimeInterval(1))
+        XCTAssertEqual(scale.ticks, ticks)
+        scale.observe(peak: 1_000_000, now: now.addingTimeInterval(2))
+        XCTAssertEqual(scale.ticks.map { scale.label(for: $0) }, ["0B/s", "0.5M/s", "1M/s", "1.5M/s"])
+    }
     func testChartIdentitySurvivesRingEvictionAndValueCorrection() {
         let start = Date(timeIntervalSince1970: 1000)
         let points = (0..<120).map { HistorySample(date: start.addingTimeInterval(Double($0)), cpu: 1, memPercent: 2, rxRate: 3, txRate: 4, seq: UInt32($0)) }
@@ -452,6 +473,26 @@ final class NodePulseTests: XCTestCase {
         await store.refresh()
         XCTAssertEqual(store.nodes.count, 5); XCTAssertNotEqual(store.nodes[0].snapshot.cpuUsage, first)
         XCTAssertTrue(store.nodes.contains { !$0.online }); XCTAssertEqual(store.nodes[0].history.count, 120)
+    }
+    @MainActor func testDemoSeedAndLiveSamplesShareOneWaveform() async {
+        let suite = "DemoSeam-\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = MonitorStore(defaults: defaults); store.demoMode = true
+        await store.refresh()
+        for node in store.nodes {
+            XCTAssertEqual(node.history.last!.rxRate, node.snapshot.netRxRate)
+            XCTAssertEqual(node.history.last!.cpu, node.snapshot.cpuUsage)
+            let index = Int(node.snapshot.id.dropFirst("demo-".count))!
+            let origin = node.history.last!.date
+            let before = MonitorStore.demoSample(at: origin.addingTimeInterval(-1), since: origin, index: index)
+            let seam = MonitorStore.demoSample(at: origin, since: origin, index: index)
+            let after = MonitorStore.demoSample(at: origin.addingTimeInterval(1), since: origin, index: index)
+            XCTAssertLessThan(abs(after.rxRate - 2 * seam.rxRate + before.rxRate), 2600)
+        }
+        let seeded = store.nodes[0].history
+        await store.refresh()
+        XCTAssertEqual(Array(store.nodes[0].history.dropLast()), Array(seeded.suffix(119)))
+        XCTAssertEqual(store.nodes[0].history.last!.rxRate, store.nodes[0].snapshot.netRxRate)
     }
     @MainActor func testSharedRelayFreshnessUsesAuthenticatedAge() {
         let suite = "Freshness-\(UUID())", defaults = UserDefaults(suiteName: suite)!

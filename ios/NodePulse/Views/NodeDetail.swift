@@ -150,11 +150,25 @@ struct HistoryChartClock {
         let start = ceil((end.timeIntervalSince1970 - 120) / 30) * 30
         return (0...4).map { Date(timeIntervalSince1970: start + Double($0) * 30) }.filter { $0 <= end }
     }
+    static func showsLabel(at date: Date, ending end: Date) -> Bool {
+        (12...108).contains(end.timeIntervalSince(date))
+    }
 }
 
 struct HistoryChartScale {
     private(set) var upper: Double = 1000
     private var lowSince: Date?
+    private var unitIndex: Int { min(4, max(0, Int(floor(log2(upper) / 10)))) }
+    var ticks: [Double] {
+        let unit = pow(1024, Double(unitIndex))
+        let target = upper / unit / 4
+        let magnitude = pow(10, floor(log10(target)))
+        let step = ([1.0, 2, 5, 10].first { target / magnitude <= $0 } ?? 10) * magnitude * unit
+        return (0...Int(floor(upper / step))).map { Double($0) * step }
+    }
+    func label(for value: Double) -> String {
+        value == 0 ? "0B/s" : String(format: "%g%@/s", value / pow(1024, Double(unitIndex)), ["B", "K", "M", "G", "T"][unitIndex])
+    }
     static func roundedCeiling(_ value: Double) -> Double {
         guard value.isFinite, value > 1000 else { return 1000 }
         let magnitude = pow(10, floor(log10(value)))
@@ -252,15 +266,17 @@ private struct ResourceHistoryChart: View {
             .chartYScale(domain: network ? 0...scale.upper : 0...100)
             .chartPlotStyle { $0.clipped() }
             .chartXAxis { AxisMarks(values: HistoryChartClock.marks(ending: end)) { value in
-                AxisValueLabel {
-                    Text(value.as(Date.self)?.formatted(.dateTime.minute(.twoDigits).second(.twoDigits)) ?? "")
-                        .font(.caption2.monospacedDigit()).fixedSize()
+                if let date = value.as(Date.self), HistoryChartClock.showsLabel(at: date, ending: end) {
+                    AxisValueLabel {
+                        Text(date.formatted(.dateTime.minute(.twoDigits).second(.twoDigits)))
+                            .font(.caption2.monospacedDigit()).fixedSize()
+                    }
                 }
                 AxisGridLine()
             } }
-            .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
+            .chartYAxis { AxisMarks(position: .leading, values: network ? scale.ticks : [0, 50, 100]) { value in
                 AxisValueLabel {
-                    Text(value.as(Double.self).map { network ? PulseFormat.compactRate($0) : String(format: "%.0f", $0) } ?? "")
+                    Text(value.as(Double.self).map { network ? scale.label(for: $0) : String(format: "%.0f", $0) } ?? "")
                         .font(.caption2.monospacedDigit()).frame(width: 50, alignment: .trailing)
                 }
                 AxisGridLine()

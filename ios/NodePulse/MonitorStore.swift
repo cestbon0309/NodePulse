@@ -119,7 +119,7 @@ final class MonitorStore {
     @ObservationIgnored private var snapshotOnlyRelays = Set<UUID>()
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var refreshing = false
-    @ObservationIgnored private var demoTick = 0.0
+    @ObservationIgnored private let demoStart = Date()
     @ObservationIgnored private let demoID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
     init(defaults: UserDefaults = .standard, secrets: any SecretStorage = SecretStore()) {
         self.defaults = defaults
@@ -303,32 +303,40 @@ final class MonitorStore {
             }
         }
     }
+    static func demoSample(at date: Date, since start: Date, index: Int) -> HistorySample {
+        let phase = date.timeIntervalSince(start) * 0.18
+        let wave = sin(phase + Double(index))
+        let rx = 100000 + 80000 * wave
+        return HistorySample(date: date, cpu: 25 + 18 * wave,
+                             memPercent: 48 + 8 * sin(phase * 0.4 + Double(index)),
+                             rxRate: rx, txRate: rx * 0.3)
+    }
     private func demo() {
-        demoTick += 0.18
+        let now = Date()
         let endpoint = Endpoint(id: demoID, name: L10n.text("演示"), kind: .direct(host: "localhost", port: 9000))
         let specs = [("OpenWrt 23.05", "mips", L10n.text("家庭路由器")), ("Ubuntu 24.04 LTS", "x86_64", L10n.text("东京 VPS")),
                      ("Debian 12", "aarch64", L10n.text("中继节点")), ("Alpine Linux", "armv7", L10n.text("离线设备")),
                      ("Ubuntu 22.04 LTS", "aarch64", L10n.text("工作站"))]
         let snapshots = specs.enumerated().map { index, spec -> NodeSnapshot in
+            let sample = Self.demoSample(at: now, since: demoStart, index: index)
             var s = NodeSnapshot(); s.id = "demo-\(index)"; s.name = spec.2; s.hostname = "node-\(index)"
             s.os = spec.0; s.arch = spec.1; s.kernel = "6.6.32"; s.cpuModel = index == 0 ? "MediaTek MT7621" : "Virtual CPU"
-            s.cpuCores = index == 0 ? 2 : 4; s.cpuUsage = 25 + 18 * sin(demoTick + Double(index))
+            s.cpuCores = index == 0 ? 2 : 4; s.cpuUsage = sample.cpu
             s.memTotal = index == 0 ? 256 * 1048576 : 4 * 1073741824
-            s.memUsed = s.memTotal * (0.48 + 0.08 * sin(demoTick * 0.4 + Double(index)))
-            s.netRxRate = 100000 + 80000 * sin(demoTick + Double(index)); s.netTxRate = s.netRxRate * 0.3
+            s.memUsed = s.memTotal * sample.memPercent / 100
+            s.netRxRate = sample.rxRate; s.netTxRate = sample.txRate
             s.load = [s.cpuUsage / 50, 0.7, 0.5]; s.diskTotal = 32 * 1073741824; s.diskUsed = s.diskTotal * 0.4
-            s.ts = Date().timeIntervalSince1970 - (index == 3 ? 300 : 0)
+            s.ts = now.timeIntervalSince1970 - (index == 3 ? 300 : 0)
             s.version = "0.1.0"; s.ips = ["192.168.1.\(index + 1)"]; s.egressIp = "1.1.1.1"
-            s.uptime = 86400 * Double(index + 1); s.temp = 42 + 3 * sin(demoTick); return s
+            s.uptime = 86400 * Double(index + 1); s.temp = 42 + 3 * sin(now.timeIntervalSince(demoStart) * 0.18); return s
         }
-        apply(endpoint, result: .success(snapshots.enumerated().filter { $0.offset != 2 && $0.offset != 3 }.map(\.element)), latency: 12)
+        apply(endpoint, result: .success(snapshots.enumerated().filter { $0.offset != 2 && $0.offset != 3 }.map(\.element)), latency: 12, now: now)
         let relay = Endpoint(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!, name: L10n.text("演示中继"), kind: .groupTCP(host: "localhost", port: 9001))
-        apply(relay, result: .success([snapshots[2], snapshots[3]]), latency: 12, ages: [snapshots[2].id: 0, snapshots[3].id: 300])
+        apply(relay, result: .success([snapshots[2], snapshots[3]]), latency: 12, now: now, ages: [snapshots[2].id: 0, snapshots[3].id: 300])
         for index in nodes.indices where nodes[index].history.count == 1 {
-            let s = nodes[index].snapshot
+            guard let demoIndex = Int(nodes[index].snapshot.id.dropFirst("demo-".count)) else { continue }
             nodes[index].history = (0..<120).map { tick in
-                let wave = sin(Double(tick) * 0.22 + Double(index))
-                return HistorySample(date: Date().addingTimeInterval(Double(tick - 119)), cpu: max(0, s.cpuUsage + wave * 12), memPercent: s.memPercent + wave * 3, rxRate: max(0, s.netRxRate * (1 + wave * 0.3)), txRate: max(0, s.netTxRate * (1 + wave * 0.25)))
+                Self.demoSample(at: now.addingTimeInterval(Double(tick - 119)), since: demoStart, index: demoIndex)
             }
         }
     }

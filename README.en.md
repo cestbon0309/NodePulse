@@ -31,6 +31,8 @@ A tiny Linux / OpenWrt C probe, with an iOS monitoring and administration consol
 | **One process, multiple roles**: direct monitoring plus shared relay; systemd / OpenWrt procd | **Two layouts, two themes**: classic / compact, Default / Grayscale, light / dark | **Two-sided SAS**: direct, relay and QR-assisted pairing; scanning never bypasses confirmation |
 | **NAT-friendly**: outbound-only publishers; relays never receive the group secret | **English / Chinese**: follows system language; persistent egress-IP location cache | **Privacy toggle**: hidden IPs always become `•.•.•.•`; copying retains the real address |
 
+**Last 120 seconds**: full and lite retain one resource sample per second. The foreground app polls every second, fills history on reconnect/foreground, and otherwise fetches increments. Relays cache only encrypted history; older versions fall back to snapshots. [Protocol and memory limits](docs/history-protocol.md).
+
 <a id="screenshots"></a>
 ## A closer look
 

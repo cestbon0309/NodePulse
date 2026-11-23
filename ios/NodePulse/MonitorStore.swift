@@ -144,6 +144,7 @@ final class MonitorStore {
         }
         if endpoints.first(where: { $0.id == endpoint.id })?.kind != endpoint.kind ||
             oldSecret != secret || oldGroup != groupSecret {
+            snapshotOnlyRelays.remove(endpoint.id)
             nodes.removeAll { $0.endpointID == endpoint.id }; statuses[endpoint.id] = nil
         }
         if let index = endpoints.firstIndex(where: { $0.id == endpoint.id }) { endpoints[index] = endpoint }

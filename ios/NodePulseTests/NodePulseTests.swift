@@ -1,9 +1,37 @@
 import XCTest
 import SwiftUI
 import CryptoKit
+import Network
 @testable import NodePulse
 
 final class NodePulseTests: XCTestCase {
+    @MainActor func testEditedRelayRetriesHistoryWithoutPollingRestart() async throws {
+        let legacy = try HistoryRelayFixture(legacy: true), modern = try HistoryRelayFixture(legacy: false)
+        defer { legacy.stop(); modern.stop() }
+        let ready = expectation(description: "relay listeners ready"); ready.expectedFulfillmentCount = 2
+        legacy.start { ready.fulfill() }; modern.start { ready.fulfill() }
+        await fulfillment(of: [ready], timeout: 3)
+        let suite = "RelayEdit-\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = MonitorStore(defaults: defaults, secrets: MemorySecrets())
+        var endpoint = Endpoint(name: "legacy", kind: .groupTCP(host: "127.0.0.1", port: legacy.port))
+        try store.save(endpoint, secret: "token", groupSecret: "group")
+        await store.refresh(); await store.refresh()
+        XCTAssertEqual(legacy.historyRequests, [true, false, false])
+        endpoint.name = "renamed"
+        try store.save(endpoint, secret: "token", groupSecret: "group")
+        await store.refresh()
+        XCTAssertEqual(legacy.historyRequests, [true, false, false, false])
+        XCTAssertThrowsError(try store.save(endpoint, secret: "token", groupSecret: ""))
+        await store.refresh()
+        XCTAssertEqual(legacy.historyRequests, [true, false, false, false, false])
+        endpoint.kind = .groupTCP(host: "127.0.0.1", port: modern.port)
+        try store.save(endpoint, secret: "token", groupSecret: "group")
+        await store.refresh()
+        XCTAssertEqual(modern.historyRequests, [true])
+        XCTAssertNil(store.statuses[endpoint.id]?.error)
+        print("Edited relay history request flags: \(modern.historyRequests)")
+    }
     private func historyBatch(_ numbers: [UInt32], full: Bool = true, epoch: String = "1234567890abcdef",
                               latest: UInt32? = nil) -> HistoryBatch {
         HistoryBatch(epoch: epoch, seq: latest ?? numbers.last ?? 0, full: full,
@@ -403,6 +431,52 @@ final class NodePulseTests: XCTestCase {
         try secrets.set("test-value", for: id)
         defer { try? secrets.delete(id) }
         XCTAssertEqual(try secrets.get(id), "test-value")
+    }
+}
+
+private final class HistoryRelayFixture: @unchecked Sendable {
+    private let listener: NWListener
+    private let legacy: Bool
+    private let lock = NSLock()
+    private var received: [Bool] = []
+    var port: UInt16 { listener.port!.rawValue }
+    var historyRequests: [Bool] { lock.lock(); defer { lock.unlock() }; return received }
+    init(legacy: Bool) throws {
+        self.legacy = legacy
+        listener = try NWListener(using: .tcp, on: .any)
+    }
+    func start(ready: @escaping @Sendable () -> Void) {
+        listener.stateUpdateHandler = { if case .ready = $0 { ready() } }
+        listener.newConnectionHandler = { [weak self] connection in
+            connection.start(queue: .global())
+            self?.receive(connection, data: Data())
+        }
+        listener.start(queue: .global())
+    }
+    func stop() { listener.cancel() }
+    private func receive(_ connection: NWConnection, data: Data) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] chunk, _, complete, error in
+            guard let self else { connection.cancel(); return }
+            let bytes = data + (chunk ?? Data())
+            if bytes.count >= 4 {
+                let length = bytes.prefix(4).reduce(0) { ($0 << 8) | Int($1) }
+                if length > ProbeCrypto.maxLength { connection.cancel(); return }
+                if bytes.count >= length + 32 {
+                    do {
+                        let crypto = ProbeCrypto(secret: "token")
+                        let request = try JSONSerialization.jsonObject(with: crypto.open(frame: bytes)) as! [String: Any]
+                        let history = request["since"] != nil
+                        self.lock.lock(); self.received.append(history); self.lock.unlock()
+                        if self.legacy && history { connection.cancel(); return }
+                        let response = try JSONSerialization.data(withJSONObject: ["ok": true, "rid": request["rid"]!, "blobs": []])
+                        connection.send(content: try crypto.seal(json: response), completion: .contentProcessed { _ in connection.cancel() })
+                    } catch { connection.cancel() }
+                    return
+                }
+            }
+            if complete || error != nil { connection.cancel() }
+            else { self.receive(connection, data: bytes) }
+        }
     }
 }
 

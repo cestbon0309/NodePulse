@@ -1,8 +1,109 @@
 import XCTest
 import SwiftUI
+import CryptoKit
 @testable import NodePulse
 
 final class NodePulseTests: XCTestCase {
+    private func historyBatch(_ numbers: [UInt32], full: Bool = true, epoch: String = "1234567890abcdef",
+                              latest: UInt32? = nil) -> HistoryBatch {
+        HistoryBatch(epoch: epoch, seq: latest ?? numbers.last ?? 0, full: full,
+                     samples: numbers.enumerated().map { offset, seq in
+                         [Double(seq), 1000 + Double(offset), 10, 20, 0, 30, 1, 2, 3, 40, 50]
+                     })
+    }
+    func testHistoryMergeDedupRetentionAndWrap() throws {
+        var window = HistoryWindow()
+        XCTAssertTrue(window.merge(historyBatch(Array(1...120))))
+        XCTAssertEqual(window.samples.count, 120)
+        var increment = historyBatch([120, 121, 122], full: false)
+        for index in increment.samples.indices { increment.samples[index][1] = 1119 + Double(index) }
+        XCTAssertTrue(window.merge(increment))
+        XCTAssertEqual(window.samples.count, 120)
+        XCTAssertEqual(window.samples.first?.seq, 3)
+        XCTAssertTrue(window.merge(increment))
+        XCTAssertEqual(window.samples.count, 120)
+        XCTAssertEqual(window.cursor?.since, 122)
+        XCTAssertEqual(window.samples.map(\.date), window.samples.map(\.date).sorted())
+        XCTAssertTrue(window.merge(historyBatch([UInt32.max - 1, UInt32.max, 0, 1], epoch: "abcdef1234567890")))
+        XCTAssertEqual(window.samples.map(\.seq), [UInt32.max - 1, UInt32.max, 0, 1])
+        var skewed = historyBatch([2, 3, 4], epoch: "abcdef1234567890")
+        skewed.samples[1][1] = 999
+        XCTAssertTrue(window.merge(skewed))
+        XCTAssertEqual(window.samples.map(\.date), window.samples.map(\.date).sorted())
+    }
+    func testHistoryGapEpochMalformedAndEmptyRecovery() throws {
+        var window = HistoryWindow()
+        XCTAssertTrue(window.merge(historyBatch([1, 2])))
+        XCTAssertTrue(window.merge(historyBatch([], full: false, latest: 2)))
+        XCTAssertFalse(window.merge(historyBatch([4], full: false)))
+        XCTAssertNil(window.cursor)
+        XCTAssertEqual(window.samples.count, 2)
+        XCTAssertTrue(window.merge(historyBatch([1, 2, 4])))
+        XCTAssertFalse(window.merge(historyBatch([5], full: false, epoch: "abcdef1234567890")))
+        XCTAssertNil(window.cursor)
+        XCTAssertTrue(window.merge(historyBatch([1], epoch: "abcdef1234567890")))
+        var bad = historyBatch([2], full: false, epoch: "abcdef1234567890")
+        bad.samples[0].removeLast()
+        XCTAssertFalse(window.merge(bad))
+        XCTAssertNil(window.cursor)
+        XCTAssertTrue(window.merge(historyBatch([])))
+        XCTAssertTrue(window.samples.isEmpty)
+        XCTAssertThrowsError(try historyBatch([1, 1]).points())
+        XCTAssertThrowsError(try historyBatch([1], epoch: "invalid").points())
+    }
+    @MainActor func testHistoryForegroundReconnectAndLegacyRules() throws {
+        let suite = "History-\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = MonitorStore(defaults: defaults, secrets: MemorySecrets())
+        XCTAssertEqual(store.refreshInterval, 1)
+        let endpoint = Endpoint(name: "test", kind: .direct(host: "localhost", port: 9000))
+        var node = NodeSnapshot(); node.id = "node"
+        store.apply(endpoint, result: .success([node]), latency: 1, histories: [node.id: historyBatch([1, 2])])
+        XCTAssertEqual(store.nodes.first?.historyWindow.cursor?.since, 2)
+        store.start()
+        XCTAssertNil(store.nodes.first?.historyWindow.cursor)
+        store.stop()
+        store.apply(endpoint, result: .success([node]), latency: 1, histories: [node.id: historyBatch([3, 4])])
+        store.apply(endpoint, result: .failure(ProbeError.refused), latency: 1)
+        XCTAssertNil(store.nodes.first?.historyWindow.cursor)
+        store.apply(endpoint, result: .success([node]), latency: 1)
+        XCTAssertNil(store.nodes.first?.historyWindow.cursor)
+        XCTAssertNil(store.nodes.first?.history.last?.seq)
+        store.start(); store.stop()
+        XCTAssertNil(store.nodes.first?.historyWindow.cursor)
+    }
+    func testHistoryRelayDomainBindingAndSignedCursor() throws {
+        let group = try GroupCrypto(secret: "history-test")
+        let slot = group.slot(for: "node"), epoch = "1234567890abcdef", seq: UInt32 = 1
+        let row = historyBatch([seq]).samples[0]
+        let plain = try JSONSerialization.data(withJSONObject: ["epoch": epoch, "sample": row])
+        let ad = Data("npulse-history-v1:\(group.gid):\(slot):\(epoch):\(seq)".utf8)
+        let sealed = try ChaChaPoly.seal(plain, using: group.encKey, authenticating: ad).combined.base64EncodedString()
+        var object: [String: Any] = ["epoch": epoch, "seq": seq, "full": true, "samples": [[seq, sealed]]]
+        XCTAssertEqual(try group.openHistory(object, slot: slot).samples, [row])
+        object["samples"] = [[2, sealed]]
+        XCTAssertThrowsError(try group.openHistory(object, slot: slot))
+        object["samples"] = [[seq, sealed]]
+        XCTAssertThrowsError(try group.openHistory(object, slot: String(repeating: "0", count: 32)))
+        object["epoch"] = "abcdef1234567890"
+        XCTAssertThrowsError(try group.openHistory(object, slot: slot))
+        let request = try group.getRequest(timestamp: 123, requestID: String(repeating: "a", count: 32),
+                                           since: [slot: HistoryCursor(epoch: epoch, since: seq)])
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: request.json) as? [String: Any])
+        let map = try JSONSerialization.data(withJSONObject: json["since"]!, options: [.sortedKeys, .withoutEscapingSlashes])
+        let message = Data("npulse-gget\n\(group.gid)\n123\n\(request.rid)\n".utf8) + map
+        let hex = try XCTUnwrap(json["sig"] as? String)
+        let signature = Data(stride(from: 0, to: hex.count, by: 2).map { offset in
+            let start = hex.index(hex.startIndex, offsetBy: offset)
+            return UInt8(hex[start..<hex.index(start, offsetBy: 2)], radix: 16)!
+        })
+        XCTAssertTrue(group.signingKey.publicKey.isValidSignature(signature, for: message))
+        XCTAssertFalse(group.signingKey.publicKey.isValidSignature(signature, for: message + Data(" ".utf8)))
+        let legacy = try group.getRequest(timestamp: 123, requestID: request.rid)
+        let legacyJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: legacy.json) as? [String: Any])
+        XCTAssertNil(legacyJSON["since"])
+        print("HISTORY_APP_REQUEST \(request.json.base64EncodedString())")
+    }
     @MainActor func testCompactCardHeightIndependentOfBadgeLocationAndEmptyMetadata() throws {
         let suite = "Compact-\(UUID())", defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -238,7 +339,7 @@ final class NodePulseTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = MonitorStore(defaults: defaults, secrets: MemorySecrets())
-        XCTAssertEqual(store.refreshInterval, 3)
+        XCTAssertEqual(store.refreshInterval, 1)
         let endpoint = Endpoint(name: "test", kind: .direct(host: "localhost", port: 1))
         try store.save(endpoint, secret: "never-in-defaults")
         defer { try? store.delete(endpoint) }
@@ -263,7 +364,7 @@ final class NodePulseTests: XCTestCase {
         await store.refresh(); let first = store.nodes[0].snapshot.cpuUsage
         await store.refresh()
         XCTAssertEqual(store.nodes.count, 5); XCTAssertNotEqual(store.nodes[0].snapshot.cpuUsage, first)
-        XCTAssertTrue(store.nodes.contains { !$0.online }); XCTAssertEqual(store.nodes[0].history.count, 41)
+        XCTAssertTrue(store.nodes.contains { !$0.online }); XCTAssertEqual(store.nodes[0].history.count, 120)
     }
     @MainActor func testSharedRelayFreshnessUsesAuthenticatedAge() {
         let suite = "Freshness-\(UUID())", defaults = UserDefaults(suiteName: suite)!

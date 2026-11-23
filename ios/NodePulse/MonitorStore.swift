@@ -7,9 +7,68 @@ struct HistorySample: Hashable {
     var memPercent: Double
     var rxRate: Double
     var txRate: Double
+    var seq: UInt32? = nil
     static func displayed(in history: [Self], at selection: Date?) -> Self? {
         guard let selection else { return history.last }
         return history.min { abs($0.date.timeIntervalSince(selection)) < abs($1.date.timeIntervalSince(selection)) }
+    }
+}
+struct HistoryCursor: Codable, Hashable {
+    var epoch: String
+    var since: UInt32
+}
+struct HistoryBatch: Codable, Hashable {
+    var epoch: String
+    var seq: UInt32
+    var full: Bool
+    var samples: [[Double]]
+    func points() throws -> [HistorySample] {
+        guard epoch.count == 16, epoch.allSatisfy({ "0123456789abcdef".contains($0) }),
+              let boot = UInt64(epoch, radix: 16), boot != 0, samples.count <= 120 else { throw ProbeError.parse }
+        var seen = Set<UInt32>(), previous: UInt32?
+        let points = try samples.map { row -> HistorySample in
+            guard row.count == 11, row.allSatisfy(\.isFinite), row[0] >= 0, row[0] <= Double(UInt32.max),
+                  row[0].rounded() == row[0], row[1] > 0 else { throw ProbeError.parse }
+            let number = UInt32(row[0])
+            guard seen.insert(number).inserted else { throw ProbeError.parse }
+            if let previous {
+                guard number &- previous > 0, number &- previous < 0x80000000 else { throw ProbeError.parse }
+            }
+            previous = number
+            return HistorySample(date: Date(timeIntervalSince1970: row[1]), cpu: row[2], memPercent: row[3],
+                                 rxRate: row[9], txRate: row[10], seq: number)
+        }
+        guard points.isEmpty || points.last?.seq == seq else { throw ProbeError.parse }
+        return points
+    }
+}
+struct HistoryWindow {
+    private(set) var cursor: HistoryCursor?
+    private(set) var samples: [HistorySample] = []
+    mutating func invalidate() { cursor = nil }
+    @discardableResult mutating func merge(_ batch: HistoryBatch) -> Bool {
+        guard let incoming = try? batch.points() else { invalidate(); return false }
+        if let cursor, cursor.epoch == batch.epoch, batch.seq &- cursor.since >= 0x80000000 { return true }
+        if batch.full {
+            guard !incoming.isEmpty || batch.seq == 0 else { invalidate(); return false }
+            samples = incoming
+        } else {
+            guard let cursor, cursor.epoch == batch.epoch else { invalidate(); return false }
+            let fresh = incoming.filter { ($0.seq! &- cursor.since) > 0 && ($0.seq! &- cursor.since) < 0x80000000 }
+            var next = cursor.since
+            for point in fresh {
+                guard point.seq == next &+ 1 else { invalidate(); return false }
+                next = point.seq!
+            }
+            guard next == batch.seq else { invalidate(); return false }
+            samples.append(contentsOf: fresh)
+        }
+        samples.sort { $0.date < $1.date || ($0.date == $1.date && $0.seq != $1.seq && ($1.seq! &- $0.seq!) < 0x80000000) }
+        if let newest = samples.last?.date {
+            samples = Array(samples.filter { $0.date > newest.addingTimeInterval(-120) }.suffix(120))
+        }
+        cursor = HistoryCursor(epoch: batch.epoch, since: batch.seq)
+        return true
     }
 }
 struct NodeItem: Identifiable {
@@ -19,6 +78,7 @@ struct NodeItem: Identifiable {
     var snapshot: NodeSnapshot
     var online: Bool
     var history: [HistorySample] = []
+    var historyWindow = HistoryWindow()
     var probeInterval: Double = 5
     var endToEnd = false
     var usesEndToEndEncryption = false
@@ -56,6 +116,7 @@ final class MonitorStore {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let secrets: any SecretStorage
     @ObservationIgnored private var polling: Task<Void, Never>?
+    @ObservationIgnored private var snapshotOnlyRelays = Set<UUID>()
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var refreshing = false
     @ObservationIgnored private var demoTick = 0.0
@@ -66,7 +127,7 @@ final class MonitorStore {
         endpoints = defaults.data(forKey: "endpoints").flatMap { try? JSONDecoder().decode([Endpoint].self, from: $0) } ?? []
         hiddenNodes = defaults.data(forKey: "hiddenNodes").flatMap { try? JSONDecoder().decode([HiddenNode].self, from: $0) } ?? []
         let interval = defaults.double(forKey: "refreshInterval")
-        refreshInterval = interval > 0 ? interval : 3
+        refreshInterval = interval > 0 ? interval : 1
         demoMode = defaults.bool(forKey: "demoMode")
     }
     func save(_ endpoint: Endpoint, secret: String, groupSecret: String? = nil) throws {
@@ -126,11 +187,15 @@ final class MonitorStore {
     private func persist() { defaults.set(try? JSONEncoder().encode(endpoints), forKey: "endpoints") }
     func start() {
         guard polling == nil else { return }
+        snapshotOnlyRelays.removeAll()
+        for index in nodes.indices { nodes[index].historyWindow.invalidate() }
         polling = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
+                let began = ContinuousClock.now
                 await self.refresh()
-                do { try await Task.sleep(for: .seconds(max(0.2, self.refreshInterval))) }
+                let elapsed = began.duration(to: .now)
+                do { try await Task.sleep(for: max(.milliseconds(50), .seconds(max(0.2, self.refreshInterval)) - elapsed)) }
                 catch { return }
             }
         }
@@ -151,13 +216,17 @@ final class MonitorStore {
             return (try secrets.get(endpoint.id), group)
         }) }
         await withTaskGroup(of: (Endpoint, Result<ProbeFetch, Error>, Double).self) { group in
-            for (endpoint, secret) in requests {
+        for (endpoint, secret) in requests {
+                let history = !snapshotOnlyRelays.contains(endpoint.id)
+                let cursors = Dictionary(uniqueKeysWithValues: nodes.filter { $0.endpointID == endpoint.id }.compactMap { node in
+                    node.historyWindow.cursor.map { (node.snapshot.id, $0) }
+                })
                 group.addTask {
                     let start = ContinuousClock.now
                     let result: Result<ProbeFetch, Error>
                     do {
                         let credentials = try secret.get()
-                        result = .success(try await fetchProbe(endpoint, secret: credentials.0, groupSecret: credentials.1))
+                        result = .success(try await fetchProbe(endpoint, secret: credentials.0, groupSecret: credentials.1, cursors: cursors, history: history))
                     }
                     catch { result = .failure(error) }
                     let duration = start.duration(to: .now).components
@@ -168,20 +237,25 @@ final class MonitorStore {
                 guard current == generation, !Task.isCancelled else { continue }
                 switch result {
                 case .success(let fetched):
+                    if fetched.legacyRelay { snapshotOnlyRelays.insert(endpoint.id) }
                     apply(endpoint, result: .success(fetched.snapshots), latency: latency,
-                          ages: fetched.ages, droppedBlobs: fetched.droppedBlobs)
+                          ages: fetched.ages, droppedBlobs: fetched.droppedBlobs, histories: fetched.histories,
+                          invalidHistories: fetched.invalidHistories)
                 case .failure(let error): apply(endpoint, result: .failure(error), latency: latency)
                 }
             }
         }
     }
     func apply(_ endpoint: Endpoint, result: Result<[NodeSnapshot], Error>, latency: Double, now: Date = Date(),
-               ages: [String: Double] = [:], droppedBlobs: Int = 0) {
+               ages: [String: Double] = [:], droppedBlobs: Int = 0,
+               histories: [String: HistoryBatch] = [:], invalidHistories: Set<String> = []) {
         switch result {
         case .failure(let error):
             var status = statuses[endpoint.id] ?? EndpointStatus()
             status.error = error.localizedDescription; statuses[endpoint.id] = status
-            for index in nodes.indices where nodes[index].endpointID == endpoint.id { nodes[index].online = false }
+            for index in nodes.indices where nodes[index].endpointID == endpoint.id {
+                nodes[index].online = false; nodes[index].historyWindow.invalidate()
+            }
         case .success(let snapshots):
             statuses[endpoint.id] = EndpointStatus(lastSuccess: now, latency: latency, error: nil, droppedBlobs: droppedBlobs)
             for snapshot in snapshots {
@@ -209,9 +283,17 @@ final class MonitorStore {
                 case .https, .groupHTTPS: item.usesEndToEndEncryption = false
                 case .direct, .groupTCP: item.usesEndToEndEncryption = true
                 }
-                item.history.append(HistorySample(date: now, cpu: snapshot.cpuUsage, memPercent: snapshot.memPercent,
-                                                  rxRate: snapshot.netRxRate, txRate: snapshot.netTxRate))
-                item.history = Array(item.history.suffix(120))
+                item.historyWindow = old?.historyWindow ?? HistoryWindow()
+                if invalidHistories.contains(snapshot.id) {
+                    item.historyWindow.invalidate()
+                } else if let batch = histories[snapshot.id] {
+                    if item.historyWindow.merge(batch) { item.history = item.historyWindow.samples }
+                } else {
+                    item.historyWindow.invalidate()
+                    item.history.append(HistorySample(date: now, cpu: snapshot.cpuUsage, memPercent: snapshot.memPercent,
+                                                      rxRate: snapshot.netRxRate, txRate: snapshot.netTxRate))
+                    item.history = Array(item.history.filter { $0.date > now.addingTimeInterval(-120) }.suffix(120))
+                }
                 if let index { nodes[index] = item } else { nodes.append(item) }
             }
             let ids = Set(snapshots.map { "\(endpoint.id)/\($0.id)" })
@@ -243,9 +325,9 @@ final class MonitorStore {
         apply(relay, result: .success([snapshots[2], snapshots[3]]), latency: 12, ages: [snapshots[2].id: 0, snapshots[3].id: 300])
         for index in nodes.indices where nodes[index].history.count == 1 {
             let s = nodes[index].snapshot
-            nodes[index].history = (0..<40).map { tick in
+            nodes[index].history = (0..<120).map { tick in
                 let wave = sin(Double(tick) * 0.22 + Double(index))
-                return HistorySample(date: Date().addingTimeInterval(Double(tick - 39) * 3), cpu: max(0, s.cpuUsage + wave * 12), memPercent: s.memPercent + wave * 3, rxRate: max(0, s.netRxRate * (1 + wave * 0.3)), txRate: max(0, s.netTxRate * (1 + wave * 0.25)))
+                return HistorySample(date: Date().addingTimeInterval(Double(tick - 119)), cpu: max(0, s.cpuUsage + wave * 12), memPercent: s.memPercent + wave * 3, rxRate: max(0, s.netRxRate * (1 + wave * 0.3)), txRate: max(0, s.netTxRate * (1 + wave * 0.25)))
             }
         }
     }

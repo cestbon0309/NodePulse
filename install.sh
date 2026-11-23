@@ -372,7 +372,7 @@ firewall_plan() {
     fi
     case "$FW" in
         ufw) printf 'ufw allow %s/tcp\n' "$PORT" ;;
-        firewalld) printf 'firewall-cmd --permanent --add-port=%s/tcp && firewall-cmd --reload\n' "$PORT" ;;
+        firewalld) printf 'firewall-cmd --permanent --add-port=%s/tcp && firewall-cmd --add-port=%s/tcp\n' "$PORT" "$PORT" ;;
         nft) printf '%s\n' "$NFT_CHAIN" | while read -r family table chain create; do
                  operation=insert
                  if [ "$create" = create ]; then
@@ -397,16 +397,17 @@ open_firewall() {
     case "$FW" in
         ufw)
             added=$(ufw show added) || fail 'Cannot query ufw'
-            if printf '%s\n' "$added" | grep -E "^ufw allow $PORT/tcp( |$)" >/dev/null; then return; fi
+            if printf '%s\n' "$added" | awk -v port="$PORT" '$1=="ufw" && $2=="allow" {i=3; if($i=="log" || $i=="log-all") i++; if($i=="in") i++; if($i==port || $i==port"/tcp") found=1} END {exit !found}'; then return; fi
             ufw allow "$PORT/tcp" comment "$tag"
             record_firewall "ufw|$PORT|$tag" ;;
         firewalld)
             zone=$(firewall-cmd --get-default-zone)
             case "$zone" in ''|*[!a-zA-Z0-9_-]*) fail 'Invalid firewalld zone' ;; esac
-            if firewall-cmd --permanent --zone="$zone" --query-port="$PORT/tcp" >/dev/null; then return; else rc=$?; [ "$rc" = 1 ] || fail 'Cannot query firewalld'; fi
-            firewall-cmd --permanent --zone="$zone" --add-port="$PORT/tcp"
-            record_firewall "firewalld|$zone|$PORT"
-            firewall-cmd --reload ;;
+            permanent=1; runtime=0
+            if firewall-cmd --permanent --zone="$zone" --query-port="$PORT/tcp" >/dev/null; then permanent=0; else rc=$?; [ "$rc" = 1 ] || fail 'Cannot query firewalld'; fi
+            if firewall-cmd --zone="$zone" --query-port="$PORT/tcp" >/dev/null; then :; else rc=$?; [ "$rc" = 1 ] || fail 'Cannot query firewalld'; runtime=1; fi
+            if [ "$permanent" = 1 ]; then firewall-cmd --permanent --zone="$zone" --add-port="$PORT/tcp"; record_firewall "firewalld|$zone|$PORT|$runtime"; fi
+            if [ "$runtime" = 1 ]; then firewall-cmd --zone="$zone" --add-port="$PORT/tcp"; fi ;;
         nft) printf '%s\n' "$NFT_CHAIN" | while read -r family table chain create; do
                  operation=insert
                  if [ "$create" = create ]; then
@@ -449,8 +450,12 @@ remove_firewall() {
             firewalld)
                 if firewall-cmd --permanent --zone="$a" --query-port="$b/tcp" >/dev/null; then
                     firewall-cmd --permanent --zone="$a" --remove-port="$b/tcp"
-                    firewall-cmd --reload
-                else rc=$?; [ "$rc" = 1 ] || fail 'Cannot query firewalld'; fi ;;
+                else rc=$?; [ "$rc" = 1 ] || fail 'Cannot query firewalld'; fi
+                if [ "$c" = 1 ]; then
+                    if firewall-cmd --zone="$a" --query-port="$b/tcp" >/dev/null; then
+                        firewall-cmd --zone="$a" --remove-port="$b/tcp"
+                    else rc=$?; [ "$rc" = 1 ] || fail 'Cannot query firewalld'; fi
+                fi ;;
             nft)
                 rules=$(nft -a list ruleset)
                 if printf '%s\n' "$rules" | grep -F "\"$e\"" >/dev/null; then
@@ -959,7 +964,7 @@ if [ -n "$ALSO_RELAY" ] && [ "$ALSO_RELAY" -lt 1024 ]; then PRIVILEGED_PORT=yes;
 fetch_binary
 replace_binary; write_config; write_unit
 service enable
-if [ "$MODE" = 4 ]; then open_firewall; fi
+if [ "$MODE" = 4 ]; then (BIND=0.0.0.0; open_firewall) || exit 1; fi
 if [ "$LISTEN" = yes ] || [ "$MODE" = 3 ]; then
     if [ "$MODE" = 1 ]; then
         open_firewall

@@ -24,14 +24,19 @@ with open(os.environ["MOCK_TRACE"],"a") as f: f.write(name+" "+" ".join(args)+"\
 active=d.get("active",False); rc=0
 if name=="ufw":
     if args[:2]==["show","added"]:
-        if active: print('ufw allow 9527/tcp comment '+d.get("tag","foreign"))
+        if d.get("logged"): print('ufw allow log 9527/tcp')
+        elif active: print('ufw allow 9527/tcp comment '+d.get("tag","foreign"))
     elif "delete" in args: d["active"]=False
     else: d.update(active=True,tag=args[-1])
 elif name=="firewall-cmd":
     if "--get-default-zone" in args: print("public")
-    elif any(x.startswith("--query-port") for x in args): rc=0 if active else 1
-    elif any(x.startswith("--add-port") for x in args): d["active"]=True
-    elif any(x.startswith("--remove-port") for x in args): d["active"]=False
+    else:
+        key="perm" if "--permanent" in args else "rt"
+        d.setdefault("perm",active); d.setdefault("rt",active)
+        if any(x.startswith("--query-port") for x in args): rc=0 if d[key] else 1
+        elif any(x.startswith("--add-port") for x in args): d[key]=True
+        elif any(x.startswith("--remove-port") for x in args): d[key]=False
+        d["active"]=d["perm"] or d["rt"]
 elif name=="nft":
     if "list" in args:
         if active: print('tcp dport 9527 accept comment "'+d["tag"]+'" # handle 7')
@@ -89,6 +94,20 @@ PORT=9527; BIND=0.0.0.0; OPEN_FIREWALL=yes; DRY_RUN=0
             state.write_text('{"active":true,"tag":"foreign"}')
             assert run(backend, "remove_firewall").returncode == 0
             assert json.loads(state.read_text())["active"], "removed somebody else's rule"
+    state.write_text('{"logged":true,"active":true}'); trace.write_text("")
+    assert run("ufw", "open_firewall").returncode == 0
+    assert not records.exists() and "comment" not in trace.read_text(), "replaced a preexisting logged ufw rule"
+    state.write_text('{"perm":true,"rt":false}'); trace.write_text("")
+    assert run("firewalld", "open_firewall").returncode == 0
+    assert json.loads(state.read_text())["rt"] and not records.exists(), "staged permanent port not applied at runtime"
+    state.write_text('{"perm":false,"rt":true}'); trace.write_text("")
+    assert run("firewalld", "open_firewall").returncode == 0 and records.read_text() == "firewalld|public|9527|0\n"
+    assert run("firewalld", "remove_firewall").returncode == 0
+    final = json.loads(state.read_text())
+    assert not final["perm"] and final["rt"], "removed a preexisting runtime allowance"
+    state.write_text('{}'); trace.write_text("")
+    assert run("firewalld", "open_firewall; remove_firewall").returncode == 0
+    assert not json.loads(state.read_text())["active"] and "--reload" not in trace.read_text()
     state.write_text('{}')
     assert run("iptables", "BIND=::; open_firewall").returncode == 0
     assert records.read_text().startswith("ip6tables|")

@@ -94,6 +94,8 @@ static double monotime(void) {
 static char hostname_buf[256], node_id[65], os_name[256], cpu_model[256];
 static struct utsname uts;
 static double cpu_usage, rx_rate, tx_rate, previous_time;
+static FILE *metric_mem_file, *metric_cpu_file, *metric_net_file;
+static char metric_buffers[3][4096];
 static unsigned long long prev_total, prev_idle, rx, tx, prev_rx, prev_tx;
 static void property(const char *path, const char *key, char *out,
                      size_t size) {
@@ -167,6 +169,12 @@ static void identify(const char *machine, const char *host, const char *mac,
     snprintf(node_id + i * 2, 3, "%02x", h[i]);
 }
 static void metrics_init(const char *name) {
+  FILE **files[] = {&metric_mem_file, &metric_cpu_file, &metric_net_file};
+  const char *paths[] = {"/proc/meminfo", "/proc/stat", "/proc/net/dev"};
+  for (int i = 0; i < 3; i++) {
+    *files[i] = fopen(paths[i], "r");
+    if (*files[i]) setvbuf(*files[i], metric_buffers[i], _IOFBF, sizeof(metric_buffers[i]));
+  }
   gethostname(hostname_buf, sizeof(hostname_buf) - 1);
   uname(&uts);
   snprintf(os_name, sizeof(os_name), "%s", uts.sysname);
@@ -187,10 +195,43 @@ static void metrics_init(const char *name) {
     first_mac("/sys/class/net", mac);
   identify(identity, hostname_buf, mac, name);
 }
-static void sample(void) {
-  double now = monotime(), dt = now - previous_time;
-  FILE *f = fopen("/proc/stat", "r");
+static unsigned long long metric_mt, metric_mu, metric_st, metric_su, metric_disk, metric_used;
+static double metric_loads[3];
+static void sample_resources(void) {
+  unsigned long long mt = 0, ma = 0, mf = 0, mb = 0, mc = 0, st = 0, sf = 0;
+  int available = 0;
+  FILE *f = metric_mem_file;
   if (f) {
+    rewind(f);
+    char line[256], name[64]; unsigned long long v;
+    while (fgets(line, sizeof(line), f)) if (sscanf(line, "%63s %llu", name, &v) == 2) {
+      v *= 1024;
+      if (!strcmp(name, "MemTotal:")) mt = v;
+      else if (!strcmp(name, "MemAvailable:")) { ma = v; available = 1; }
+      else if (!strcmp(name, "MemFree:")) mf = v;
+      else if (!strcmp(name, "Buffers:")) mb = v;
+      else if (!strcmp(name, "Cached:")) mc = v;
+      else if (!strcmp(name, "SwapTotal:")) st = v;
+      else if (!strcmp(name, "SwapFree:")) sf = v;
+    }
+  }
+  if (!available) ma = mf + mb + mc;
+  metric_mt = mt; metric_mu = mt > ma ? mt - ma : 0;
+  metric_st = st; metric_su = st > sf ? st - sf : 0;
+  struct statvfs fs;
+  metric_disk = metric_used = 0;
+  if (!statvfs("/", &fs)) {
+    metric_disk = (unsigned long long)fs.f_blocks * fs.f_frsize;
+    metric_used = (unsigned long long)(fs.f_blocks - fs.f_bfree) * fs.f_frsize;
+  }
+  memset(metric_loads, 0, sizeof(metric_loads)); getloadavg(metric_loads, 3);
+}
+static void sample(void) {
+  sample_resources();
+  double now = monotime(), dt = now - previous_time;
+  FILE *f = metric_cpu_file;
+  if (f) {
+    rewind(f);
     unsigned long long a = 0, b = 0, c = 0, d = 0, e = 0, g = 0, h = 0, i = 0;
     if (fscanf(f, "cpu %llu %llu %llu %llu %llu %llu %llu %llu", &a, &b, &c, &d,
                &e, &g, &h, &i) >= 4) {
@@ -201,11 +242,11 @@ static void sample(void) {
       prev_total = total;
       prev_idle = idle;
     }
-    fclose(f);
   }
   rx = tx = 0;
-  f = fopen("/proc/net/dev", "r");
+  f = metric_net_file;
   if (f) {
+    rewind(f);
     char line[1024];
     while (fgets(line, sizeof(line), f)) {
       char *p = strchr(line, ':');
@@ -223,7 +264,6 @@ static void sample(void) {
         tx += t;
       }
     }
-    fclose(f);
   }
   if (previous_time && dt > 0) {
     rx_rate = rx >= prev_rx ? (rx - prev_rx) / dt : 0;
@@ -249,44 +289,10 @@ static char *snapshot(const char *name) {
   quote_limited(&b, uts.machine, SNAPSHOT_ARCH);
   add(&b, ",\"cpu_model\":");
   quote_limited(&b, cpu_model, SNAPSHOT_CPU_MODEL);
-  double loads[3] = {0};
-  getloadavg(loads, 3);
+  double *loads = metric_loads;
   long cores = sysconf(_SC_NPROCESSORS_ONLN);
-  unsigned long long mt = 0, ma = 0, mf = 0, mb = 0, mc = 0, st = 0, sf = 0;
-  int available = 0;
-  FILE *f = fopen("/proc/meminfo", "r");
-  if (f) {
-    char line[256], key[64];
-    unsigned long long v;
-    while (fgets(line, sizeof(line), f))
-      if (sscanf(line, "%63s %llu", key, &v) == 2) {
-        v *= 1024;
-        if (!strcmp(key, "MemTotal:"))
-          mt = v;
-        else if (!strcmp(key, "MemAvailable:")) {
-          ma = v;
-          available = 1;
-        } else if (!strcmp(key, "MemFree:"))
-          mf = v;
-        else if (!strcmp(key, "Buffers:"))
-          mb = v;
-        else if (!strcmp(key, "Cached:"))
-          mc = v;
-        else if (!strcmp(key, "SwapTotal:"))
-          st = v;
-        else if (!strcmp(key, "SwapFree:"))
-          sf = v;
-      }
-    fclose(f);
-  }
-  if (!available)
-    ma = mf + mb + mc;
-  struct statvfs fs;
-  unsigned long long disk = 0, used = 0;
-  if (!statvfs("/", &fs)) {
-    disk = (unsigned long long)fs.f_blocks * fs.f_frsize;
-    used = (unsigned long long)(fs.f_blocks - fs.f_bfree) * fs.f_frsize;
-  }
+  unsigned long long mt = metric_mt, st = metric_st, disk = metric_disk, used = metric_used;
+  FILE *f;
   double up = 0;
   unsigned procs = 0;
   f = fopen("/proc/uptime", "r");
@@ -322,7 +328,7 @@ static char *snapshot(const char *name) {
       "\"tcp_conns\":%u,\"temp\":",
       cores > 0 ? cores : 1, bounded_metric(cpu_usage), bounded_metric(loads[0]),
       bounded_metric(loads[1]), bounded_metric(loads[2]), mt,
-      mt > ma ? mt - ma : 0, st, st > sf ? st - sf : 0, disk, used, rx, tx,
+      metric_mu, st, metric_su, disk, used, rx, tx,
       bounded_metric(rx_rate), bounded_metric(tx_rate), bounded_metric(up), procs, tcp);
   double temp;
   f = fopen("/sys/class/thermal/thermal_zone0/temp", "r");

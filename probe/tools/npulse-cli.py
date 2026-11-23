@@ -137,10 +137,16 @@ def open_blobs(secret, response):
 
 
 def group_message(obj):
+    if obj["op"] == "hpush":
+        return (f'npulse-hpush\n{obj["gid"]}\n{obj["slot"]}\n{obj["ts"]}\n'
+                f'{obj["rid"]}\n{obj["epoch"]}\n{obj["seq"]}\n{obj["blob"]}').encode()
     if obj["op"] == "gpush":
         return (f'npulse-gpush\n{obj["gid"]}\n{obj["slot"]}\n{obj["ts"]}\n'
                 f'{obj["rid"]}\n{obj["blob"]}').encode()
-    return f'npulse-gget\n{obj["gid"]}\n{obj["ts"]}\n{obj["rid"]}'.encode()
+    message = f'npulse-gget\n{obj["gid"]}\n{obj["ts"]}\n{obj["rid"]}'
+    if "since" in obj:
+        message += "\n" + json.dumps(obj["since"], ensure_ascii=False, separators=(",", ":"))
+    return message.encode()
 
 
 def group_request(secret, op="gget", node=None, ts=None, rid=None):
@@ -158,7 +164,7 @@ def decode(secret, frame):
         raise ValueError("truncated frame")
     length = frame[:4]
     size = struct.unpack("!I", length)[0]
-    if not 0 < size <= 256 * 1024 or len(frame) != size + 32:
+    if not 0 < size <= 2 * 1024 * 1024 or len(frame) != size + 32:
         raise ValueError("invalid frame length")
     cipher = ChaCha20Poly1305(hashlib.sha512(secret.encode()).digest()[:32])
     return json.loads(cipher.decrypt(frame[4:16], frame[16:], length))
@@ -166,7 +172,7 @@ def decode(secret, frame):
 
 def encode(secret, obj, nonce=None):
     payload = json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode()
-    if not 0 < len(payload) <= 256 * 1024:
+    if not 0 < len(payload) <= 2 * 1024 * 1024:
         raise ValueError("frame length out of range")
     length = struct.pack("!I", len(payload))
     nonce = os.urandom(12) if nonce is None else nonce
@@ -193,7 +199,7 @@ def exchange(host, port, secret, obj):
         sock.sendall(encode(secret, obj))
         length = exact(sock, 4)
         size = struct.unpack("!I", length)[0]
-        if not 0 < size <= 256 * 1024:
+        if not 0 < size <= 2 * 1024 * 1024:
             raise ValueError("invalid response length")
         nonce = exact(sock, 12)
         cipher = ChaCha20Poly1305(hashlib.sha512(secret.encode()).digest()[:32])

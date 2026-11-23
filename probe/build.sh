@@ -13,7 +13,10 @@ for pair in x86_64:x86_64-linux-musl i386:x86-linux-musl aarch64:aarch64-linux-m
     esac
     for admin in 1 0; do
         suffix=
-        if [ "$admin" = 0 ]; then suffix=-lite; fi
+        if [ "$admin" = 0 ]; then
+            suffix=-lite
+            set -- "$@" -fno-unwind-tables -fno-asynchronous-unwind-tables
+        fi
         pairing=${PAIR:-$admin}
         qr=${QR:-$pairing}
         zig cc -target "$target" "$@" -DADMIN="$admin" -DPAIR="$pairing" -DQR="$qr" -Os -flto -std=gnu99 -Wall -Wextra -Werror \

@@ -37,6 +37,7 @@ Usage: sh install.sh [install|upgrade|uninstall|status|pair] [options]
   --admin-via-pair     Use full and pair with phone; both sides must authorize admin
   --also-relay PORT    Mode 1: same process also relays; use a distinct port
   --purge              Remove configuration on uninstall (otherwise preserved)
+  --force              Upgrade even if already at the target release
   --help
 
 Environment: NPULSE_YES=1, NPULSE_LANG=zh|en, NPULSE_MODE, NPULSE_ARCH,
@@ -81,6 +82,7 @@ NodePulse 安装器（需要 root；POSIX sh / OpenWrt ash）
   --admin-via-pair      使用 full 并发起手机配对；仅在双方明确授权后启用管理
   --also-relay PORT      模式 1 同一进程同时提供共享中继（端口须与直连不同）
   --purge               卸载时同时删除配置（默认保留）
+  --force               已是目标版本时仍强制升级
   --help
 
 对应环境变量：NPULSE_YES=1, NPULSE_MODE, NPULSE_ARCH, NPULSE_FLAVOR=full|lite,
@@ -137,6 +139,11 @@ WORK=
 ECHO_OFF=0
 PAIR_STOPPED=0
 SHOW_HELP=0
+FORCE=0
+LINK=0
+INSTALLED_VERSION=unknown
+TARGET_VERSION=unknown
+SKIP=no
 while [ "$#" -gt 0 ]; do
     case "$1" in
         install|upgrade|uninstall|status|pair) ACTION=$1; shift ;;
@@ -145,6 +152,7 @@ while [ "$#" -gt 0 ]; do
         --full) FLAVOR=full; shift ;;
         --lite) FLAVOR=lite; shift ;;
         --purge) PURGE=yes; shift ;;
+        --force) FORCE=1; shift ;;
         --open-firewall) OPEN_FIREWALL=yes; shift ;;
         --admin-via-pair) ADMIN=pair; shift ;;
         --lang|--mode|--arch|--port|--bind|--public-ip|--http-port|--upstream|--name|--admin-keys|--also-relay)
@@ -169,7 +177,7 @@ if [ "$ADMIN_VIA_PAIR" = yes ] && [ -n "$ADMIN_KEYS" ]; then fail "$(msg '手机
 for setting in "$PURGE" "$OPEN_FIREWALL"; do case "$setting" in yes|no) ;; *) fail "$(msg '开关须为 yes 或 no' 'Switches must be yes or no')" ;; esac; done
 case "$YES:$DRY_RUN" in 0:0|0:1|1:0|1:1) ;; *) fail "$(msg 'NPULSE_YES 和 DRY_RUN 须为 0 或 1' 'NPULSE_YES and DRY_RUN must be 0 or 1')" ;; esac
 for utility in awk cat chmod cp dirname grep id mkdir mv rm tr uname wc; do
-    command -v "$utility" >/dev/null 2>&1 || fail "$(msg "缺少必需命令 $utility；请安装对应工具或启用 BusyBox applet" "Required command $utility is missing; install it or enable the BusyBox applet")"
+    command -v "$utility" >/dev/null 2>&1 || fail "$(msg "缺少必需命令 ${utility}；请安装对应工具或启用 BusyBox applet" "Required command $utility is missing; install it or enable the BusyBox applet")"
 done
 NAME=${NAME:-$(uname -n)}
 if [ "$DRY_RUN" = 1 ]; then
@@ -304,7 +312,7 @@ resolve_public_ip() {
         if [ -z "$PUBLIC_IP" ]; then say '公网 IP 查询失败，请手动填写云控制台的外部/弹性 IP。\n' 'Public IP lookup failed; enter the external/elastic IP from your cloud console.\n'; fi
     fi
     if [ "$YES" = 0 ]; then
-        ask "$(msg "公网 IP（留空确认 $PUBLIC_IP，或输入其他公网 IP）：" "Public IP (Enter to confirm $PUBLIC_IP, or enter another public IP):")" "$PUBLIC_IP"; PUBLIC_IP=$ANSWER
+        ask "$(msg "公网 IP（留空确认 ${PUBLIC_IP}，或输入其他公网 IP）：" "Public IP (Enter to confirm $PUBLIC_IP, or enter another public IP):")" "$PUBLIC_IP"; PUBLIC_IP=$ANSWER
     fi
     valid_public_ip "$PUBLIC_IP" || fail "$(msg '请输入有效公网 IPv4/IPv6；可使用 --public-ip ADDR' 'Enter a valid public IPv4/IPv6 address; you can use --public-ip ADDR')"
 }
@@ -385,22 +393,84 @@ open_firewall() {
     if [ "$OPEN_FIREWALL" != yes ]; then ask "$(msg '是否现在执行？[y/N]' 'Apply these firewall rules now? [y/N]')" n; case "$ANSWER" in y|Y|yes) OPEN_FIREWALL=yes ;; esac; fi
     [ "$OPEN_FIREWALL" = yes ] || return 0
     if [ "$DRY_RUN" = 1 ]; then say '[DRY_RUN] 不执行防火墙命令。\n' '[DRY_RUN] Firewall commands are not executed.\n'; return; fi
+    tag=npulse-$(random)
     case "$FW" in
-        ufw) ufw allow "$PORT/tcp" ;;
-        firewalld) firewall-cmd --permanent --add-port="$PORT/tcp" && firewall-cmd --reload ;;
+        ufw)
+            added=$(ufw show added) || fail 'Cannot query ufw'
+            if printf '%s\n' "$added" | grep -E "^ufw allow $PORT/tcp( |$)" >/dev/null; then return; fi
+            ufw allow "$PORT/tcp" comment "$tag"
+            record_firewall "ufw|$PORT|$tag" ;;
+        firewalld)
+            zone=$(firewall-cmd --get-default-zone)
+            case "$zone" in ''|*[!a-zA-Z0-9_-]*) fail 'Invalid firewalld zone' ;; esac
+            if firewall-cmd --permanent --zone="$zone" --query-port="$PORT/tcp" >/dev/null; then return; else rc=$?; [ "$rc" = 1 ] || fail 'Cannot query firewalld'; fi
+            firewall-cmd --permanent --zone="$zone" --add-port="$PORT/tcp"
+            record_firewall "firewalld|$zone|$PORT"
+            firewall-cmd --reload ;;
         nft) printf '%s\n' "$NFT_CHAIN" | while read -r family table chain create; do
                  operation=insert
                  if [ "$create" = create ]; then
                      nft add table "$family" "$table" && nft "add chain $family $table $chain { type filter hook input priority 0; policy accept; }" || exit 1
                      operation=add
                  fi
-                 nft "$operation" rule "$family" "$table" "$chain" tcp dport "$PORT" accept || exit 1
+                 nft "$operation" rule "$family" "$table" "$chain" tcp dport "$PORT" accept comment "\"$tag\"" || exit 1
+                 handle=$(nft -a list chain "$family" "$table" "$chain" | awk -v tag="$tag" 'index($0,"\""tag"\"") {for(i=1;i<NF;i++) if($i=="handle") print $(i+1)}')
+                 case "$handle" in ''|*[!0-9]*) fail 'Cannot identify added nft rule' ;; esac
+                 record_firewall "nft|$family|$table|$chain|$handle|$tag"
              done ;;
-        iptables) case "$BIND" in *:*) ip6tables -I INPUT -p tcp --dport "$PORT" -j ACCEPT ;; *) iptables -I INPUT -p tcp --dport "$PORT" -j ACCEPT ;; esac ;;
-        uci) rule=$(uci add firewall rule)
-             uci set "firewall.$rule.name=NodePulse"; uci set "firewall.$rule.src=wan"; uci set "firewall.$rule.proto=tcp"
-             uci set "firewall.$rule.dest_port=$PORT"; uci set "firewall.$rule.target=ACCEPT"; uci commit firewall; /etc/init.d/firewall reload ;;
+        iptables)
+            backend=iptables; case "$BIND" in *:*) backend=ip6tables ;; esac
+            "$backend" -I INPUT -p tcp --dport "$PORT" -m comment --comment "$tag" -j ACCEPT
+            record_firewall "$backend|$PORT|$tag" ;;
+        uci) rule=npulse_${tag#npulse-}
+             if uci -q get "firewall.$rule" >/dev/null; then fail 'UCI rule already exists'; fi
+             uci set "firewall.$rule=rule"
+             uci set "firewall.$rule.name=$tag"; uci set "firewall.$rule.src=wan"; uci set "firewall.$rule.proto=tcp"
+             record_firewall "uci|$rule|$tag"
+             uci set "firewall.$rule.dest_port=$PORT"; uci set "firewall.$rule.target=ACCEPT"; uci commit firewall; firewall_reload ;;
     esac
+}
+record_firewall() {
+    printf '%s\n' "$1" >> "$DESTDIR/etc/npulse/firewall.state"
+    chmod 600 "$DESTDIR/etc/npulse/firewall.state"
+}
+firewall_reload() {
+    /etc/init.d/firewall reload
+}
+remove_firewall() {
+    records=$DESTDIR/etc/npulse/firewall.state
+    [ -f "$records" ] || return 0
+    if [ "$DRY_RUN" = 1 ]; then printf '[DRY_RUN] remove recorded firewall rules\n'; return; fi
+    while IFS='|' read -r backend a b c d e; do
+        case "$backend" in
+            ufw)
+                added=$(ufw show added)
+                if printf '%s\n' "$added" | awk -v port="$a" -v tag="$b" '$1=="ufw" && $2=="allow" && $3==port"/tcp" && index($0,tag) {found=1} END {exit !found}'; then ufw --force delete allow "$a/tcp" comment "$b"; fi ;;
+            firewalld)
+                if firewall-cmd --permanent --zone="$a" --query-port="$b/tcp" >/dev/null; then
+                    firewall-cmd --permanent --zone="$a" --remove-port="$b/tcp"
+                    firewall-cmd --reload
+                else rc=$?; [ "$rc" = 1 ] || fail 'Cannot query firewalld'; fi ;;
+            nft)
+                rules=$(nft -a list ruleset)
+                if printf '%s\n' "$rules" | grep -F "\"$e\"" >/dev/null; then
+                    rule=$(nft -a list chain "$a" "$b" "$c")
+                    if printf '%s\n' "$rule" | awk -v tag="$e" -v handle="$d" 'index($0,"\""tag"\"") {for(i=1;i<NF;i++) if($i=="handle" && $(i+1)==handle) found=1} END {exit !found}'; then
+                        nft delete rule "$a" "$b" "$c" handle "$d"
+                    fi
+                fi ;;
+            iptables|ip6tables)
+                if "$backend" -C INPUT -p tcp --dport "$a" -m comment --comment "$b" -j ACCEPT 2>/dev/null; then
+                    "$backend" -D INPUT -p tcp --dport "$a" -m comment --comment "$b" -j ACCEPT
+                else rc=$?; [ "$rc" = 1 ] || fail 'Cannot query iptables'; fi ;;
+            uci)
+                if name=$(uci -q get "firewall.$a.name"); then
+                    if [ "$name" = "$b" ]; then uci delete "firewall.$a"; uci commit firewall; firewall_reload; fi
+                else rc=$?; [ "$rc" = 1 ] || fail 'Cannot query UCI'; fi ;;
+            *) fail 'Unknown recorded firewall backend' ;;
+        esac
+    done < "$records"
+    rm -f "$records"
 }
 random() {
     [ -r /dev/urandom ] || fail "$(msg '缺少安全随机源 /dev/urandom' 'Secure random source /dev/urandom is missing')"
@@ -482,11 +552,29 @@ load_state() {
     [ -f "$STATE" ] || fail "$(msg '没有找到安装状态，请先 install' 'No installation state found; run install first')"
     ARCH=; FLAVOR=; INIT=
     while IFS='=' read -r key value; do
-        case "$key" in arch) ARCH=$value ;; flavor) FLAVOR=$value ;; init) INIT=$value ;; *) fail "$(msg '安装状态无效' 'Invalid installation state')" ;; esac
+        case "$key" in arch) ARCH=$value ;; flavor) FLAVOR=$value ;; init) INIT=$value ;; link) LINK=$value ;; version) INSTALLED_VERSION=$value ;; ctl) [ "$value" = 1 ] || fail 'Invalid management state' ;; *) fail "$(msg '安装状态无效' 'Invalid installation state')" ;; esac
     done < "$STATE"
     [ -n "$ARCH" ] && [ -n "$INIT" ] || fail "$(msg '安装状态不完整' 'Incomplete installation state')"
     detect_arch; detect_init
     case "$FLAVOR" in full|lite) ;; *) fail "$(msg '安装状态版本类型无效' 'Invalid build flavor in installation state')" ;; esac
+    case "$LINK" in 0|1) ;; *) fail 'Invalid symlink state' ;; esac
+}
+write_state() {
+    printf 'arch=%s\nflavor=%s\ninit=%s\nctl=1\nlink=%s\nversion=%s\n' "$ARCH" "$FLAVOR" "$INIT" "$LINK" "$TARGET_VERSION" > "$STATE.new"
+    chmod 600 "$STATE.new"; mv "$STATE.new" "$STATE"
+}
+install_link() {
+    [ "$INIT" = systemd ] || return 0
+    link=$DESTDIR/usr/bin/npulse
+    if [ ! -e "$link" ] && [ ! -L "$link" ]; then
+        mkdir -p "$DESTDIR/usr/bin"
+        ln -s /usr/local/bin/npulse "$link"
+        LINK=1
+    fi
+}
+remove_link() {
+    link=$DESTDIR/usr/bin/npulse
+    if [ "$LINK" = 1 ] && [ -L "$link" ] && [ "$(readlink "$link")" = /usr/local/bin/npulse ]; then rm -f "$link"; fi
 }
 download() {
     if command -v curl >/dev/null 2>&1; then
@@ -516,6 +604,16 @@ fetch_binary() {
     if [ -z "$WORK" ]; then
         command -v mktemp >/dev/null 2>&1 || fail "$(msg '需要 mktemp（BusyBox applet）以安全创建临时目录' 'mktemp (BusyBox applet) is required for secure temporary directories')"
         WORK=$(mktemp -d "${TMPDIR:-/tmp}/npulse-install.XXXXXX") || fail "$(msg '无法创建临时目录，请检查 TMPDIR 和剩余空间' 'Cannot create temporary directory; check TMPDIR and free space')"
+    fi
+    TARGET_VERSION=${VERSION:-unknown}
+    if (download "$base/VERSION" "$WORK/VERSION") >/dev/null 2>&1; then
+        IFS= read -r target < "$WORK/VERSION" || :
+        case "$target" in v[0-9]*) case "$target" in *[!A-Za-z0-9._-]*) ;; *) TARGET_VERSION=$target ;; esac ;; esac
+    fi
+    if [ "${ACTION:-install}" = upgrade ] && [ "${FORCE:-0}" = 0 ]; then
+        case "$TARGET_VERSION" in v[0-9]*)
+            if [ "$TARGET_VERSION" = "${NPULSE_CURRENT_VERSION:-${INSTALLED_VERSION:-unknown}}" ]; then SKIP=yes; return; fi ;;
+        esac
     fi
     download "$base/SHA256SUMS" "$WORK/SHA256SUMS"
     download "$base/$asset" "$WORK/binary"
@@ -560,8 +658,8 @@ write_config() {
     if [ -n "$PUBLIC_IP" ]; then
         persist_public_ip
     fi
-    printf 'arch=%s\nflavor=%s\ninit=%s\n' "$ARCH" "$FLAVOR" "$INIT" > "$STATE"
-    chmod 600 "$STATE"
+    install_link
+    write_state
 }
 write_unit() {
     (umask 022; mkdir -p "$(dirname "$DESTDIR$UNIT")")
@@ -765,10 +863,14 @@ if [ "$ACTION" != install ]; then
                 fail "$(msg '旧式 upstream 上报已移除；请备份配置，改用共享中继（-R/-S、relay_upstream/relay_listen），选择安装器模式 3 后重新安装；本次未升级或重启服务' 'Legacy upstream publishing was removed; back up the config and switch to shared relay (-R/-S, relay_upstream/relay_listen), then reinstall using mode 3. No upgrade or service restart was performed')"
             fi
             if [ "$FLAVOR" = lite ] && grep '^admin_keys=' "$CONFIG" >/dev/null; then fail "$(msg '精简版配置不能包含管理密钥' 'lite configuration cannot contain administration keys')"; fi
-            fetch_binary; replace_binary; service restart
+            fetch_binary
+            if [ "$SKIP" = yes ]; then install_link; write_state; say '已是最新版本；使用 --force 强制升级。\n' 'Already current; use --force to upgrade anyway.\n'; exit; fi
+            replace_binary; install_link; write_state; service restart
             say '升级完成；配置与服务权限未改变。\n' 'Upgrade complete; configuration and service privileges are unchanged.\n'; exit ;;
         uninstall)
             service stop; service disable
+            remove_firewall
+            remove_link
             rm -f "$DESTDIR$BIN" "$DESTDIR$UNIT" "$STATE"
             service reload
             if [ "$PURGE" != yes ]; then ask "$(msg '同时删除配置和密钥？[yes/no，默认 no]' 'Also delete configuration and keys? [yes/no, default no]')" no; PURGE=$ANSWER; fi
@@ -840,7 +942,7 @@ if [ "$ADMIN" = yes ]; then
     fi
 else ADMIN_KEYS=; ADMIN_VIA_PAIR=no; fi
 [ -n "$FLAVOR" ] || FLAVOR=full
-say '完整版 full（约 175–270 KB，随架构变化）：支持管理、实时管道、配对和二维码。\nlite（约 120–195 KB）：节省空间，但无管理/实时管道；配对需临时下载 full（纯中继转发管理也必须 full）。\n' 'full (~175-275 KB, architecture-dependent): administration, live pipes, pairing and QR.\nlite (~120-195 KB): space-saving, no administration/live pipes; pairing temporarily downloads full. Relays forwarding administration also need full.\n'
+say '完整版 full（约 250–355 KB，随架构变化）：支持管理、实时管道、配对和二维码。\nlite（约 120–200 KB）：节省空间，但无管理/实时管道；配对需临时下载 full（纯中继转发管理也必须 full）。\n' 'full (~250-355 KB, architecture-dependent): administration, live pipes, pairing and QR.\nlite (~120-200 KB): space-saving, no administration/live pipes; pairing temporarily downloads full. Relays forwarding administration also need full.\n'
 ask "$(msg "构建类型 full/lite（完整版/精简版）[默认 $FLAVOR]：" "Build full/lite [default $FLAVOR]:")" "$FLAVOR"; FLAVOR=$ANSWER
 case "$FLAVOR" in full) ;; lite) [ "$ADMIN" = no ] || fail "$(msg 'lite 不允许启用管理，请选择 full' 'lite cannot enable administration; choose full')" ;; *) fail "$(msg '构建类型须为 full 或 lite' 'Build must be full or lite')" ;; esac
 if [ "$ADMIN_VIA_PAIR" = yes ]; then
@@ -857,6 +959,7 @@ if [ -n "$ALSO_RELAY" ] && [ "$ALSO_RELAY" -lt 1024 ]; then PRIVILEGED_PORT=yes;
 fetch_binary
 replace_binary; write_config; write_unit
 service enable
+if [ "$MODE" = 4 ]; then open_firewall; fi
 if [ "$LISTEN" = yes ] || [ "$MODE" = 3 ]; then
     if [ "$MODE" = 1 ]; then
         open_firewall
@@ -871,4 +974,5 @@ if [ "$LISTEN" = yes ] || [ "$MODE" = 3 ]; then
     case "$ANSWER" in y|Y|yes) pair_installed ;; *) service start ;; esac
 else service start; fi
 say '服务已启用并启动。\n' 'Service enabled and started.\n'
+say '管理命令：npulse upgrade / pair / uninstall / status / restart / version。\n' 'Manage with: npulse upgrade / pair / uninstall / status / restart / version.\n'
 summary

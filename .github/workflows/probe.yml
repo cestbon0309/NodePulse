@@ -21,6 +21,8 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install cryptography
       - name: Cross-build static musl binaries
+        env:
+          NPULSE_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'dev' }}
         run: probe/build.sh
       - name: Assemble stable release assets and SHA256 checksums
         run: |
@@ -30,7 +32,7 @@ jobs:
             test -s "npulse-linux-$arch"
             test -s "npulse-linux-$arch-lite"
           done
-          sha256sum npulse-linux-* install.sh > SHA256SUMS
+          sha256sum npulse-linux-* install.sh VERSION > SHA256SUMS
           sha256sum -c SHA256SUMS
       - name: Native Linux integration and real proc metrics
         env:
@@ -56,6 +58,8 @@ jobs:
           python probe/tools/test-installer.py /bin/dash
           python probe/tools/test-installer.py busybox sh
           python probe/tools/test-pair-installer.py /bin/dash
+          python probe/tools/test-ctl.py
+          python probe/tools/test-firewall-state.py
       - name: QEMU encrypted get and real proc metrics
         run: |
           for pair in aarch64:aarch64 armv7:arm armv7-soft:arm mips:mips mipsel:mipsel; do
@@ -70,6 +74,7 @@ jobs:
             probe/dist/npulse-linux-*
             probe/dist/SHA256SUMS
             probe/dist/install.sh
+            probe/dist/VERSION
           if-no-files-found: error
   simulator:
     runs-on: macos-latest
@@ -142,4 +147,4 @@ jobs:
           if ! gh release view "$TAG"; then
             gh release create "$TAG" --verify-tag --generate-notes
           fi
-          gh release upload "$TAG" dist/npulse-linux-* dist/SHA256SUMS dist/install.sh "dist/NodePulse-$TAG.ipa" --clobber
+          gh release upload "$TAG" dist/npulse-linux-* dist/SHA256SUMS dist/install.sh dist/VERSION "dist/NodePulse-$TAG.ipa" --clobber

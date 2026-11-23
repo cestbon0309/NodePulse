@@ -76,7 +76,7 @@ def config(root):
 def isolated_tools(exclude=()):
     path = new_root() / "tools"
     path.mkdir()
-    for name in "awk cat chmod cp df dirname grep hexdump id mkdir mktemp mv od rm rmdir sha256sum shasum stty tr uname wc wget".split():
+    for name in "awk cat chmod cp df dirname grep hexdump id ln readlink mkdir mktemp mv od rm rmdir sha256sum shasum stty tr uname wc wget".split():
         tool = shutil.which(name)
         if tool and name not in exclude:
             (path / name).symlink_to(tool)
@@ -194,7 +194,7 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
             responses += ["" if preset_keys else "A" * 64]
     prompts += ["构建类型 full/lite"]
     responses += [flavor_answer]
-    if mode == 1:
+    if mode in (1, 4):
         prompts += ["是否现在执行"]
         responses += ["n"]
         if also_relay:
@@ -254,7 +254,7 @@ def interactive(root, admin_source=None, pair="n", preset_keys=None, keys_via_en
         expected_flavor = flavor_answer or (flavor_flag or "").removeprefix("--") or flavor or "full"
         assert f"flavor={expected_flavor}\n" in (root / "etc/npulse/install.state").read_text()
         assert f"[{'默认' if language == 'zh' else 'default'} {(flavor_flag or '').removeprefix('--') or flavor or 'full'}]".encode() in transcript
-        assert ("175–270 KB" if language == "zh" else "175-275 KB").encode() in transcript and ("120–195 KB" if language == "zh" else "120-195 KB").encode() in transcript
+        assert ("250–355 KB" if language == "zh" else "250-355 KB").encode() in transcript and ("120–200 KB" if language == "zh" else "120-200 KB").encode() in transcript
         if admin_source is not None:
             unit = (root / "etc/systemd/system/npulse.service").read_text()
             if preset_keys: assert "[默认 2]".encode() in transcript
@@ -625,6 +625,43 @@ try:
         run(new_root(), "--yes", *args, ok=False, **settings)
     root = new_root()
     run(root, "upgrade", "--yes", ok=False)
+    managed = new_root()
+    run(managed, "--yes")
+    link = managed / "usr/bin/npulse"
+    assert link.is_symlink() and os.readlink(link) == "/usr/local/bin/npulse"
+    state = managed / "etc/npulse/install.state"
+    assert "ctl=1\n" in state.read_text() and "link=1\n" in state.read_text()
+    (MIRROR / "VERSION").write_text("v9.8.7\n")
+    result = run(managed, "upgrade", "--yes", NPULSE_CURRENT_VERSION="v9.8.7", NPULSE_LANG="en")
+    assert "Already current" in result.stdout and "restart" not in result.stdout
+    result = run(managed, "upgrade", "--force", "--yes", NPULSE_CURRENT_VERSION="v9.8.7", NPULSE_LANG="en")
+    assert "restart" in result.stdout and "Already current" not in result.stdout
+    link.unlink(); link.write_text("foreign executable")
+    run(managed, "uninstall", "--yes", "--purge")
+    assert link.read_text() == "foreign executable"
+    (MIRROR / "VERSION").unlink()
+    migrated = new_root()
+    run(migrated, "--yes")
+    state = migrated / "etc/npulse/install.state"
+    state.write_text("arch=x86_64\nflavor=full\ninit=systemd\n")
+    (migrated / "usr/bin/npulse").unlink()
+    run(migrated, "upgrade", "--yes")
+    assert "ctl=1\n" in state.read_text()
+    run(migrated, "uninstall", "--yes", "--purge")
+    assert not (migrated / "usr/bin/npulse").is_symlink()
+    occupied = new_root()
+    (occupied / "usr/bin").mkdir(parents=True)
+    foreign = occupied / "usr/bin/npulse"
+    foreign.symlink_to("/foreign/npulse")
+    run(occupied, "--yes")
+    assert "link=0\n" in (occupied / "etc/npulse/install.state").read_text()
+    run(occupied, "uninstall", "--yes", "--purge")
+    assert foreign.is_symlink() and os.readlink(foreign) == "/foreign/npulse"
+    relay = new_root()
+    result = run(relay, "--yes", "--mode", "4", "--open-firewall", NPULSE_LANG="en")
+    assert "Cloud servers also need TCP" in result.stdout
+    run(relay, "uninstall", "--yes", "--purge")
+    print("PASS management state migration, version skip/force, symlink creation/removal/foreign ownership, pure relay firewall path")
     existing = new_root()
     run(existing, "--yes")
     installed = (existing / "usr/local/bin/npulse").read_bytes()

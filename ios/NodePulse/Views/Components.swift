@@ -1,5 +1,4 @@
 import SwiftUI
-import Charts
 
 struct EndToEndBadge: View {
     @Environment(\.pulseTheme) private var theme
@@ -72,18 +71,57 @@ struct RingGauge: View {
     }
 }
 
+private struct HistoryChartDateKey: EnvironmentKey {
+    static let defaultValue: Date? = nil
+}
+extension EnvironmentValues {
+    var historyChartDate: Date? {
+        get { self[HistoryChartDateKey.self] }
+        set { self[HistoryChartDateKey.self] = newValue }
+    }
+}
+
+enum SparklineProjection {
+    static func points(_ samples: [HistorySample], ending end: Date, size: CGSize) -> [CGPoint] {
+        guard size.width > 0, size.height > 0 else { return [] }
+        let start = end.addingTimeInterval(-HistoryChartClock.duration)
+        return samples.compactMap { sample in
+            guard sample.cpu.isFinite, sample.date.timeIntervalSince1970.isFinite else { return nil }
+            return CGPoint(x: sample.date.timeIntervalSince(start) / HistoryChartClock.duration * size.width,
+                           y: (1 - max(0, min(100, sample.cpu)) / 100) * size.height)
+        }
+    }
+}
+
 struct Sparkline: View {
     @Environment(\.pulseTheme) private var theme
+    @Environment(\.historyChartDate) private var date
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var history: [HistorySample]
+    @State private var clock = HistoryChartClock()
+    @State private var buffer = HistoryChartBuffer()
     var body: some View {
-        Chart(Array(history.enumerated()), id: \.offset) { _, sample in
-            AreaMark(x: .value(L10n.text("时间"), sample.date), y: .value("CPU", sample.cpu))
-                .foregroundStyle(LinearGradient(colors: [theme.ink.opacity(0.22), theme.ink.opacity(0.01)], startPoint: .top, endPoint: .bottom))
-                .interpolationMethod(.catmullRom)
-            LineMark(x: .value(L10n.text("时间"), sample.date), y: .value("CPU", sample.cpu))
-                .foregroundStyle(theme.ink).lineStyle(StrokeStyle(lineWidth: 2)).interpolationMethod(.catmullRom)
-        }.chartYScale(domain: 0...100).chartXAxis(.hidden).chartYAxis(.hidden)
-            .frame(height: 38).accessibilityLabel(L10n.text("CPU 使用率趋势"))
+        let end = reduceMotion ? (history.last?.date ?? Date()) : clock.end(at: date ?? Date())
+        Canvas { context, size in
+            let points = SparklineProjection.points(buffer.samples.isEmpty ? history : buffer.samples, ending: end, size: size)
+            guard let first = points.first, let last = points.last else { return }
+            context.clip(to: Path(CGRect(origin: .zero, size: size)))
+            var line = Path()
+            line.move(to: first)
+            for point in points.dropFirst() { line.addLine(to: point) }
+            var area = line
+            area.addLine(to: CGPoint(x: last.x, y: size.height))
+            area.addLine(to: CGPoint(x: first.x, y: size.height))
+            area.closeSubpath()
+            context.fill(area, with: .linearGradient(Gradient(colors: [theme.ink.opacity(0.22), theme.ink.opacity(0.01)]), startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
+            context.stroke(line, with: .color(theme.ink), lineWidth: 2)
+        }.frame(height: 38).accessibilityLabel(L10n.text("CPU 使用率趋势"))
+            .onChange(of: history, initial: true) { _, points in
+                let now = Date()
+                clock.observe(points.last?.date, now: now)
+                buffer.observe(points, ending: clock.end(at: now))
+            }
+            .transaction { $0.animation = nil }
     }
 }
 

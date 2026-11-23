@@ -180,6 +180,138 @@ final class NodePulseTests: XCTestCase {
         XCTAssertNil(HistorySample.displayed(in: [], at: nil))
         XCTAssertNil(HistorySample.displayed(in: [], at: start))
     }
+    func testChartBufferRetainsClippedPredecessorAndFutureSample() {
+        let origin = Date(timeIntervalSince1970: 1000)
+        func points(_ range: ClosedRange<Int>) -> [HistorySample] {
+            range.map { HistorySample(date: origin.addingTimeInterval(Double($0)), cpu: Double($0 % 100), memPercent: 20, rxRate: 30, txRate: 40, seq: UInt32($0)) }
+        }
+        var buffer = HistoryChartBuffer()
+        for latest in 119...130 {
+            let end = origin.addingTimeInterval(Double(latest - 1))
+            buffer.observe(points((latest - 119)...latest), ending: end)
+            XCTAssertEqual(buffer.samples.first?.seq, UInt32(max(0, latest - 122)))
+            XCTAssertEqual(buffer.samples.last?.seq, UInt32(latest))
+            XCTAssertLessThanOrEqual(buffer.samples.count, 123)
+        }
+        let originalID = buffer.samples.last!.chartID
+        var correction = points(11...130)
+        correction[119].cpu = 99
+        buffer.observe(correction, ending: origin.addingTimeInterval(129))
+        XCTAssertEqual(buffer.samples.last?.chartID, originalID)
+        XCTAssertEqual(buffer.samples.last?.cpu, 99)
+        XCTAssertEqual(buffer.samples.first?.seq, 8)
+    }
+    func testChartBufferReplacesAuthoritativeRangeAndCorrectedTimestamps() {
+        let origin = Date(timeIntervalSince1970: 1000)
+        let points = (1...4).map { HistorySample(date: origin.addingTimeInterval(Double($0)), cpu: 20, memPercent: 30, rxRate: 40, txRate: 50, seq: UInt32($0)) }
+        var buffer = HistoryChartBuffer()
+        buffer.observe(points, ending: origin)
+        buffer.observe([points[0], points[2]], ending: origin)
+        XCTAssertEqual(buffer.samples, [points[0], points[2]])
+        var corrected = points[0]
+        corrected.date.addTimeInterval(0.1)
+        buffer.observe([corrected, points[2]], ending: origin)
+        XCTAssertEqual(buffer.samples, [corrected, points[2]])
+    }
+    func testChartBufferResetsOnEmptyOrUnrelatedHistoryAndBoundsBursts() {
+        let origin = Date(timeIntervalSince1970: 1000)
+        func sample(_ offset: Int) -> HistorySample {
+            HistorySample(date: origin.addingTimeInterval(Double(offset) / 10), cpu: 20, memPercent: 30, rxRate: 40, txRate: 50)
+        }
+        var buffer = HistoryChartBuffer()
+        buffer.observe([sample(0), sample(1)], ending: origin)
+        buffer.observe([sample(10000)], ending: origin.addingTimeInterval(1000))
+        XCTAssertEqual(buffer.samples, [sample(10000)])
+        buffer.observe([], ending: origin)
+        XCTAssertTrue(buffer.samples.isEmpty)
+        for offset in 0...500 {
+            buffer.observe((max(0, offset - 119)...offset).map(sample), ending: origin.addingTimeInterval(Double(offset) / 10))
+            XCTAssertLessThanOrEqual(buffer.samples.count, 241)
+        }
+    }
+    func testSparklineSlidesAndClipsBothEdgesWithoutChangingExistingY() {
+        let origin = Date(timeIntervalSince1970: 1000), now = Date(timeIntervalSince1970: 5000)
+        let history = [-1, 0, 1, 119, 120, 121].map {
+            HistorySample(date: origin.addingTimeInterval(Double($0)), cpu: $0 % 2 == 0 ? 90 : 10, memPercent: 20, rxRate: 30, txRate: 40)
+        }
+        var clock = HistoryChartClock()
+        clock.observe(history.last?.date, now: now)
+        let size = CGSize(width: 480, height: 38)
+        let initial = SparklineProjection.points(history, ending: clock.end(at: now), size: size)
+        for frame in 0...3 {
+            let fraction = Double(frame) / 4
+            let points = SparklineProjection.points(history, ending: clock.end(at: now.addingTimeInterval(fraction)), size: size)
+            XCTAssertLessThan(points.first!.x, 0)
+            XCTAssertGreaterThan(points.last!.x, size.width)
+            for index in points.indices {
+                XCTAssertEqual(points[index].x, initial[index].x - fraction * 4, accuracy: 0.00001)
+                XCTAssertEqual(points[index].y, initial[index].y)
+            }
+            XCTAssertEqual(points[2].x, 4 * (1 - fraction), accuracy: 0.00001)
+            XCTAssertEqual(size.width - points[4].x, 4 * fraction, accuracy: 0.00001)
+        }
+    }
+    func testSparklineProjectionHandlesEmptyInvalidAndOutOfRangeInput() {
+        let now = Date(timeIntervalSince1970: 1000), size = CGSize(width: 120, height: 40)
+        XCTAssertTrue(SparklineProjection.points([], ending: now, size: size).isEmpty)
+        var point = HistorySample(date: now, cpu: .nan, memPercent: 0, rxRate: 0, txRate: 0)
+        XCTAssertTrue(SparklineProjection.points([point], ending: now, size: size).isEmpty)
+        point.cpu = 150
+        XCTAssertEqual(SparklineProjection.points([point], ending: now, size: size), [CGPoint(x: 120, y: 0)])
+        point.cpu = -10
+        XCTAssertEqual(SparklineProjection.points([point], ending: now, size: size), [CGPoint(x: 120, y: 40)])
+        XCTAssertTrue(SparklineProjection.points([point], ending: now, size: .zero).isEmpty)
+        point.date = Date(timeIntervalSince1970: .infinity)
+        XCTAssertTrue(SparklineProjection.points([point], ending: now, size: size).isEmpty)
+    }
+    func testSharedChartFramesTreatSequencedAndLegacyWindowsIdentically() {
+        let now = Date(timeIntervalSince1970: 5000), origin = Date(timeIntervalSince1970: 1000)
+        var modern = HistoryChartBuffer(), legacy = HistoryChartBuffer()
+        var modernClock = HistoryChartClock(), legacyClock = HistoryChartClock()
+        for tick in 0...8 {
+            let points = (tick..<(tick + 120)).map {
+                HistorySample(date: origin.addingTimeInterval(Double($0)), cpu: Double($0 % 100), memPercent: 0, rxRate: 0, txRate: 0, seq: UInt32($0))
+            }
+            let unsequenced = points.map { point -> HistorySample in var point = point; point.seq = nil; return point }
+            let poll = now.addingTimeInterval(Double(tick) + (tick % 2 == 0 ? 0 : 0.2))
+            modernClock.observe(points.last?.date, now: poll)
+            legacyClock.observe(unsequenced.last?.date, now: poll.addingTimeInterval(0.1))
+            modern.observe(points, ending: modernClock.end(at: poll))
+            legacy.observe(unsequenced, ending: legacyClock.end(at: poll.addingTimeInterval(0.1)))
+            for frame in 0...3 {
+                let date = now.addingTimeInterval(Double(tick) + Double(frame) / 4)
+                let size = CGSize(width: 480, height: 38)
+                let a = SparklineProjection.points(modern.samples, ending: modernClock.end(at: date), size: size)
+                let b = SparklineProjection.points(legacy.samples, ending: legacyClock.end(at: date), size: size)
+                XCTAssertEqual(a.count, b.count)
+                for index in a.indices {
+                    XCTAssertEqual(a[index].y, b[index].y)
+                    XCTAssertEqual(a[index].x - b[index].x, -0.4, accuracy: 0.00001)
+                }
+            }
+        }
+    }
+    @MainActor func testDemoChartStreamsExerciseDirectHistoryAndLegacyRelay() async {
+        let suite = "DemoStreams-\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "demoChartStreams")
+        let store = MonitorStore(defaults: defaults, secrets: MemorySecrets())
+        store.demoMode = true
+        await store.refresh()
+        let firstKeys = store.nodes.map(\.key)
+        await store.refresh()
+        XCTAssertEqual(store.nodes.count, 2)
+        XCTAssertEqual(store.nodes.map(\.key), firstKeys)
+        let modern = store.nodes.first { $0.historyWindow.cursor != nil }!
+        let legacy = store.nodes.first { $0.historyWindow.cursor == nil }!
+        XCTAssertFalse(modern.endToEnd)
+        XCTAssertTrue(legacy.endToEnd)
+        XCTAssertNotEqual(modern.endpointID, legacy.endpointID)
+        XCTAssertEqual(modern.history.count, 120)
+        XCTAssertTrue(modern.history.allSatisfy { $0.seq != nil })
+        XCTAssertEqual(legacy.history.count, 2)
+        XCTAssertTrue(legacy.history.allSatisfy { $0.seq == nil })
+    }
     func testChartClockSlidesBetweenSamplesWithoutResettingEachPoll() {
         let now = Date(timeIntervalSince1970: 1000)
         var clock = HistoryChartClock()

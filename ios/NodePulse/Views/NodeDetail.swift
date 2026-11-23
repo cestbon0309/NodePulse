@@ -135,6 +135,7 @@ extension HistorySample {
 }
 
 struct HistoryChartClock {
+    static let duration: TimeInterval = 120
     private var offset: TimeInterval?
     private var lastSample: Date?
     mutating func observe(_ latest: Date?, now: Date) {
@@ -147,11 +148,33 @@ struct HistoryChartClock {
     }
     func end(at now: Date) -> Date { now.addingTimeInterval(offset ?? -1) }
     static func marks(ending end: Date) -> [Date] {
-        let start = ceil((end.timeIntervalSince1970 - 120) / 30) * 30
+        let start = ceil((end.timeIntervalSince1970 - duration) / 30) * 30
         return (0...4).map { Date(timeIntervalSince1970: start + Double($0) * 30) }.filter { $0 <= end }
     }
     static func showsLabel(at date: Date, ending end: Date) -> Bool {
         (12...108).contains(end.timeIntervalSince(date))
+    }
+}
+
+struct HistoryChartBuffer {
+    private(set) var samples: [HistorySample] = []
+    mutating func observe(_ incoming: [HistorySample], ending end: Date) {
+        guard !incoming.isEmpty else { samples = []; return }
+        let ids = Set(incoming.map(\.chartID))
+        let overlaps = samples.contains { ids.contains($0.chartID) }
+        let first = incoming.map(\.date).min()!
+        let sequences = Set(incoming.compactMap(\.seq))
+        let prefix = overlaps ? samples.filter { sample in
+            sample.date < first && (sample.seq.map { !sequences.contains($0) } ?? true)
+        } : []
+        var merged: [HistoryChartPointID: HistorySample] = [:]
+        for sample in prefix + incoming { merged[sample.chartID] = sample }
+        let ordered = merged.values.sorted {
+            $0.date == $1.date ? ($0.seq ?? 0) < ($1.seq ?? 0) : $0.date < $1.date
+        }
+        let start = end.addingTimeInterval(-HistoryChartClock.duration)
+        let firstVisible = ordered.firstIndex { $0.date >= start } ?? ordered.count
+        samples = Array(ordered.dropFirst(max(0, firstVisible - 1)).suffix(241))
     }
 }
 
@@ -193,6 +216,7 @@ private struct ResourceHistoryChart: View {
     @State private var metric = "CPU"
     @State private var selection: Date?
     @State private var clock = HistoryChartClock()
+    @State private var buffer = HistoryChartBuffer()
     @State private var scale = HistoryChartScale()
     private var network: Bool { metric == L10n.text("网络") }
     private var download: Color { theme == .default ? .blue : theme.ink }
@@ -206,7 +230,7 @@ private struct ResourceHistoryChart: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack { Text(L10n.text("资源趋势")).font(.headline); Spacer(); Text(L10n.text("最近 %@ 次采样", String(describing: history.count))).font(.caption).foregroundStyle(.secondary) }
             Picker(L10n.text("趋势指标"), selection: $metric) { ForEach(["CPU", L10n.text("内存"), L10n.text("网络")], id: \.self) { Text($0) } }.pickerStyle(.segmented)
-            let sample = HistorySample.displayed(in: history, at: selection)
+            let sample = HistorySample.displayed(in: buffer.samples.isEmpty ? history : buffer.samples, at: selection)
             HStack {
                 if network {
                     Text(sample.map { "↓ \(PulseFormat.rate($0.rxRate))" } ?? "—").foregroundStyle(download)
@@ -232,6 +256,7 @@ private struct ResourceHistoryChart: View {
         .onChange(of: history, initial: true) { _, points in
             let now = Date()
             clock.observe(points.last?.date, now: now)
+            buffer.observe(points, ending: clock.end(at: now))
             scale.observe(peak: points.flatMap { [$0.rxRate, $0.txRate] }.filter(\.isFinite).max() ?? 0, now: now)
         }
         .transaction { $0.animation = nil }
@@ -245,7 +270,7 @@ private struct ResourceHistoryChart: View {
         }
     }
     private func plot(ending end: Date) -> some View {
-        Chart(history, id: \.chartID) { sample in
+        Chart(buffer.samples.isEmpty ? history : buffer.samples, id: \.chartID) { sample in
             if network {
                 AreaMark(x: .value(L10n.text("时间"), sample.date), y: .value(L10n.text("速率"), sample.rxRate), stacking: .unstacked)
                     .foregroundStyle(LinearGradient(colors: [download.opacity(0.18), .clear], startPoint: .top, endPoint: .bottom)).interpolationMethod(.linear)
@@ -262,7 +287,7 @@ private struct ResourceHistoryChart: View {
             if let selection { RuleMark(x: .value(L10n.text("时间"), selection)).foregroundStyle(.secondary.opacity(0.4)) }
         }.chartLegend(.hidden)
             .chartXSelection(value: $selection)
-            .chartXScale(domain: end.addingTimeInterval(-120)...end)
+            .chartXScale(domain: end.addingTimeInterval(-HistoryChartClock.duration)...end)
             .chartYScale(domain: network ? 0...scale.upper : 0...100)
             .chartPlotStyle { $0.clipped() }
             .chartXAxis { AxisMarks(values: HistoryChartClock.marks(ending: end)) { value in
@@ -280,7 +305,14 @@ private struct ResourceHistoryChart: View {
                         .font(.caption2.monospacedDigit()).frame(width: 50, alignment: .trailing)
                 }
                 AxisGridLine()
-            } }
+            }
+                AxisMarks(position: .trailing, values: network ? scale.ticks : [0, 50, 100]) { value in
+                    AxisValueLabel {
+                        Text(value.as(Double.self).map { network ? scale.label(for: $0) : String(format: "%.0f", $0) } ?? "")
+                            .font(.caption2.monospacedDigit()).frame(width: 50, alignment: .leading).hidden()
+                    }
+                }
+            }
             .frame(height: 170).accessibilityIdentifier("resource-chart")
     }
 }

@@ -330,8 +330,24 @@ final class MonitorStore {
             s.version = "0.1.0"; s.ips = ["192.168.1.\(index + 1)"]; s.egressIp = "1.1.1.1"
             s.uptime = 86400 * Double(index + 1); s.temp = 42 + 3 * sin(now.timeIntervalSince(demoStart) * 0.18); return s
         }
-        apply(endpoint, result: .success(snapshots.enumerated().filter { $0.offset != 2 && $0.offset != 3 }.map(\.element)), latency: 12, now: now)
         let relay = Endpoint(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!, name: L10n.text("演示中继"), kind: .groupTCP(host: "localhost", port: 9001))
+        #if DEBUG
+        if defaults.bool(forKey: "demoChartStreams") {
+            let elapsed = floor(now.timeIntervalSince(demoStart))
+            let latest = UInt32(elapsed) + 120
+            let rows = (0..<120).map { offset -> [Double] in
+                let date = demoStart.addingTimeInterval(elapsed + Double(offset - 119))
+                let point = Self.demoSample(at: date, since: demoStart, index: 0)
+                return [Double(latest - 119 + UInt32(offset)), date.timeIntervalSince1970,
+                        point.cpu, point.memPercent, 0, 0, 0, 0, 0, point.rxRate, point.txRate]
+            }
+            let batch = HistoryBatch(epoch: "0000000000000001", seq: latest, full: true, samples: rows)
+            apply(endpoint, result: .success([snapshots[0]]), latency: 12, now: now, histories: [snapshots[0].id: batch])
+            apply(relay, result: .success([snapshots[2]]), latency: 12, now: now, ages: [snapshots[2].id: 0])
+            return
+        }
+        #endif
+        apply(endpoint, result: .success(snapshots.enumerated().filter { $0.offset != 2 && $0.offset != 3 }.map(\.element)), latency: 12, now: now)
         apply(relay, result: .success([snapshots[2], snapshots[3]]), latency: 12, now: now, ages: [snapshots[2].id: 0, snapshots[3].id: 300])
         for index in nodes.indices where nodes[index].history.count == 1 {
             guard let demoIndex = Int(nodes[index].snapshot.id.dropFirst("demo-".count)) else { continue }

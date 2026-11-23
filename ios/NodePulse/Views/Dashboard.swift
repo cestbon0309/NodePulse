@@ -12,6 +12,7 @@ struct ContentView: View {
     @Namespace private var zoom
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     enum DashboardSheet: String, Identifiable { case add, settings, endpoints; var id: String { rawValue } }
     private var visible: [NodeItem] {
         store.nodes.filter { item in
@@ -42,23 +43,25 @@ struct ContentView: View {
                     } else {
                         SummaryHeader(nodes: store.nodes)
                         Picker(L10n.text("节点筛选"), selection: $filter) { ForEach([L10n.text("全部"), L10n.text("在线"), L10n.text("离线")], id: \.self) { Text($0) } }.pickerStyle(.segmented)
-                        LazyVGrid(columns: columns, spacing: classicLayout ? 12 : 18) {
-                            ForEach(Array(visible.enumerated()), id: \.element.key) { index, item in
-                                NavigationLink {
-                                    NodeDetail(store: store, nodeKey: item.key).zoomDestination(item.key, namespace: zoom)
-                                } label: {
-                                    Group {
-                                        if classicLayout { CompactNodeCard(item: item, locations: store.locations, demo: store.demoMode) }
-                                        else { NodeCard(item: item, index: index, locations: store.locations, demo: store.demoMode) }
-                                    }.zoomSource(item.key, namespace: zoom)
-                                }
-                                    .buttonStyle(PressStyle())
-                                    .contextMenu {
-                                        Button(L10n.text("复制 IP"), systemImage: "doc.on.doc") { UIPasteboard.general.string = item.snapshot.ips.joined(separator: "\n") }
-                                        NavigationLink { NodeDetail(store: store, nodeKey: item.key) } label: { Label(L10n.text("查看详情"), systemImage: "info.circle") }
-                                        Button(L10n.text("删除"), systemImage: "trash", role: .destructive) { deleting = item }
+                        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion || classicLayout || scenePhase != .active)) { context in
+                            LazyVGrid(columns: columns, spacing: classicLayout ? 12 : 18) {
+                                ForEach(Array(visible.enumerated()), id: \.element.key) { index, item in
+                                    NavigationLink {
+                                        NodeDetail(store: store, nodeKey: item.key).zoomDestination(item.key, namespace: zoom)
+                                    } label: {
+                                        Group {
+                                            if classicLayout { CompactNodeCard(item: item, locations: store.locations, demo: store.demoMode) }
+                                            else { NodeCard(item: item, index: index, locations: store.locations, demo: store.demoMode) }
+                                        }.zoomSource(item.key, namespace: zoom)
                                     }
-                            }
+                                        .buttonStyle(PressStyle())
+                                        .contextMenu {
+                                            Button(L10n.text("复制 IP"), systemImage: "doc.on.doc") { UIPasteboard.general.string = item.snapshot.ips.joined(separator: "\n") }
+                                            NavigationLink { NodeDetail(store: store, nodeKey: item.key) } label: { Label(L10n.text("查看详情"), systemImage: "info.circle") }
+                                            Button(L10n.text("删除"), systemImage: "trash", role: .destructive) { deleting = item }
+                                        }
+                                }
+                            }.environment(\.historyChartDate, context.date)
                         }
                         if visible.isEmpty { ContentUnavailableView(L10n.text("没有匹配的节点"), systemImage: "magnifyingglass", description: Text(L10n.text("试试其他名称、IP 或系统"))) }
                     }

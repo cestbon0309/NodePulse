@@ -127,7 +127,7 @@ struct PairingView: View {
                         .onAppear { withAnimation(reduceMotion ? nil : .spring(duration: 0.5)) { appeared = true } }
                     if phase == 2 {
                         Toggle(L10n.text("同时授权本机管理"), isOn: $grantAdmin).tint(theme.accent)
-                        Text(L10n.text("管理授权可控制文件、终端和电源，可能拥有 root 权限；仅完整构建支持。请在 30 秒内确认。")).font(.caption).foregroundStyle(.secondary)
+                        Text(L10n.text("管理授权可控制文件、终端和电源，可能拥有 root 权限；仅完整构建支持。请在 3 分钟内确认。")).font(.caption).foregroundStyle(.secondary)
                         HStack(spacing: 16) {
                             Button(L10n.text("不一致"), role: .destructive) { confirm(false) }.buttonStyle(.bordered).frame(maxWidth: .infinity)
                             Button(L10n.text("一致")) { confirm(true) }.buttonStyle(.borderedProminent).tint(theme.accent).frame(maxWidth: .infinity).accessibilityIdentifier("pair-confirm")

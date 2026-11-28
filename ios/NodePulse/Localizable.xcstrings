@@ -851,19 +851,19 @@
         }
       }
     },
-    "配对超时。请在服务器上重新开启配对，并在 30 秒内核对图案和数字。": {
+    "配对超时。请在服务器上重新开启配对，并在 3 分钟内核对图案和数字。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "配对超时。请在服务器上重新开启配对，并在 30 秒内核对图案和数字。"
+            "value": "配对超时。请在服务器上重新开启配对，并在 3 分钟内核对图案和数字。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pairing timed out. Restart pairing on the server and compare the pattern and digits within 30 seconds."
+            "value": "Pairing timed out. Restart pairing on the server and compare the pattern and digits within 3 minutes."
           }
         }
       }
@@ -5135,19 +5135,19 @@
         }
       }
     },
-    "管理授权可控制文件、终端和电源，可能拥有 root 权限；仅完整构建支持。请在 30 秒内确认。": {
+    "管理授权可控制文件、终端和电源，可能拥有 root 权限；仅完整构建支持。请在 3 分钟内确认。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "管理授权可控制文件、终端和电源，可能拥有 root 权限；仅完整构建支持。请在 30 秒内确认。"
+            "value": "管理授权可控制文件、终端和电源，可能拥有 root 权限；仅完整构建支持。请在 3 分钟内确认。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Admin authorization grants file, terminal and power access, potentially as root; full builds only. Confirm within 30 seconds."
+            "value": "Admin authorization grants file, terminal and power access, potentially as root; full builds only. Confirm within 3 minutes."
           }
         }
       }

@@ -148,7 +148,10 @@ static int pair_answer(int input, double deadline) {
   if (fcntl(input, F_SETFL, flags)) return 0;
   return used == 1 && (answer[0] == 'y' || answer[0] == 'Y') && monotime() < deadline && running;
 }
-static int pair_attempt(int fd, int input, FILE *tty, double deadline, const char *port, const uint8_t psk[16], int relay) {
+#define PAIR_HANDSHAKE 30
+#define PAIR_CONFIRM 180
+static int pair_attempt(int fd, int input, FILE *tty, double window, const char *port, const uint8_t psk[16], int relay) {
+  double deadline = monotime() + PAIR_HANDSHAKE; if (deadline > window) deadline = window;
   uint8_t frame[PAIR_FRAME + 21], commit[32], client[32], sk[32] = {0}, pub[32], shared[32] = {0}, k[64] = {0}, h[64], zero[32] = {0};
   uint64_t rx = 0, tx = 0;
   Json j; int result = -1;
@@ -179,6 +182,8 @@ static int pair_attempt(int fd, int input, FILE *tty, double deadline, const cha
   pair_hash(h, "npulse-pair-sas", k, 64, NULL, 0, NULL, 0);
   char art[221]; pair_art(art, h);
   uint32_t code = ((uint32_t)h[0] << 24 | (uint32_t)h[1] << 16 | (uint32_t)h[2] << 8 | h[3]) % 1000000;
+  /* Humans (and Face ID on the phone) confirm from here on. */
+  deadline = monotime() + PAIR_CONFIRM; if (deadline > window) deadline = window;
   tcflush(input, TCIFLUSH);
   fprintf(tty, "\n%s\n%03u %03u\n手机上显示的图案和数字是否一致？[y/N] ", art, code / 1000, code % 1000); fflush(tty);
   if (pair_receive(fd, frame, &j, k, &rx, deadline)) goto done;
@@ -306,8 +311,7 @@ static int pair_run(unsigned timeout, int ascii) {
       if (fd < 0) continue;
     }
     fcntl(fd, F_SETFL, O_NONBLOCK);
-    double end = monotime() + 30; if (end > deadline) end = deadline;
-    int status = pair_attempt(fd, input, tty, end, port, psk, relay); close(fd); attempts++;
+    int status = pair_attempt(fd, input, tty, deadline, port, psk, relay); close(fd); attempts++;
     if (!status) { result = 0; break; }
     if (status == -2) break;
     fprintf(tty, "\n连接中断或握手失败（%d/5）。\n", attempts); fflush(tty);

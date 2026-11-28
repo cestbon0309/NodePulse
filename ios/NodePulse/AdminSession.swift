@@ -46,7 +46,7 @@ final class AdminConnection: @unchecked Sendable {
             }
         }
     }
-    func read(_ count: Int) async throws -> Data {
+    func read(_ count: Int, timeout: TimeInterval = 45) async throws -> Data {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 queue.async {
@@ -57,7 +57,7 @@ final class AdminConnection: @unchecked Sendable {
                         continuation.resume(with: result)
                     }
                     timer = DispatchWorkItem { self.connection.cancel(); complete(.failure(AdminError.message(L10n.text("管理连接超时")))) }
-                    self.queue.asyncAfter(deadline: .now() + 45, execute: timer)
+                    self.queue.asyncAfter(deadline: .now() + timeout, execute: timer)
                     func receive(_ collected: Data) {
                         self.connection.receive(minimumIncompleteLength: 1, maximumLength: count - collected.count) { data, _, closed, error in
                             guard !finished else { return }
@@ -72,11 +72,11 @@ final class AdminConnection: @unchecked Sendable {
             }
         } onCancel: { self.cancel() }
     }
-    func readFrame(overhead: Int, limit: Int = 262144) async throws -> Data {
-        let header = try await read(4)
+    func readFrame(overhead: Int, limit: Int = 262144, timeout: TimeInterval = 45) async throws -> Data {
+        let header = try await read(4, timeout: timeout)
         let n = try ProbeCrypto.length(header)
         guard n <= limit else { throw AdminError.disconnected }
-        return header + (try await read(n + overhead))
+        return header + (try await read(n + overhead, timeout: timeout))
     }
 }
 

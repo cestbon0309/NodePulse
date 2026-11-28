@@ -38,7 +38,7 @@ enum PairError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .rejected: return L10n.text("配对已被拒绝，密钥未保存。请在服务器上重新运行 pair 后重试。")
-        case .timeout: return L10n.text("配对超时。请在服务器上重新开启配对，并在 30 秒内核对图案和数字。")
+        case .timeout: return L10n.text("配对超时。请在服务器上重新开启配对，并在 3 分钟内核对图案和数字。")
         case .connection: return L10n.text("配对连接失败或已断开。请确认地址、端口、防火墙，以及探针正在运行 -P。")
         case .handshake: return L10n.text("配对握手校验失败，未保存密钥。请勿忽略图案或数字不一致。")
         }

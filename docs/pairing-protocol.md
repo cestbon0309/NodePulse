@@ -4,7 +4,8 @@ Run `npulse -P -l ADDRESS:PORT -k SECRET [-n NAME] [-W SECONDS]` while the
 normal service is stopped. IPv6 uses `[address]:port`. The pairing UI defaults
 to port 9527; use the actual configured direct port. The default window is 600
 seconds (`-W` accepts 1..86400). There is one connection at a time, a 30-second
-deadline per connection including human confirmation, and at most five failed
+deadline per connection for the key exchange, then 180 seconds for human
+confirmation on both sides (Face ID included), and at most five failed
 or disconnected attempts. Success exits 0; rejection, timeout, interruption or
 exhausted attempts exits 1. Explicit rejection ends the entire window.
 

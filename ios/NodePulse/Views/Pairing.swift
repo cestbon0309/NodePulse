@@ -70,7 +70,23 @@ struct AddEndpointView: View {
     }
 }
 
+/// Keeps the app running for the short time iOS allows after it leaves the foreground,
+/// so the pairing socket survives a trip to the SSH app.
+@MainActor final class PairBackgroundHold {
+    private var id = UIBackgroundTaskIdentifier.invalid
+    func begin() {
+        guard id == .invalid else { return }
+        id = UIApplication.shared.beginBackgroundTask(withName: "nodepulse.pairing") { [weak self] in Task { @MainActor in self?.end() } }
+    }
+    func end() {
+        guard id != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(id); id = .invalid
+    }
+}
+
 struct PairingView: View {
+    @Environment(\.scenePhase) private var scene
+    @State private var hold = PairBackgroundHold()
     @Environment(\.pulseTheme) private var theme
     @Bindable var store: MonitorStore
     var relay = false
@@ -125,6 +141,7 @@ struct PairingView: View {
                         .overlay(RoundedRectangle(cornerRadius: 28).stroke(theme.ink.opacity(0.25)))
                         .scaleEffect(appeared ? 1 : 0.94).opacity(appeared ? 1 : 0)
                         .onAppear { withAnimation(reduceMotion ? nil : .spring(duration: 0.5)) { appeared = true } }
+                    Text(L10n.text("切到 SSH 等其他 App 时，连接只能在后台保持约 30 秒，请尽快回到本页。")).font(.caption).foregroundStyle(.secondary)
                     if phase == 2 {
                         Toggle(L10n.text("同时授权本机管理"), isOn: $grantAdmin).tint(theme.accent)
                         Text(L10n.text("管理授权可控制文件、终端和电源，可能拥有 root 权限；仅完整构建支持。请在 3 分钟内确认。")).font(.caption).foregroundStyle(.secondary)
@@ -147,7 +164,11 @@ struct PairingView: View {
                 }
             }.padding(24).frame(maxWidth: 520).frame(maxWidth: .infinity)
         }.navigationTitle(relay ? L10n.text("中转配对") : L10n.text("直连配对")).navigationBarTitleDisplayMode(.inline)
-            .onDisappear { work?.cancel(); session?.close() }
+            .onDisappear { work?.cancel(); session?.close(); hold.end() }
+            .onChange(of: scene) { _, value in
+                if value == .active { hold.end() } else if (1...3).contains(phase) { hold.begin() }
+            }
+            .onChange(of: phase) { _, value in if !(1...3).contains(value) { hold.end() } }
             .alert(L10n.text("配对未完成"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button(L10n.text("好")) { error = nil } } message: { Text(error ?? "") }
             .task {
                 grantAdmin = initialAdmin

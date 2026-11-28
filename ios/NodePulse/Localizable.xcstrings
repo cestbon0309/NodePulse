@@ -5400,6 +5400,23 @@
           }
         }
       }
+    },
+    "切到 SSH 等其他 App 时，连接只能在后台保持约 30 秒，请尽快回到本页。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切到 SSH 等其他 App 时，连接只能在后台保持约 30 秒，请尽快回到本页。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If you switch to SSH or another app, the connection only stays alive in the background for about 30 seconds. Come back to this page quickly."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

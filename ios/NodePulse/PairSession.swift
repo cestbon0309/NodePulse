@@ -71,7 +71,8 @@ actor PairSession {
             let data = try JSONSerialization.data(withJSONObject: message, options: [.withoutEscapingSlashes])
             guard data.count <= 4096 else { throw PairError.handshake }
             try await channel.send(tx.seal(data))
-            let frame = try await channel.readFrame(overhead: 16, limit: 4096)
+            // The probe waits up to 180 s for its operator after our confirm.
+            let frame = try await channel.readFrame(overhead: 16, limit: 4096, timeout: 185)
             let plain: Data
             do { plain = try rx.open(frame) } catch { throw PairError.handshake }
             guard let response = try JSONSerialization.jsonObject(with: plain) as? [String: Any] else { throw PairError.handshake }

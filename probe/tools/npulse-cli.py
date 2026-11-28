@@ -61,6 +61,7 @@ class PairClient:
             self.send({"epk": pub.hex()})
             self.k, self.sas, self.art, self.code = pair_material(self.private, peer, psk)
             self.private = None
+            self.sock.settimeout(185)
         except BaseException:
             self.sock.close()
             raise
